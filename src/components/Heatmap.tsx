@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import type { DailyUsage } from "../lib/types";
-import { getTotalTokens } from "../lib/format";
+import { getTotalTokens, toLocalDateStr } from "../lib/format";
 import { HeatmapCell } from "./HeatmapCell";
 import { Tooltip } from "./Tooltip";
 
@@ -179,7 +179,9 @@ export function Heatmap({ daily, weeks: WEEKS = DEFAULT_WEEKS }: Props) {
           flexDirection: "column",
           gap: 4,
         }}>
-          {grid.map((row, rowIdx) => (
+          {(() => {
+            const todayStr = toLocalDateStr(new Date());
+            return grid.map((row, rowIdx) => (
             <div key={rowIdx} style={{ display: "flex", gap: 4 }}>
               {row.map((cell, colIdx) => {
                 const level = getHeatLevel(cell.tokens, thresholds);
@@ -187,6 +189,7 @@ export function Heatmap({ daily, weeks: WEEKS = DEFAULT_WEEKS }: Props) {
                   <HeatmapCell
                     key={`${rowIdx}-${colIdx}`}
                     color={HEAT_COLORS[level]}
+                    isToday={cell.date === todayStr}
                     onMouseEnter={(e) => {
                       const rect = e.currentTarget.getBoundingClientRect();
                       setTooltip({
@@ -202,7 +205,8 @@ export function Heatmap({ daily, weeks: WEEKS = DEFAULT_WEEKS }: Props) {
                 );
               })}
             </div>
-          ))}
+          ));
+          })()}
         </div>
       </div>
 
