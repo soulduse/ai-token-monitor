@@ -12,6 +12,11 @@
   <img src="screenshots/analytics.png" width="280" alt="Analytics" />
   <img src="screenshots/leaderboard.png" width="280" alt="Leaderboard" />
 </p>
+<p align="center">
+  <b>Overview</b> — 今日用量、7天图表、周/月汇总 &nbsp;&nbsp;
+  <b>Analytics</b> — 活动图表、30天趋势、模型分析 &nbsp;&nbsp;
+  <b>Leaderboard</b> — 与其他用户比较
+</p>
 
 ## 下载
 
