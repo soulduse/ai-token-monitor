@@ -37,9 +37,22 @@ export function DailyChart({ daily, days = 7 }: Props) {
 
   const W = 368;
   const H = 100;
+  const yAxisWidth = 36;
+  const chartW = W - yAxisWidth;
   const barGap = 4;
-  const barWidth = Math.max(4, (W - barGap * (days + 1)) / days);
+  const barWidth = Math.max(4, (chartW - barGap * (days + 1)) / days);
   const avgY = H - (avg / maxVal) * (H - 10);
+
+  // Y-axis ticks: 0, mid, max
+  const yTicks = [0, Math.round(maxVal / 2), Math.round(maxVal)];
+  const formatYTick = (v: number) => {
+    if (mode === "cost") {
+      return v >= 1 ? `$${Math.round(v)}` : `$${v.toFixed(1)}`;
+    }
+    if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+    if (v >= 1_000) return `${(v / 1_000).toFixed(0)}K`;
+    return `${v}`;
+  };
 
   return (
     <div style={{
@@ -106,9 +119,28 @@ export function DailyChart({ daily, days = 7 }: Props) {
             </linearGradient>
           </defs>
 
+          {/* Y-axis labels */}
+          {yTicks.map((tick, i) => {
+            const tickY = maxVal > 0 ? H - (tick / maxVal) * (H - 10) : H;
+            return (
+              <text
+                key={i}
+                x={yAxisWidth - 4}
+                y={tick === 0 ? tickY - 2 : tickY + 3}
+                textAnchor="end"
+                fontSize={8}
+                fontWeight={600}
+                fill="var(--text-secondary)"
+                opacity={0.7}
+              >
+                {formatYTick(tick)}
+              </text>
+            );
+          })}
+
           {/* Average line */}
           <line
-            x1={0}
+            x1={yAxisWidth}
             y1={avgY}
             x2={W}
             y2={avgY}
@@ -121,7 +153,7 @@ export function DailyChart({ daily, days = 7 }: Props) {
           {/* Bars */}
           {values.map((val, i) => {
             const barH = maxVal > 0 ? (val / maxVal) * (H - 10) : 0;
-            const x = barGap + i * (barWidth + barGap);
+            const x = yAxisWidth + barGap + i * (barWidth + barGap);
             const y = H - barH;
             const isHovered = hoveredIdx === i;
 
@@ -176,7 +208,7 @@ export function DailyChart({ daily, days = 7 }: Props) {
         display: "flex",
         justifyContent: "space-between",
         marginTop: 4,
-        paddingLeft: barGap,
+        paddingLeft: yAxisWidth + barGap,
         paddingRight: barGap,
       }}>
         {chartData.map((d, i) => {
