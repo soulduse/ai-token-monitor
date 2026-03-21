@@ -7,16 +7,10 @@
 
 macOS メニューバーで Claude Code のトークン使用量とコストをリアルタイムに追跡するアプリです。
 
-<p align="center">
-  <img src="screenshots/overview.png" width="280" alt="Overview" />
-  <img src="screenshots/analytics.png" width="280" alt="Analytics" />
-  <img src="screenshots/leaderboard.png" width="280" alt="Leaderboard" />
-</p>
-<p align="center">
-  <b>Overview</b> — 今日の使用量、7日間チャート、週間/月間集計 &nbsp;&nbsp;
-  <b>Analytics</b> — アクティビティグラフ、30日間トレンド、モデル別分析 &nbsp;&nbsp;
-  <b>Leaderboard</b> — 他のユーザーと比較
-</p>
+| Overview | Analytics | Leaderboard |
+|:---:|:---:|:---:|
+| <img src="screenshots/overview.png" width="280" /> | <img src="screenshots/analytics.png" width="280" /> | <img src="screenshots/leaderboard.png" width="280" /> |
+| 今日の使用量、7日間チャート、週間/月間集計 | アクティビティグラフ、30日間トレンド、モデル別分析 | 他のユーザーと比較 |
 
 ## ダウンロード
 

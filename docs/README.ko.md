@@ -7,16 +7,10 @@
 
 macOS 메뉴바에서 Claude Code의 토큰 사용량과 비용을 실시간으로 추적하는 앱입니다.
 
-<p align="center">
-  <img src="screenshots/overview.png" width="280" alt="Overview" />
-  <img src="screenshots/analytics.png" width="280" alt="Analytics" />
-  <img src="screenshots/leaderboard.png" width="280" alt="Leaderboard" />
-</p>
-<p align="center">
-  <b>Overview</b> — 오늘의 사용량, 7일 차트, 주간/월간 집계 &nbsp;&nbsp;
-  <b>Analytics</b> — 활동 그래프, 30일 트렌드, 모델별 분석 &nbsp;&nbsp;
-  <b>Leaderboard</b> — 다른 사용자와 비교
-</p>
+| Overview | Analytics | Leaderboard |
+|:---:|:---:|:---:|
+| <img src="screenshots/overview.png" width="280" /> | <img src="screenshots/analytics.png" width="280" /> | <img src="screenshots/leaderboard.png" width="280" /> |
+| 오늘의 사용량, 7일 차트, 주간/월간 집계 | 활동 그래프, 30일 트렌드, 모델별 분석 | 다른 사용자와 비교 |
 
 ## 다운로드
 
