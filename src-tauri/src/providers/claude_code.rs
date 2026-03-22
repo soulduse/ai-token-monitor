@@ -17,12 +17,14 @@ struct ModelPricing {
 }
 
 fn get_pricing(model: &str) -> ModelPricing {
+    // Pricing per million tokens (https://docs.anthropic.com/en/docs/about-claude/pricing)
+    // Cache read = 10% of input, Cache write = 125% of input
     if model.contains("opus") {
-        ModelPricing { input: 15.0, output: 75.0, cache_read: 1.875, cache_write: 18.75 }
+        ModelPricing { input: 5.0, output: 25.0, cache_read: 0.50, cache_write: 6.25 }
     } else if model.contains("sonnet") {
         ModelPricing { input: 3.0, output: 15.0, cache_read: 0.30, cache_write: 3.75 }
     } else if model.contains("haiku") {
-        ModelPricing { input: 0.80, output: 4.0, cache_read: 0.08, cache_write: 1.0 }
+        ModelPricing { input: 1.0, output: 5.0, cache_read: 0.10, cache_write: 1.25 }
     } else {
         // Default to Sonnet pricing
         ModelPricing { input: 3.0, output: 15.0, cache_read: 0.30, cache_write: 3.75 }
@@ -50,8 +52,9 @@ impl ClaudeCodeProvider {
 
     /// Parse all session JSONL files from ~/.claude/projects/**/*.jsonl
     fn parse_session_files(&self) -> Vec<SessionEntry> {
-        let mut entries = Vec::new();
-        let mut seen = HashSet::new(); // dedup by messageId:requestId
+        // Use HashMap to keep the LAST occurrence per message — streaming chunks
+        // accumulate output tokens, so the final chunk has the complete count.
+        let mut dedup: HashMap<String, SessionEntry> = HashMap::new();
 
         let projects_dir = self.claude_dir.join("projects");
         let pattern = projects_dir.join("**").join("*.jsonl").to_string_lossy().to_string();
@@ -63,17 +66,14 @@ impl ClaudeCodeProvider {
                 let reader = BufReader::new(file);
                 for line in reader.lines().map_while(Result::ok) {
                     if let Some(entry) = parse_session_line(&line) {
-                        // Deduplicate
                         let key = format!("{}:{}", entry.message_id, entry.request_id);
-                        if seen.insert(key) {
-                            entries.push(entry);
-                        }
+                        dedup.insert(key, entry); // always overwrite → keeps last
                     }
                 }
             }
         }
 
-        entries
+        dedup.into_values().collect()
     }
 }
 
