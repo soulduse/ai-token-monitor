@@ -1,6 +1,6 @@
 [package]
 name = "ai-token-monitor"
-version = "0.2.0"
+version = "0.2.1"
 description = "AI Token Monitor - macOS Menu Bar App"
 authors = ["soul"]
 edition = "2021"
