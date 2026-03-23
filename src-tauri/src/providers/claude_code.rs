@@ -3,6 +3,7 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
@@ -17,7 +18,14 @@ struct CachedStats {
 }
 
 static STATS_CACHE: Mutex<Option<CachedStats>> = Mutex::new(None);
-const CACHE_TTL: Duration = Duration::from_secs(60);
+static CACHE_INVALIDATED: AtomicBool = AtomicBool::new(false);
+const CACHE_TTL: Duration = Duration::from_secs(300); // 5min fallback — primary invalidation is event-driven
+
+/// Invalidate the stats cache so the next fetch re-parses JSONL files.
+/// Called by the file watcher when JSONL/JSON changes are detected.
+pub fn invalidate_stats_cache() {
+    CACHE_INVALIDATED.store(true, Ordering::Relaxed);
+}
 
 /// Per-million-token pricing (from LiteLLM / Anthropic pricing page)
 struct ModelPricing {
@@ -153,6 +161,13 @@ impl TokenProvider for ClaudeCodeProvider {
     }
 
     fn fetch_stats(&self) -> Result<AllStats, String> {
+        // Clear cache if invalidated by file watcher
+        if CACHE_INVALIDATED.swap(false, Ordering::Relaxed) {
+            if let Ok(mut cache) = STATS_CACHE.lock() {
+                *cache = None;
+            }
+        }
+
         // Return cached stats if still fresh
         if let Ok(cache) = STATS_CACHE.lock() {
             if let Some(ref cached) = *cache {
@@ -167,7 +182,7 @@ impl TokenProvider for ClaudeCodeProvider {
         let mut daily_map: HashMap<String, DailyUsage> = HashMap::new();
         let mut model_usage_map: HashMap<String, ModelUsage> = HashMap::new();
         let mut total_messages: u32 = 0;
-        let mut session_ids: HashSet<String> = HashSet::new();
+        let _session_ids: HashSet<String> = HashSet::new();
         let mut first_date: Option<String> = None;
 
         for entry in &entries {

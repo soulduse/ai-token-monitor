@@ -102,7 +102,8 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                             Err(mpsc::RecvTimeoutError::Disconnected) => return,
                         }
                     }
-                    eprintln!("[WATCH] file changed (debounced), emitting stats-updated");
+                    eprintln!("[WATCH] file changed (debounced), invalidating cache");
+                    providers::claude_code::invalidate_stats_cache();
                     let _ = app_handle.emit("stats-updated", ());
                     update_tray_title(&app_handle);
                 }
@@ -119,10 +120,14 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
 /// Activate the macOS app so it can properly receive focus
 #[cfg(target_os = "macos")]
 fn activate_app() {
-    use cocoa::appkit::{NSApplication, NSApplicationActivationPolicy};
+    #[allow(deprecated)]
+    use cocoa::appkit::NSApplication;
+    #[allow(deprecated)]
     use cocoa::base::nil;
     unsafe {
+        #[allow(deprecated)]
         let ns_app = NSApplication::sharedApplication(nil);
+        #[allow(deprecated)]
         ns_app.activateIgnoringOtherApps_(true);
     }
 }
@@ -200,7 +205,7 @@ pub fn run() {
                                 let _ = window.hide();
                                 eprintln!("[TRAY] Window hidden");
                             } else {
-                                // Pre-fetch stats before showing window so data is ready
+                                // Pre-fetch stats before showing window (uses cache if fresh)
                                 let _ = app.emit("stats-updated", ());
                                 let _ = position_window_near_tray(&window, tray);
                                 let _ = window.show();
