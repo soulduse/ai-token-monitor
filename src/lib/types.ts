@@ -33,4 +33,5 @@ export interface UserPreferences {
   leaderboard_opted_in: boolean;
   theme: "github" | "purple" | "ocean" | "sunset";
   color_mode: "system" | "light" | "dark";
+  language: "en" | "ko" | "ja" | "zh-CN" | "zh-TW" | "fr" | "es" | "de";
 }

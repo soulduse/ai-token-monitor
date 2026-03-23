@@ -3,6 +3,8 @@ import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettings } from "../contexts/SettingsContext";
 import { useAuth } from "../hooks/useAuth";
+import { useI18n, LANGUAGE_OPTIONS } from "../i18n/I18nContext";
+import type { Locale } from "../i18n/I18nContext";
 
 interface Props {
   visible: boolean;
@@ -13,6 +15,7 @@ export function SettingsOverlay({ visible, onClose }: Props) {
   const { prefs, updatePrefs } = useSettings();
   const { user, profile, signIn, signOut, available: leaderboardAvailable } = useAuth();
   const [appVersion, setAppVersion] = useState("");
+  const t = useI18n();
 
   useEffect(() => {
     getVersion().then(setAppVersion);
@@ -50,26 +53,33 @@ export function SettingsOverlay({ visible, onClose }: Props) {
           letterSpacing: "0.5px",
           marginBottom: 10,
         }}>
-          Settings
+          {t("settings.title")}
         </div>
 
         {/* Theme selector */}
-        <SettingRow label="Theme">
+        <SettingRow label={t("settings.theme")}>
           <ThemeSelector
             value={prefs.theme}
             onChange={(v) => updatePrefs({ theme: v })}
           />
         </SettingRow>
 
-        <SettingRow label="Appearance">
+        <SettingRow label={t("settings.appearance")}>
           <ColorModeToggle
             value={prefs.color_mode}
             onChange={(v) => updatePrefs({ color_mode: v })}
           />
         </SettingRow>
 
+        <SettingRow label={t("settings.language")}>
+          <LanguageSelector
+            value={prefs.language}
+            onChange={(v) => updatePrefs({ language: v })}
+          />
+        </SettingRow>
+
         <SettingRow
-          label="Number Format"
+          label={t("settings.numberFormat")}
           description={prefs.number_format === "compact" ? "377.0K" : "377,000"}
         >
           <ToggleButton
@@ -79,7 +89,7 @@ export function SettingsOverlay({ visible, onClose }: Props) {
           />
         </SettingRow>
 
-        <SettingRow label="Menu Bar Cost">
+        <SettingRow label={t("settings.menuBarCost")}>
           <ToggleSwitch
             checked={prefs.show_tray_cost}
             onChange={(v) => updatePrefs({ show_tray_cost: v })}
@@ -103,10 +113,10 @@ export function SettingsOverlay({ visible, onClose }: Props) {
               letterSpacing: "0.5px",
               marginBottom: 8,
             }}>
-              Leaderboard
+              {t("settings.leaderboard")}
             </div>
 
-            <SettingRow label="Share Usage Data">
+            <SettingRow label={t("settings.shareUsageData")}>
               <ToggleSwitch
                 checked={prefs.leaderboard_opted_in}
                 onChange={(v) => updatePrefs({ leaderboard_opted_in: v })}
@@ -133,7 +143,7 @@ export function SettingsOverlay({ visible, onClose }: Props) {
                     />
                   )}
                   <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-primary)" }}>
-                    {profile?.nickname ?? "Signed in"}
+                    {profile?.nickname ?? t("settings.signedIn")}
                   </span>
                 </div>
                 <button
@@ -149,7 +159,7 @@ export function SettingsOverlay({ visible, onClose }: Props) {
                     color: "var(--text-secondary)",
                   }}
                 >
-                  Sign out
+                  {t("settings.signOut")}
                 </button>
               </div>
             ) : (
@@ -175,7 +185,7 @@ export function SettingsOverlay({ visible, onClose }: Props) {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
                 </svg>
-                Sign in with GitHub
+                {t("settings.signInGithub")}
               </button>
             )}
           </>
@@ -220,7 +230,7 @@ export function SettingsOverlay({ visible, onClose }: Props) {
               e.currentTarget.style.background = "rgba(239, 68, 68, 0.1)";
             }}
           >
-            Quit
+            {t("settings.quit")}
           </button>
         </div>
       </div>
@@ -367,11 +377,12 @@ function ThemeSelector({
   );
 }
 
-const COLOR_MODES: { id: "system" | "light" | "dark"; label: string }[] = [
-  { id: "system", label: "Auto" },
-  { id: "light", label: "Light" },
-  { id: "dark", label: "Dark" },
-];
+const COLOR_MODE_IDS: ("system" | "light" | "dark")[] = ["system", "light", "dark"];
+const COLOR_MODE_KEYS: Record<string, string> = {
+  system: "settings.auto",
+  light: "settings.light",
+  dark: "settings.dark",
+};
 
 function ColorModeToggle({
   value,
@@ -380,6 +391,7 @@ function ColorModeToggle({
   value: string;
   onChange: (v: "system" | "light" | "dark") => void;
 }) {
+  const t = useI18n();
   return (
     <div style={{
       display: "flex",
@@ -387,10 +399,10 @@ function ColorModeToggle({
       borderRadius: 6,
       padding: 2,
     }}>
-      {COLOR_MODES.map((m) => (
+      {COLOR_MODE_IDS.map((id) => (
         <button
-          key={m.id}
-          onClick={() => onChange(m.id)}
+          key={id}
+          onClick={() => onChange(id)}
           style={{
             fontSize: 10,
             fontWeight: 600,
@@ -398,14 +410,46 @@ function ColorModeToggle({
             borderRadius: 4,
             border: "none",
             cursor: "pointer",
-            background: value === m.id ? "var(--accent-purple)" : "transparent",
-            color: value === m.id ? "#fff" : "var(--text-secondary)",
+            background: value === id ? "var(--accent-purple)" : "transparent",
+            color: value === id ? "#fff" : "var(--text-secondary)",
             transition: "all 0.15s ease",
           }}
         >
-          {m.label}
+          {t(COLOR_MODE_KEYS[id])}
         </button>
       ))}
     </div>
+  );
+}
+
+function LanguageSelector({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: Locale) => void;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value as Locale)}
+      style={{
+        fontSize: 10,
+        fontWeight: 600,
+        padding: "3px 6px",
+        borderRadius: 4,
+        border: "1px solid var(--heat-1)",
+        cursor: "pointer",
+        background: "var(--heat-0)",
+        color: "var(--text-primary)",
+        outline: "none",
+      }}
+    >
+      {LANGUAGE_OPTIONS.map((lang) => (
+        <option key={lang.id} value={lang.id}>
+          {lang.label}
+        </option>
+      ))}
+    </select>
   );
 }

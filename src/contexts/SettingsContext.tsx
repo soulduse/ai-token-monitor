@@ -15,6 +15,7 @@ const defaultPrefs: UserPreferences = {
   leaderboard_opted_in: false,
   theme: "github",
   color_mode: "system",
+  language: "en",
 };
 
 const SettingsContext = createContext<SettingsContextType>({

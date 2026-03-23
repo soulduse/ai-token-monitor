@@ -42,6 +42,8 @@ pub struct UserPreferences {
     pub theme: String,
     #[serde(default = "default_color_mode")]
     pub color_mode: String,
+    #[serde(default = "default_language")]
+    pub language: String,
 }
 
 fn default_theme() -> String {
@@ -52,6 +54,10 @@ fn default_color_mode() -> String {
     "system".to_string()
 }
 
+fn default_language() -> String {
+    "en".to_string()
+}
+
 impl Default for UserPreferences {
     fn default() -> Self {
         Self {
@@ -60,6 +66,7 @@ impl Default for UserPreferences {
             leaderboard_opted_in: false,
             theme: default_theme(),
             color_mode: default_color_mode(),
+            language: default_language(),
         }
     }
 }
