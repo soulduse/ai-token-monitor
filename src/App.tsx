@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useTokenStats } from "./hooks/useTokenStats";
 import { useToday } from "./hooks/useToday";
 import { getTotalTokens } from "./lib/format";
@@ -21,7 +21,16 @@ import { SupportBanner } from "./components/SupportBanner";
 function AppContent() {
   const { stats, error, loading } = useTokenStats();
   const [activeTab, setActiveTab] = useState<TabType>("overview");
+  const [visitedTabs, setVisitedTabs] = useState<Set<TabType>>(new Set(["overview"]));
   const todayStr = useToday();
+
+  // Track visited tabs for lazy mounting
+  useEffect(() => {
+    setVisitedTabs((prev) => {
+      if (prev.has(activeTab)) return prev;
+      return new Set(prev).add(activeTab);
+    });
+  }, [activeTab]);
 
   const { today, weekAvg } = useMemo(() => {
     if (!stats) return { today: null, weekAvg: 0 };
@@ -106,15 +115,23 @@ function AppContent() {
       </div>
 
       <div style={{ display: activeTab === "analytics" ? "block" : "none" }}>
-        <ActivityGraph daily={stats.daily} />
-        <DailyChart daily={stats.daily} days={30} />
-        <PeriodTotals daily={stats.daily} />
-        <ModelBreakdown modelUsage={stats.model_usage} />
-        <CacheEfficiency stats={stats} />
+        {/* Lazy mount: only render after first visit */}
+        {visitedTabs.has("analytics") && (
+          <>
+            <ActivityGraph daily={stats.daily} />
+            <DailyChart daily={stats.daily} days={30} />
+            <PeriodTotals daily={stats.daily} />
+            <ModelBreakdown modelUsage={stats.model_usage} />
+            <CacheEfficiency stats={stats} />
+          </>
+        )}
       </div>
 
       <div style={{ display: activeTab === "leaderboard" ? "block" : "none" }}>
-        <Leaderboard stats={stats} />
+        {/* Lazy mount: only render after first visit */}
+        {visitedTabs.has("leaderboard") && (
+          <Leaderboard stats={stats} />
+        )}
       </div>
 
       <SupportBanner />
