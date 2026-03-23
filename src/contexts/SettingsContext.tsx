@@ -14,6 +14,8 @@ const defaultPrefs: UserPreferences = {
   number_format: "compact",
   show_tray_cost: true,
   leaderboard_opted_in: false,
+  include_claude: true,
+  include_codex: false,
   theme: "github",
   color_mode: "system",
   language: "en",

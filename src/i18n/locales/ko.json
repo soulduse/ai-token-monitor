@@ -1,13 +1,17 @@
 {
   "app.title": "AI Token Monitor",
-  "app.subtitle": "Claude Code 사용량 추적기",
+  "app.subtitle": "Claude Code + Codex 사용량 추적기",
   "app.loading": "로딩 중...",
-  "app.error.title": "Claude Code 통계를 찾을 수 없습니다",
-  "app.error.description": "Claude Code가 설치되어 있고 한 번 이상 사용되었는지 확인하세요.",
+  "app.error.title": "사용 통계를 찾을 수 없습니다",
+  "app.error.description": "Claude Code 또는 Codex가 설치되어 있고 한 번 이상 사용되었는지 확인하세요.",
 
   "tab.overview": "개요",
   "tab.analytics": "분석",
   "tab.leaderboard": "리더보드",
+
+  "sources.title": "소스",
+  "sources.claude": "Claude",
+  "sources.codex": "Codex",
 
   "today.title": "오늘",
   "today.tokens": "토큰",
@@ -70,7 +74,8 @@
   "leaderboard.comingSoon": "리더보드 준비 중",
   "leaderboard.notConfigured": "리더보드 서비스가 아직 구성되지 않았습니다.",
   "leaderboard.join": "리더보드 참여하기",
-  "leaderboard.description": "다른 개발자들과 Claude Code 사용량을 비교하세요. 일일 집계 통계만 공유되며, 코드나 대화 데이터는 공유되지 않습니다.",
+  "leaderboard.description": "다른 개발자들과 추적 중인 AI 코딩 사용량을 비교하세요. 일일 집계 통계만 공유되며, 코드나 대화 데이터는 공유되지 않습니다.",
+  "leaderboard.sourceNote": "리더보드는 현재 Claude Code 사용량만 비교합니다. Codex 통계는 당분간 로컬에만 남습니다.",
   "leaderboard.enable": "리더보드 활성화",
   "leaderboard.signIn": "GitHub로 로그인",
   "leaderboard.yourRank": "내 순위",

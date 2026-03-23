@@ -1,13 +1,17 @@
 {
   "app.title": "AI Token Monitor",
-  "app.subtitle": "Claude Code Usage Tracker",
+  "app.subtitle": "Claude Code + Codex Usage Tracker",
   "app.loading": "Loading...",
-  "app.error.title": "Claude Code stats not found",
-  "app.error.description": "Make sure Claude Code is installed and has been used at least once.",
+  "app.error.title": "No usage stats found",
+  "app.error.description": "Make sure Claude Code or Codex has been used at least once.",
 
   "tab.overview": "Overview",
   "tab.analytics": "Analytics",
   "tab.leaderboard": "Leaderboard",
+
+  "sources.title": "Sources",
+  "sources.claude": "Claude",
+  "sources.codex": "Codex",
 
   "today.title": "Today",
   "today.tokens": "tokens",
@@ -70,7 +74,8 @@
   "leaderboard.comingSoon": "Leaderboard Coming Soon",
   "leaderboard.notConfigured": "Leaderboard service is not configured yet.",
   "leaderboard.join": "Join the Leaderboard",
-  "leaderboard.description": "Compare your Claude Code usage with other developers. Only aggregate daily stats are shared — no code or conversation data.",
+  "leaderboard.description": "Compare your tracked AI coding usage with other developers. Only aggregate daily stats are shared — no code or conversation data.",
+  "leaderboard.sourceNote": "Leaderboard currently compares Claude Code usage only. Codex stats remain local for now.",
   "leaderboard.enable": "Enable Leaderboard",
   "leaderboard.signIn": "Sign in with GitHub",
   "leaderboard.yourRank": "Your Rank",

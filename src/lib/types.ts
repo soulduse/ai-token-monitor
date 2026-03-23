@@ -31,6 +31,8 @@ export interface UserPreferences {
   number_format: "compact" | "full";
   show_tray_cost: boolean;
   leaderboard_opted_in: boolean;
+  include_claude: boolean;
+  include_codex: boolean;
   theme: "github" | "purple" | "ocean" | "sunset";
   color_mode: "system" | "light" | "dark";
   language: "en" | "ko" | "ja" | "zh-CN" | "zh-TW" | "fr" | "es" | "de";

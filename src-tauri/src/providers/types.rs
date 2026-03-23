@@ -38,6 +38,10 @@ pub struct UserPreferences {
     pub number_format: String,
     pub show_tray_cost: bool,
     pub leaderboard_opted_in: bool,
+    #[serde(default = "default_include_claude")]
+    pub include_claude: bool,
+    #[serde(default = "default_include_codex")]
+    pub include_codex: bool,
     #[serde(default = "default_theme")]
     pub theme: String,
     #[serde(default = "default_color_mode")]
@@ -50,6 +54,14 @@ pub struct UserPreferences {
 
 fn default_theme() -> String {
     "github".to_string()
+}
+
+fn default_include_claude() -> bool {
+    true
+}
+
+fn default_include_codex() -> bool {
+    false
 }
 
 fn default_color_mode() -> String {
@@ -70,6 +82,8 @@ impl Default for UserPreferences {
             number_format: "compact".to_string(),
             show_tray_cost: true,
             leaderboard_opted_in: false,
+            include_claude: default_include_claude(),
+            include_codex: default_include_codex(),
             theme: default_theme(),
             color_mode: default_color_mode(),
             language: default_language(),

@@ -14,7 +14,7 @@ use tauri::{Emitter, Manager};
 
 use providers::types::UserPreferences;
 
-fn get_config_dirs_from_prefs() -> Vec<PathBuf> {
+fn get_watch_dirs_from_prefs() -> Vec<PathBuf> {
     let prefs_path = dirs::home_dir()
         .unwrap_or_default()
         .join(".claude")
@@ -24,13 +24,25 @@ fn get_config_dirs_from_prefs() -> Vec<PathBuf> {
         .and_then(|c| serde_json::from_str(&c).ok())
         .unwrap_or_default();
     let home = dirs::home_dir().unwrap_or_default();
-    prefs.config_dirs.iter().map(|d| {
-        if d.starts_with("~/") {
-            home.join(d.strip_prefix("~/").unwrap_or(d))
-        } else {
-            PathBuf::from(d)
-        }
-    }).collect()
+    let mut dirs: Vec<PathBuf> = prefs
+        .config_dirs
+        .iter()
+        .map(|d| {
+            if d.starts_with("~/") {
+                home.join(d.strip_prefix("~/").unwrap_or(d))
+                    .join("projects")
+            } else {
+                PathBuf::from(d).join("projects")
+            }
+        })
+        .collect();
+
+    if prefs.include_codex {
+        dirs.push(home.join(".codex").join("sessions"));
+        dirs.push(home.join(".codex").join("archived_sessions"));
+    }
+
+    dirs
 }
 
 pub fn update_tray_title(app_handle: &tauri::AppHandle) {
@@ -76,17 +88,14 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
 }
 
 fn start_file_watcher(app_handle: tauri::AppHandle) {
-    let config_dirs = get_config_dirs_from_prefs();
+    let config_dirs = get_watch_dirs_from_prefs();
 
     thread::spawn(move || {
         let (tx, rx) = mpsc::channel();
 
         let mut watcher = match notify::recommended_watcher(move |res: Result<Event, _>| {
             if let Ok(event) = res {
-                if matches!(
-                    event.kind,
-                    EventKind::Modify(_) | EventKind::Create(_)
-                ) {
+                if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
                     let dominated = event.paths.iter().any(|p| {
                         let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
                         ext == "jsonl" || ext == "json"
@@ -103,10 +112,9 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
 
         let mut watched_dirs: Vec<PathBuf> = Vec::new();
         for dir in &config_dirs {
-            let projects_dir = dir.join("projects");
-            if projects_dir.exists() {
-                let _ = watcher.watch(&projects_dir, RecursiveMode::Recursive);
-                watched_dirs.push(projects_dir);
+            if dir.exists() {
+                let _ = watcher.watch(dir, RecursiveMode::Recursive);
+                watched_dirs.push(dir.clone());
             }
         }
 
@@ -120,7 +128,8 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                 Ok(()) => {
                     // Detect burst: count triggers in last 10 seconds
                     let now = std::time::Instant::now();
-                    recent_triggers.retain(|t| now.duration_since(*t) < std::time::Duration::from_secs(10));
+                    recent_triggers
+                        .retain(|t| now.duration_since(*t) < std::time::Duration::from_secs(10));
                     recent_triggers.push(now);
 
                     let debounce = if recent_triggers.len() >= 3 {
@@ -137,17 +146,21 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                             Err(mpsc::RecvTimeoutError::Disconnected) => return,
                         }
                     }
-                    eprintln!("[WATCH] file changed (debounce={}s), invalidating cache", debounce.as_secs());
+                    eprintln!(
+                        "[WATCH] file changed (debounce={}s), invalidating cache",
+                        debounce.as_secs()
+                    );
                     providers::claude_code::invalidate_stats_cache();
+                    providers::codex::invalidate_stats_cache();
                     let _ = app_handle.emit("stats-updated", ());
                     update_tray_title(&app_handle);
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     // Re-read config dirs and update watched paths if changed
-                    let new_dirs = get_config_dirs_from_prefs();
-                    let new_projects: Vec<PathBuf> = new_dirs.iter()
-                        .map(|d| d.join("projects"))
+                    let new_projects: Vec<PathBuf> = get_watch_dirs_from_prefs()
+                        .iter()
                         .filter(|p| p.exists())
+                        .cloned()
                         .collect();
                     if new_projects != watched_dirs {
                         // Unwatch old dirs
@@ -161,6 +174,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                         watched_dirs = new_projects;
                         // Trigger stats refresh for new dirs
                         providers::claude_code::invalidate_stats_cache();
+                        providers::codex::invalidate_stats_cache();
                         let _ = app_handle.emit("stats-updated", ());
                     }
                     update_tray_title(&app_handle);
@@ -267,8 +281,15 @@ pub fn run() {
                 .tooltip("AI Token Monitor")
                 .on_tray_icon_event(|tray, event| {
                     match &event {
-                        tauri::tray::TrayIconEvent::Click { button, button_state, .. } => {
-                            eprintln!("[TRAY] Click: button={:?}, state={:?}", button, button_state);
+                        tauri::tray::TrayIconEvent::Click {
+                            button,
+                            button_state,
+                            ..
+                        } => {
+                            eprintln!(
+                                "[TRAY] Click: button={:?}, state={:?}",
+                                button, button_state
+                            );
                         }
                         tauri::tray::TrayIconEvent::DoubleClick { .. } => {
                             eprintln!("[TRAY] DoubleClick");
@@ -424,10 +445,7 @@ fn position_window_near_tray(
             let x = tray_center_x - (window_size.width / 2.0);
             let y = tray_pos.y - window_size.height - padding;
 
-            window.set_position(tauri::Position::Logical(tauri::LogicalPosition {
-                x,
-                y,
-            }))?;
+            window.set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }))?;
         } else {
             // macOS-style: menu bar at top, show popup below tray
             let y = tray_pos.y + tray_size.height;
@@ -443,10 +461,7 @@ fn position_window_near_tray(
             let window_size = window.outer_size()?.to_logical::<f64>(scale);
             let x = tray_center_x - (window_size.width / 2.0);
 
-            window.set_position(tauri::Position::Logical(tauri::LogicalPosition {
-                x,
-                y,
-            }))?;
+            window.set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }))?;
         }
     } else {
         // Fallback: no monitor found, just position below tray
@@ -454,10 +469,7 @@ fn position_window_near_tray(
         let window_size = window.outer_size()?.to_logical::<f64>(scale);
         let x = tray_center_x - (window_size.width / 2.0);
 
-        window.set_position(tauri::Position::Logical(tauri::LogicalPosition {
-            x,
-            y,
-        }))?;
+        window.set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }))?;
     }
 
     Ok(())

@@ -1,5 +1,6 @@
 import { useAuth } from "../hooks/useAuth";
 import { useLeaderboardSync } from "../hooks/useLeaderboardSync";
+import { useTokenStats } from "../hooks/useTokenStats";
 import type { AllStats } from "../lib/types";
 import type { User } from "@supabase/supabase-js";
 import { useSettings } from "../contexts/SettingsContext";
@@ -14,6 +15,10 @@ export function Leaderboard({ stats }: Props) {
   const { user, loading: authLoading, signIn, available } = useAuth();
   const { prefs } = useSettings();
   const t = useI18n();
+  const { stats: leaderboardStats } = useTokenStats({
+    includeClaude: true,
+    includeCodex: false,
+  });
 
   if (!available) {
     return (
@@ -43,7 +48,7 @@ export function Leaderboard({ stats }: Props) {
     />;
   }
 
-  return <LeaderboardContent stats={stats} user={user} />;
+  return <LeaderboardContent stats={leaderboardStats ?? stats} user={user} />;
 }
 
 function LeaderboardCTA({
@@ -86,6 +91,15 @@ function LeaderboardCTA({
         lineHeight: 1.5,
       }}>
         {t("leaderboard.description")}
+      </div>
+      <div style={{
+        fontSize: 10,
+        color: "var(--text-secondary)",
+        fontWeight: 600,
+        maxWidth: 260,
+        lineHeight: 1.4,
+      }}>
+        {t("leaderboard.sourceNote")}
       </div>
 
       {hasUser ? (
@@ -149,6 +163,15 @@ function LeaderboardContent({ stats, user }: { stats: AllStats; user: User }) {
       flexDirection: "column",
       gap: 14,
     }}>
+      <div style={{
+        fontSize: 10,
+        color: "var(--text-secondary)",
+        fontWeight: 600,
+        textAlign: "center",
+      }}>
+        {t("leaderboard.sourceNote")}
+      </div>
+
       {/* Period toggle */}
       <div style={{
         display: "flex",

@@ -1,9 +1,12 @@
 use std::fs;
 use std::path::PathBuf;
 
+use serde::Deserialize;
+
 use crate::providers::claude_code::ClaudeCodeProvider;
+use crate::providers::codex::CodexProvider;
 use crate::providers::traits::TokenProvider;
-use crate::providers::types::{AllStats, UserPreferences};
+use crate::providers::types::{AllStats, DailyUsage, ModelUsage, UserPreferences};
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use tauri::Manager;
@@ -15,18 +18,126 @@ fn prefs_path() -> PathBuf {
         .join("ai-token-monitor-prefs.json")
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct StatsSelection {
+    #[serde(default = "default_true")]
+    pub include_claude: bool,
+    #[serde(default)]
+    pub include_codex: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
 #[tauri::command]
-pub async fn get_all_stats() -> Result<AllStats, String> {
-    tauri::async_runtime::spawn_blocking(|| {
+pub async fn get_all_stats(selection: Option<StatsSelection>) -> Result<AllStats, String> {
+    tauri::async_runtime::spawn_blocking(move || {
         let prefs = get_preferences();
-        let provider = ClaudeCodeProvider::new(prefs.config_dirs);
-        if !provider.is_available() {
-            return Err("Claude Code stats not available".to_string());
+        let selection = selection.unwrap_or(StatsSelection {
+            include_claude: prefs.include_claude,
+            include_codex: prefs.include_codex,
+        });
+        let mut stats = Vec::new();
+
+        if selection.include_claude {
+            let provider = ClaudeCodeProvider::new(prefs.config_dirs.clone());
+            if provider.is_available() {
+                stats.push(provider.fetch_stats()?);
+            }
         }
-        provider.fetch_stats()
+
+        if selection.include_codex {
+            let provider = CodexProvider::new();
+            if provider.is_available() {
+                stats.push(provider.fetch_stats()?);
+            }
+        }
+
+        if stats.is_empty() {
+            return Err("No enabled usage sources found".to_string());
+        }
+
+        Ok(merge_stats(stats))
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+fn merge_stats(stats_list: Vec<AllStats>) -> AllStats {
+    let mut daily_map: std::collections::HashMap<String, DailyUsage> =
+        std::collections::HashMap::new();
+    let mut model_usage: std::collections::HashMap<String, ModelUsage> =
+        std::collections::HashMap::new();
+    let mut total_messages = 0;
+    let mut first_session_date: Option<String> = None;
+
+    for stats in stats_list {
+        total_messages += stats.total_messages;
+
+        if let Some(date) = stats.first_session_date {
+            if first_session_date
+                .as_ref()
+                .is_none_or(|existing| date < *existing)
+            {
+                first_session_date = Some(date);
+            }
+        }
+
+        for daily in stats.daily {
+            let entry = daily_map.entry(daily.date.clone()).or_insert_with(|| DailyUsage {
+                date: daily.date.clone(),
+                tokens: std::collections::HashMap::new(),
+                cost_usd: 0.0,
+                messages: 0,
+                sessions: 0,
+                tool_calls: 0,
+                input_tokens: 0,
+                output_tokens: 0,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+            });
+
+            for (model, tokens) in daily.tokens {
+                *entry.tokens.entry(model).or_insert(0) += tokens;
+            }
+            entry.cost_usd += daily.cost_usd;
+            entry.messages += daily.messages;
+            entry.sessions += daily.sessions;
+            entry.tool_calls += daily.tool_calls;
+            entry.input_tokens += daily.input_tokens;
+            entry.output_tokens += daily.output_tokens;
+            entry.cache_read_tokens += daily.cache_read_tokens;
+            entry.cache_write_tokens += daily.cache_write_tokens;
+        }
+
+        for (model, usage) in stats.model_usage {
+            let entry = model_usage.entry(model).or_insert_with(|| ModelUsage {
+                input_tokens: 0,
+                output_tokens: 0,
+                cache_read: 0,
+                cache_write: 0,
+                cost_usd: 0.0,
+            });
+            entry.input_tokens += usage.input_tokens;
+            entry.output_tokens += usage.output_tokens;
+            entry.cache_read += usage.cache_read;
+            entry.cache_write += usage.cache_write;
+            entry.cost_usd += usage.cost_usd;
+        }
+    }
+
+    let mut daily: Vec<DailyUsage> = daily_map.into_values().collect();
+    daily.sort_by(|a, b| a.date.cmp(&b.date));
+    let total_sessions = daily.iter().map(|d| d.sessions).sum();
+
+    AllStats {
+        daily,
+        model_usage,
+        total_sessions,
+        total_messages,
+        first_session_date,
+    }
 }
 
 #[tauri::command]
