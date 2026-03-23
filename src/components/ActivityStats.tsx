@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import type { DailyUsage } from "../lib/types";
 import { getTotalTokens, toLocalDateStr, formatTokens } from "../lib/format";
 import { useSettings } from "../contexts/SettingsContext";
+import { useI18n } from "../i18n/I18nContext";
 
 interface Props {
   daily: DailyUsage[];
@@ -17,6 +18,7 @@ function shortDate(dateStr: string): string {
 
 export function ActivityStats({ daily, year }: Props) {
   const { prefs } = useSettings();
+  const t = useI18n();
 
   const stats = useMemo(() => {
     const yearData = daily
@@ -133,16 +135,16 @@ export function ActivityStats({ daily, year }: Props) {
       }}>
         <StatBox
           value={formatTokens(stats.total, fmt)}
-          label="Total"
+          label={t("activity.total")}
           sub={`${shortDate(`${year}-01-01`)} → ${year === new Date().getFullYear() ? shortDate(toLocalDateStr(new Date())) : shortDate(`${year}-12-31`)}`}
         />
         <StatBox
           value={formatTokens(stats.weekTotal, fmt)}
-          label="This Week"
+          label={t("activity.thisWeek")}
         />
         <StatBox
           value={stats.bestDay.tokens > 0 ? formatTokens(stats.bestDay.tokens, fmt) : "—"}
-          label="Best Day"
+          label={t("activity.bestDay")}
           sub={stats.bestDay.date ? shortDate(stats.bestDay.date) : ""}
         />
       </div>
@@ -155,7 +157,7 @@ export function ActivityStats({ daily, year }: Props) {
         marginBottom: 10,
         textAlign: "right",
       }}>
-        Average: <span style={{ color: "var(--accent-purple)" }}>{formatTokens(stats.average, fmt)}</span> / day
+        {t("activity.average")}: <span style={{ color: "var(--accent-purple)" }}>{formatTokens(stats.average, fmt)}</span> {t("activity.perDay")}
       </div>
 
       {/* Streaks */}
@@ -167,18 +169,18 @@ export function ActivityStats({ daily, year }: Props) {
         letterSpacing: "0.5px",
         marginBottom: 6,
       }}>
-        Streaks
+        {t("activity.streaks")}
       </div>
       <div style={{ display: "flex", gap: 8 }}>
         <StreakBox
           days={stats.longestStreak}
-          label="Longest"
+          label={t("activity.longest")}
           start={stats.longestStart}
           end={stats.longestEnd}
         />
         <StreakBox
           days={stats.currentStreak}
-          label="Current"
+          label={t("activity.current")}
           start={stats.currentStart}
           end={stats.currentEnd}
         />
@@ -225,6 +227,7 @@ function StatBox({ value, label, sub }: { value: string; label: string; sub?: st
 }
 
 function StreakBox({ days, label, start, end }: { days: number; label: string; start: string; end: string }) {
+  const t = useI18n();
   return (
     <div style={{
       flex: 1,
@@ -245,7 +248,7 @@ function StreakBox({ days, label, start, end }: { days: number; label: string; s
           fontWeight: 600,
           color: "var(--text-secondary)",
         }}>
-          days
+          {t("activity.days")}
         </span>
       </div>
       <div style={{

@@ -2,6 +2,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type { LeaderboardEntry } from "../hooks/useLeaderboardSync";
 import { formatTokens, formatCost } from "../lib/format";
 import { useSettings } from "../contexts/SettingsContext";
+import { useI18n } from "../i18n/I18nContext";
 
 interface Props {
   entry: LeaderboardEntry;
@@ -13,6 +14,7 @@ const MEDALS = ["", "\ud83e\udd47", "\ud83e\udd48", "\ud83e\udd49"];
 
 export function LeaderboardRow({ entry, rank, isMe }: Props) {
   const { prefs } = useSettings();
+  const t = useI18n();
 
   return (
     <div style={{
@@ -96,7 +98,7 @@ export function LeaderboardRow({ entry, rank, isMe }: Props) {
                 marginLeft: 4,
                 opacity: 0.7,
               }}>
-                (you)
+                {t("leaderboard.you")}
               </span>
             )}
             {/* GitHub link icon */}
@@ -116,7 +118,7 @@ export function LeaderboardRow({ entry, rank, isMe }: Props) {
             color: "var(--text-secondary)",
             fontWeight: 600,
           }}>
-            {entry.messages} msgs
+            {entry.messages} {t("leaderboard.msgs")}
           </div>
         </div>
       </div>

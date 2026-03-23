@@ -1,3 +1,5 @@
+import { useI18n } from "../i18n/I18nContext";
+
 export type TabType = "overview" | "analytics" | "leaderboard";
 
 interface Props {
@@ -6,6 +8,8 @@ interface Props {
 }
 
 export function TabBar({ activeTab, onChange }: Props) {
+  const t = useI18n();
+
   return (
     <div style={{
       display: "flex",
@@ -15,17 +19,17 @@ export function TabBar({ activeTab, onChange }: Props) {
       gap: 2,
     }}>
       <TabButton
-        label="Overview"
+        label={t("tab.overview")}
         active={activeTab === "overview"}
         onClick={() => onChange("overview")}
       />
       <TabButton
-        label="Analytics"
+        label={t("tab.analytics")}
         active={activeTab === "analytics"}
         onClick={() => onChange("analytics")}
       />
       <TabButton
-        label="Leaderboard"
+        label={t("tab.leaderboard")}
         active={activeTab === "leaderboard"}
         onClick={() => onChange("leaderboard")}
         icon="🏆"

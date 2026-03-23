@@ -4,6 +4,7 @@ import { getTotalTokens, toLocalDateStr, formatTokens, formatCost } from "../lib
 import { useSettings } from "../contexts/SettingsContext";
 import { Heatmap3D } from "./Heatmap3D";
 import { ActivityStats } from "./ActivityStats";
+import { useI18n } from "../i18n/I18nContext";
 
 interface Props {
   daily: DailyUsage[];
@@ -15,7 +16,7 @@ export interface CellData {
   cost: number;
 }
 
-const DAY_LABELS = ["Mon", "", "Wed", "", "Fri", "", ""];
+const DAY_LABEL_KEYS = ["day.mon", "", "day.wed", "", "day.fri", "", ""];
 const HEAT_COLORS = [
   "var(--heat-0)",
   "var(--heat-1)",
@@ -34,6 +35,7 @@ function getHeatLevel(value: number, thresholds: number[]): number {
 
 export function ActivityGraph({ daily }: Props) {
   const { prefs } = useSettings();
+  const t = useI18n();
   const [viewMode, setViewMode] = useState<"2d" | "3d">("2d");
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
@@ -151,7 +153,7 @@ export function ActivityGraph({ daily }: Props) {
           textTransform: "uppercase",
           letterSpacing: "0.5px",
         }}>
-          Activity
+          {t("activity.title")}
         </div>
 
         {/* 2D / 3D toggle */}
@@ -262,7 +264,7 @@ export function ActivityGraph({ daily }: Props) {
               marginRight: 2,
               width: labelW - 2,
             }}>
-              {DAY_LABELS.map((label, i) => (
+              {DAY_LABEL_KEYS.map((key, i) => (
                 <div key={i} style={{
                   height: cellSize,
                   fontSize: 7,
@@ -272,7 +274,7 @@ export function ActivityGraph({ daily }: Props) {
                   alignItems: "center",
                   justifyContent: "flex-end",
                 }}>
-                  {label}
+                  {key ? t(key) : ""}
                 </div>
               ))}
             </div>
@@ -337,7 +339,7 @@ export function ActivityGraph({ daily }: Props) {
         marginTop: 8,
         justifyContent: "flex-end",
       }}>
-        <span style={{ fontSize: 8, color: "var(--text-secondary)", marginRight: 2 }}>Less</span>
+        <span style={{ fontSize: 8, color: "var(--text-secondary)", marginRight: 2 }}>{t("activity.less")}</span>
         {HEAT_COLORS.map((color, i) => (
           <div key={i} style={{
             width: 8,
@@ -346,7 +348,7 @@ export function ActivityGraph({ daily }: Props) {
             background: color,
           }} />
         ))}
-        <span style={{ fontSize: 8, color: "var(--text-secondary)", marginLeft: 2 }}>More</span>
+        <span style={{ fontSize: 8, color: "var(--text-secondary)", marginLeft: 2 }}>{t("activity.more")}</span>
       </div>
 
       {/* Tooltip */}

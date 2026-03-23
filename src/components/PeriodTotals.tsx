@@ -3,12 +3,13 @@ import type { DailyUsage } from "../lib/types";
 import { formatTokens, formatCost, getTotalTokens, toLocalDateStr } from "../lib/format";
 import { useSettings } from "../contexts/SettingsContext";
 import { PeriodSelector } from "./PeriodSelector";
+import { useI18n } from "../i18n/I18nContext";
 
 interface Props {
   daily: DailyUsage[];
 }
 
-function getWeekRange(offset: number): { start: string; end: string; label: string } {
+function getWeekRange(offset: number): { start: string; end: string; labelKey: string | null; labelFallback: string } {
   const now = new Date();
   const dow = now.getDay();
   const mondayOffset = dow === 0 ? 6 : dow - 1;
@@ -20,15 +21,15 @@ function getWeekRange(offset: number): { start: string; end: string; label: stri
   const start = toLocalDateStr(monday);
   const end = toLocalDateStr(sunday);
 
-  if (offset === 0) return { start, end, label: "This Week" };
-  if (offset === 1) return { start, end, label: "Last Week" };
+  if (offset === 0) return { start, end, labelKey: "period.thisWeek", labelFallback: "" };
+  if (offset === 1) return { start, end, labelKey: "period.lastWeek", labelFallback: "" };
 
   const m1 = monday.toLocaleDateString("en", { month: "short", day: "numeric" });
   const m2 = sunday.toLocaleDateString("en", { day: "numeric" });
-  return { start, end, label: `${m1}-${m2}` };
+  return { start, end, labelKey: null, labelFallback: `${m1}-${m2}` };
 }
 
-function getMonthRange(offset: number): { start: string; end: string; label: string } {
+function getMonthRange(offset: number): { start: string; end: string; labelKey: string | null; labelFallback: string } {
   const now = new Date();
   const targetMonth = new Date(now.getFullYear(), now.getMonth() - offset, 1);
   const lastDay = new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0);
@@ -36,11 +37,11 @@ function getMonthRange(offset: number): { start: string; end: string; label: str
   const start = toLocalDateStr(targetMonth);
   const end = toLocalDateStr(lastDay);
 
-  if (offset === 0) return { start, end, label: "This Month" };
-  if (offset === 1) return { start, end, label: "Last Month" };
+  if (offset === 0) return { start, end, labelKey: "period.thisMonth", labelFallback: "" };
+  if (offset === 1) return { start, end, labelKey: "period.lastMonth", labelFallback: "" };
 
   const monthLabel = targetMonth.toLocaleDateString("en", { month: "short", year: "numeric" });
-  return { start, end, label: monthLabel };
+  return { start, end, labelKey: null, labelFallback: monthLabel };
 }
 
 function aggregate(daily: DailyUsage[], start: string, end: string) {
@@ -63,6 +64,7 @@ function aggregate(daily: DailyUsage[], start: string, end: string) {
 
 export function PeriodTotals({ daily }: Props) {
   const { prefs } = useSettings();
+  const t = useI18n();
   const [weekOffset, setWeekOffset] = useState(0);
   const [monthOffset, setMonthOffset] = useState(0);
 
@@ -78,13 +80,16 @@ export function PeriodTotals({ daily }: Props) {
     [daily, monthRange]
   );
 
+  const weekLabel = weekRange.labelKey ? t(weekRange.labelKey) : weekRange.labelFallback;
+  const monthLabel = monthRange.labelKey ? t(monthRange.labelKey) : monthRange.labelFallback;
+
   return (
     <div style={{
       display: "flex",
       gap: 10,
     }}>
       <PeriodCard
-        label={weekRange.label}
+        label={weekLabel}
         tokens={weekData.tokens}
         cost={weekData.cost}
         sessions={weekData.sessions}
@@ -95,7 +100,7 @@ export function PeriodTotals({ daily }: Props) {
         canNext={weekOffset > 0}
       />
       <PeriodCard
-        label={monthRange.label}
+        label={monthLabel}
         tokens={monthData.tokens}
         cost={monthData.cost}
         sessions={monthData.sessions}
@@ -130,6 +135,7 @@ function PeriodCard({
   onNext: () => void;
   canNext: boolean;
 }) {
+  const t = useI18n();
   return (
     <div style={{
       flex: 1,
@@ -163,7 +169,7 @@ function PeriodCard({
       }}>
         <span>{formatCost(cost)}</span>
         <span>&middot;</span>
-        <span>{sessions} sessions</span>
+        <span>{sessions} {t("period.sessions")}</span>
       </div>
     </div>
   );

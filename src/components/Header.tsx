@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { SettingsOverlay } from "./SettingsOverlay";
 import type { AllStats } from "../lib/types";
 import { formatTokens, formatCost, getTotalTokens, toLocalDateStr } from "../lib/format";
+import { useI18n } from "../i18n/I18nContext";
 
 interface Props {
   stats?: AllStats | null;
@@ -14,6 +15,7 @@ export function Header({ stats }: Props) {
   const [copied, setCopied] = useState(false);
   const [captured, setCaptured] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const t = useI18n();
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -25,10 +27,10 @@ export function Header({ stats }: Props) {
       await invoke("capture_window");
       setCaptured(true);
       setTimeout(() => setCaptured(false), 2000);
-      showToast("Copied to clipboard!");
+      showToast(t("header.copied"));
     } catch (e) {
       console.error("Capture failed:", e);
-      showToast("Capture failed");
+      showToast(t("header.captureFailed"));
     }
   }, []);
 
@@ -44,21 +46,21 @@ export function Header({ stats }: Props) {
     const totalCost = stats.daily.reduce((sum, d) => sum + d.cost_usd, 0);
 
     const lines = [
-      `# AI Token Monitor Summary`,
-      `**Date:** ${todayStr}`,
+      `# ${t("export.title")}`,
+      `**${t("export.date")}:** ${todayStr}`,
       ``,
-      `## Today`,
-      `- Tokens: ${formatTokens(todayTokens, "full")}`,
-      `- Cost: ${formatCost(todayCost)}`,
-      `- Messages: ${today?.messages ?? 0}`,
+      `## ${t("export.today")}`,
+      `- ${t("export.tokens")}: ${formatTokens(todayTokens, "full")}`,
+      `- ${t("export.cost")}: ${formatCost(todayCost)}`,
+      `- ${t("export.messages")}: ${today?.messages ?? 0}`,
       ``,
-      `## All Time`,
-      `- Total Tokens: ${formatTokens(totalTokens, "full")}`,
-      `- Total Cost: ${formatCost(totalCost)}`,
-      `- Total Sessions: ${stats.total_sessions}`,
-      `- Total Messages: ${stats.total_messages}`,
+      `## ${t("export.allTime")}`,
+      `- ${t("export.totalTokens")}: ${formatTokens(totalTokens, "full")}`,
+      `- ${t("export.totalCost")}: ${formatCost(totalCost)}`,
+      `- ${t("export.totalSessions")}: ${stats.total_sessions}`,
+      `- ${t("export.totalMessages")}: ${stats.total_messages}`,
       ``,
-      `## Models`,
+      `## ${t("export.models")}`,
       ...Object.entries(stats.model_usage).map(
         ([model, u]) => `- **${model}**: ${formatTokens(u.input_tokens + u.output_tokens + u.cache_read, "full")} tokens, ${formatCost(u.cost_usd)}`
       ),
@@ -67,7 +69,7 @@ export function Header({ stats }: Props) {
     writeText(lines.join("\n")).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-      showToast("Summary copied!");
+      showToast(t("header.summaryCopied"));
     });
   }, [stats]);
 
@@ -106,21 +108,21 @@ export function Header({ stats }: Props) {
           letterSpacing: "-0.3px",
           color: "var(--text-primary)",
         }}>
-          AI Token Monitor
+          {t("app.title")}
         </div>
         <div style={{
           fontSize: 11,
           color: "var(--text-secondary)",
           fontWeight: 600,
         }}>
-          Claude Code Usage Tracker
+          {t("app.subtitle")}
         </div>
       </div>
 
       {/* Share button */}
       <button
         onClick={handleExport}
-        title="Copy summary to clipboard"
+        title={t("header.copySummary")}
         style={{
           background: "none",
           border: "none",
@@ -149,7 +151,7 @@ export function Header({ stats }: Props) {
       {/* Capture button */}
       <button
         onClick={handleCapture}
-        title="Capture screenshot to clipboard"
+        title={t("header.captureScreenshot")}
         style={{
           background: "none",
           border: "none",
@@ -178,7 +180,7 @@ export function Header({ stats }: Props) {
       {/* Settings button */}
       <button
         onClick={() => setShowSettings(!showSettings)}
-        title="Settings"
+        title={t("header.settings")}
         style={{
           background: "none",
           border: "none",

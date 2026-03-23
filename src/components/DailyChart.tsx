@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import type { DailyUsage } from "../lib/types";
 import { formatTokens, formatCost, getTotalTokens, formatDate, toLocalDateStr } from "../lib/format";
 import { useSettings } from "../contexts/SettingsContext";
+import { useI18n } from "../i18n/I18nContext";
 
 interface Props {
   daily: DailyUsage[];
@@ -10,6 +11,7 @@ interface Props {
 
 export function DailyChart({ daily, days = 7 }: Props) {
   const { prefs } = useSettings();
+  const t = useI18n();
   const [mode, setMode] = useState<"tokens" | "cost">("tokens");
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
@@ -80,7 +82,7 @@ export function DailyChart({ daily, days = 7 }: Props) {
           textTransform: "uppercase",
           letterSpacing: "0.5px",
         }}>
-          Daily ({days}d)
+          {t("daily.title", { days })}
         </div>
         <div style={{
           display: "flex",
@@ -102,10 +104,9 @@ export function DailyChart({ daily, days = 7 }: Props) {
                 background: mode === m ? "var(--accent-purple)" : "transparent",
                 color: mode === m ? "#fff" : "var(--text-secondary)",
                 transition: "all 0.15s ease",
-                textTransform: "capitalize",
               }}
             >
-              {m}
+              {m === "tokens" ? t("daily.tokens") : t("daily.cost")}
             </button>
           ))}
         </div>

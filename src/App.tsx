@@ -2,8 +2,9 @@ import { useState, useMemo } from "react";
 import { useTokenStats } from "./hooks/useTokenStats";
 import { useToday } from "./hooks/useToday";
 import { getTotalTokens } from "./lib/format";
-import { SettingsProvider } from "./contexts/SettingsContext";
+import { SettingsProvider, useSettings } from "./contexts/SettingsContext";
 import { AuthProvider } from "./contexts/AuthContext";
+import { I18nProvider, useI18n } from "./i18n/I18nContext";
 import { PopoverShell } from "./components/PopoverShell";
 import { Header } from "./components/Header";
 import { TabBar } from "./components/TabBar";
@@ -20,6 +21,7 @@ import { SupportBanner } from "./components/SupportBanner";
 
 function AppContent() {
   const { stats, error, loading } = useTokenStats();
+  const t = useI18n();
   const [activeTab, setActiveTab] = useState<TabType>("overview");
   const todayStr = useToday();
 
@@ -55,7 +57,7 @@ function AppContent() {
           fontSize: 13,
           fontWeight: 600,
         }}>
-          Loading...
+          {t("app.loading")}
         </div>
       </PopoverShell>
     );
@@ -84,9 +86,9 @@ function AppContent() {
               <path d="M12 8v4M12 16h.01"/>
             </svg>
           </div>
-          <div>Claude Code stats not found</div>
+          <div>{t("app.error.title")}</div>
           <div style={{ fontSize: 10, color: "var(--text-secondary)" }}>
-            Make sure Claude Code is installed and has been used at least once.
+            {t("app.error.description")}
           </div>
         </div>
       </PopoverShell>
@@ -124,12 +126,23 @@ function AppContent() {
   );
 }
 
+function I18nBridge({ children }: { children: React.ReactNode }) {
+  const { prefs } = useSettings();
+  return (
+    <I18nProvider locale={prefs.language}>
+      {children}
+    </I18nProvider>
+  );
+}
+
 function App() {
   return (
     <SettingsProvider>
-      <AuthProvider>
-        <AppContent />
-      </AuthProvider>
+      <I18nBridge>
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
+      </I18nBridge>
     </SettingsProvider>
   );
 }

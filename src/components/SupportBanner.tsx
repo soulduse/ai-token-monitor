@@ -1,8 +1,10 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { useI18n } from "../i18n/I18nContext";
 
 const SUPPORT_URL = "https://ctee.kr/place/programmingzombie";
 
 export function SupportBanner() {
+  const t = useI18n();
   return (
     <button
       onClick={() => openUrl(SUPPORT_URL)}
@@ -32,7 +34,7 @@ export function SupportBanner() {
         <line x1="10" y1="2" x2="10" y2="4"/>
         <line x1="14" y1="2" x2="14" y2="4"/>
       </svg>
-      Buy me a coffee
+      {t("support.buyMeCoffee")}
     </button>
   );
 }

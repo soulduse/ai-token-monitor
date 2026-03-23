@@ -1,6 +1,7 @@
 import type { ModelUsage } from "../lib/types";
 import { formatTokens, formatCost } from "../lib/format";
 import { useSettings } from "../contexts/SettingsContext";
+import { useI18n } from "../i18n/I18nContext";
 
 interface Props {
   modelUsage: Record<string, ModelUsage>;
@@ -21,6 +22,7 @@ function shortModelName(name: string): string {
 
 export function ModelBreakdown({ modelUsage }: Props) {
   const { prefs } = useSettings();
+  const t = useI18n();
   const models = Object.entries(modelUsage).sort(
     ([, a], [, b]) =>
       b.input_tokens + b.output_tokens - (a.input_tokens + a.output_tokens)
@@ -47,7 +49,7 @@ export function ModelBreakdown({ modelUsage }: Props) {
         letterSpacing: "0.5px",
         marginBottom: 10,
       }}>
-        Model Usage
+        {t("model.title")}
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -113,9 +115,9 @@ export function ModelBreakdown({ modelUsage }: Props) {
         gap: 12,
         marginTop: 10,
       }}>
-        <LegendItem color="var(--accent-purple)" label="Input" />
-        <LegendItem color="var(--accent-pink)" label="Output" />
-        <LegendItem color="var(--accent-mint)" label="Cache" />
+        <LegendItem color="var(--accent-purple)" label={t("model.input")} />
+        <LegendItem color="var(--accent-pink)" label={t("model.output")} />
+        <LegendItem color="var(--accent-mint)" label={t("model.cache")} />
       </div>
     </div>
   );

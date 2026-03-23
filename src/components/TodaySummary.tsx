@@ -2,6 +2,7 @@ import type { DailyUsage } from "../lib/types";
 import { formatTokens, formatCost, getTotalTokens } from "../lib/format";
 import { useSettings } from "../contexts/SettingsContext";
 import { InfoTooltip } from "./InfoTooltip";
+import { useI18n } from "../i18n/I18nContext";
 
 interface Props {
   today: DailyUsage | null;
@@ -10,6 +11,7 @@ interface Props {
 
 export function TodaySummary({ today, weekAvg }: Props) {
   const { prefs } = useSettings();
+  const t = useI18n();
   const totalTokens = today ? getTotalTokens(today.tokens) : 0;
   const cost = today?.cost_usd ?? 0;
   const messages = today?.messages ?? 0;
@@ -34,7 +36,7 @@ export function TodaySummary({ today, weekAvg }: Props) {
         letterSpacing: "0.5px",
         marginBottom: 8,
       }}>
-        Today
+        {t("today.title")}
       </div>
 
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
@@ -47,7 +49,7 @@ export function TodaySummary({ today, weekAvg }: Props) {
           {formatTokens(totalTokens, prefs.number_format)}
         </span>
         <span style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600 }}>
-          tokens
+          {t("today.tokens")}
         </span>
         {comparison !== 0 && (
           <span style={{
@@ -60,7 +62,7 @@ export function TodaySummary({ today, weekAvg }: Props) {
             padding: "2px 6px",
             borderRadius: 6,
           }}>
-            {comparison > 0 ? "+" : ""}{comparison}% vs 7d avg
+            {comparison > 0 ? "+" : ""}{comparison}% {t("today.vs7d")}
           </span>
         )}
       </div>
@@ -71,20 +73,20 @@ export function TodaySummary({ today, weekAvg }: Props) {
         marginTop: 8,
       }}>
         <StatChip
-          label="Cost"
+          label={t("today.cost")}
           value={formatCost(cost)}
           color="var(--accent-orange)"
           tooltip={
             <InfoTooltip>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>Estimated API cost ($/MTok)</div>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>{t("today.costTooltipTitle")}</div>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 9 }}>
                 <thead>
                   <tr style={{ opacity: 0.7 }}>
-                    <th style={{ textAlign: "left", paddingBottom: 2 }}>Model</th>
-                    <th style={{ textAlign: "right", paddingBottom: 2 }}>In</th>
-                    <th style={{ textAlign: "right", paddingBottom: 2 }}>Out</th>
-                    <th style={{ textAlign: "right", paddingBottom: 2 }}>Cache R</th>
-                    <th style={{ textAlign: "right", paddingBottom: 2 }}>Cache W</th>
+                    <th style={{ textAlign: "left", paddingBottom: 2 }}>{t("today.costTooltipModel")}</th>
+                    <th style={{ textAlign: "right", paddingBottom: 2 }}>{t("today.costTooltipIn")}</th>
+                    <th style={{ textAlign: "right", paddingBottom: 2 }}>{t("today.costTooltipOut")}</th>
+                    <th style={{ textAlign: "right", paddingBottom: 2 }}>{t("today.costTooltipCacheR")}</th>
+                    <th style={{ textAlign: "right", paddingBottom: 2 }}>{t("today.costTooltipCacheW")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -94,13 +96,13 @@ export function TodaySummary({ today, weekAvg }: Props) {
                 </tbody>
               </table>
               <div style={{ marginTop: 6, opacity: 0.7, fontSize: 9 }}>
-                Pro/Max plan users pay subscription, not per-token.
+                {t("today.costTooltipNote")}
               </div>
             </InfoTooltip>
           }
         />
-        <StatChip label="Messages" value={String(messages)} color="var(--accent-purple)" />
-        <StatChip label="Sessions" value={String(sessions)} color="var(--accent-mint)" />
+        <StatChip label={t("today.messages")} value={String(messages)} color="var(--accent-purple)" />
+        <StatChip label={t("today.sessions")} value={String(sessions)} color="var(--accent-mint)" />
       </div>
     </div>
   );
