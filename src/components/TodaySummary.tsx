@@ -76,10 +76,25 @@ export function TodaySummary({ today, weekAvg }: Props) {
           color="var(--accent-orange)"
           tooltip={
             <InfoTooltip>
-              <div style={{ fontWeight: 700, marginBottom: 4 }}>API per-token pricing</div>
-              <div>input + output + cache_read (10%) + cache_write (125%)</div>
-              <div style={{ marginTop: 4, opacity: 0.8 }}>
-                Pro/Max plan users pay their subscription fee, not per-token costs.
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Estimated API cost ($/MTok)</div>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 9 }}>
+                <thead>
+                  <tr style={{ opacity: 0.7 }}>
+                    <th style={{ textAlign: "left", paddingBottom: 2 }}>Model</th>
+                    <th style={{ textAlign: "right", paddingBottom: 2 }}>In</th>
+                    <th style={{ textAlign: "right", paddingBottom: 2 }}>Out</th>
+                    <th style={{ textAlign: "right", paddingBottom: 2 }}>Cache R</th>
+                    <th style={{ textAlign: "right", paddingBottom: 2 }}>Cache W</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td>Opus</td><td style={{ textAlign: "right" }}>$5</td><td style={{ textAlign: "right" }}>$25</td><td style={{ textAlign: "right" }}>$0.50</td><td style={{ textAlign: "right" }}>$6.25</td></tr>
+                  <tr><td>Sonnet</td><td style={{ textAlign: "right" }}>$3</td><td style={{ textAlign: "right" }}>$15</td><td style={{ textAlign: "right" }}>$0.30</td><td style={{ textAlign: "right" }}>$3.75</td></tr>
+                  <tr><td>Haiku</td><td style={{ textAlign: "right" }}>$1</td><td style={{ textAlign: "right" }}>$5</td><td style={{ textAlign: "right" }}>$0.10</td><td style={{ textAlign: "right" }}>$1.25</td></tr>
+                </tbody>
+              </table>
+              <div style={{ marginTop: 6, opacity: 0.7, fontSize: 9 }}>
+                Pro/Max plan users pay subscription, not per-token.
               </div>
             </InfoTooltip>
           }

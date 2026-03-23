@@ -34,8 +34,7 @@ export function InfoTooltip({ children }: Props) {
         <div style={{
           position: "absolute",
           bottom: "calc(100% + 6px)",
-          left: "50%",
-          transform: "translateX(-50%)",
+          left: 0,
           background: "var(--text-primary)",
           color: "var(--bg-primary)",
           padding: "8px 10px",
@@ -43,7 +42,7 @@ export function InfoTooltip({ children }: Props) {
           fontSize: 10,
           lineHeight: 1.5,
           whiteSpace: "normal",
-          width: 240,
+          width: 220,
           zIndex: 100,
           boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
           pointerEvents: "none",
