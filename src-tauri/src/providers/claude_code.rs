@@ -118,19 +118,24 @@ fn date_to_month(date: &str) -> String {
 // ---
 
 pub struct ClaudeCodeProvider {
-    claude_dir: PathBuf,
+    /// All discovered Claude config directories (~/.claude, ~/.claude-work, etc.)
+    claude_dirs: Vec<PathBuf>,
 }
 
 impl ClaudeCodeProvider {
     pub fn new() -> Self {
-        let home = dirs::home_dir().unwrap_or_default();
         Self {
-            claude_dir: home.join(".claude"),
+            claude_dirs: crate::get_claude_dirs(),
         }
     }
 
+    /// Primary config directory (~/.claude) used for prefs and disk cache storage.
+    fn primary_dir(&self) -> &PathBuf {
+        &self.claude_dirs[0]
+    }
+
     /// Parse JSONL files into a dedup map, optionally resuming from known file offsets.
-    /// Returns updated file offsets.
+    /// Scans all discovered config directories. Returns updated file offsets.
     fn parse_files_into(
         &self,
         dedup: &mut HashMap<String, SessionEntry>,
@@ -139,57 +144,59 @@ impl ClaudeCodeProvider {
     ) -> HashMap<PathBuf, u64> {
         let mut new_offsets: HashMap<PathBuf, u64> = HashMap::new();
 
-        let projects_dir = self.claude_dir.join("projects");
-        let pattern = projects_dir.join("**").join("*.jsonl").to_string_lossy().to_string();
-
-        let files = glob::glob(&pattern).unwrap_or_else(|_| glob::glob("").unwrap());
-
         let current_month = if only_current_month {
             Some(current_month_str())
         } else {
             None
         };
 
-        for path in files.flatten() {
-            if let Some(ref month) = current_month {
-                if let Ok(metadata) = fs::metadata(&path) {
-                    if let Ok(modified) = metadata.modified() {
-                        let modified_date: chrono::DateTime<chrono::Local> = modified.into();
-                        let file_month = modified_date.format("%Y-%m").to_string();
-                        if &file_month < month {
-                            continue;
-                        }
-                    }
-                }
-            }
+        for claude_dir in &self.claude_dirs {
+            let projects_dir = claude_dir.join("projects");
+            let pattern = projects_dir.join("**").join("*.jsonl").to_string_lossy().to_string();
 
-            if let Ok(mut file) = fs::File::open(&path) {
-                // Resume from previous offset if available
-                let prev_offset = prev_offsets.get(&path).copied().unwrap_or(0);
-                let file_len = file.metadata().map(|m| m.len()).unwrap_or(0);
+            let files = glob::glob(&pattern).unwrap_or_else(|_| glob::glob("").unwrap());
 
-                // If file was truncated/replaced, read from start
-                let start_offset = if prev_offset > file_len { 0 } else { prev_offset };
-
-                if start_offset > 0 {
-                    let _ = file.seek(SeekFrom::Start(start_offset));
-                }
-
-                let reader = BufReader::new(&file);
-                for line in reader.lines().map_while(Result::ok) {
-                    if let Some(entry) = parse_session_line(&line) {
-                        if let Some(ref month) = current_month {
-                            if &date_to_month(&entry.date) < month {
+            for path in files.flatten() {
+                if let Some(ref month) = current_month {
+                    if let Ok(metadata) = fs::metadata(&path) {
+                        if let Ok(modified) = metadata.modified() {
+                            let modified_date: chrono::DateTime<chrono::Local> = modified.into();
+                            let file_month = modified_date.format("%Y-%m").to_string();
+                            if &file_month < month {
                                 continue;
                             }
                         }
-                        let key = format!("{}:{}", entry.message_id, entry.request_id);
-                        dedup.insert(key, entry);
                     }
                 }
 
-                // Record current file position for incremental reads
-                new_offsets.insert(path, file_len);
+                if let Ok(mut file) = fs::File::open(&path) {
+                    // Resume from previous offset if available
+                    let prev_offset = prev_offsets.get(&path).copied().unwrap_or(0);
+                    let file_len = file.metadata().map(|m| m.len()).unwrap_or(0);
+
+                    // If file was truncated/replaced, read from start
+                    let start_offset = if prev_offset > file_len { 0 } else { prev_offset };
+
+                    if start_offset > 0 {
+                        let _ = file.seek(SeekFrom::Start(start_offset));
+                    }
+
+                    let reader = BufReader::new(&file);
+                    for line in reader.lines().map_while(Result::ok) {
+                        if let Some(entry) = parse_session_line(&line) {
+                            if let Some(ref month) = current_month {
+                                if &date_to_month(&entry.date) < month {
+                                    continue;
+                                }
+                            }
+                            let key = format!("{}:{}", entry.message_id, entry.request_id);
+                            dedup.insert(key, entry);
+                        }
+                    }
+
+                    // Record current file position for incremental reads
+                    new_offsets.insert(path, file_len);
+                }
             }
         }
 
@@ -434,7 +441,7 @@ impl TokenProvider for ClaudeCodeProvider {
     }
 
     fn is_available(&self) -> bool {
-        self.claude_dir.join("projects").exists()
+        self.claude_dirs.iter().any(|d| d.join("projects").exists())
     }
 }
 
@@ -514,7 +521,7 @@ impl ClaudeCodeProvider {
         }
 
         // Merge with disk cache
-        let disk_cache = load_disk_cache(&self.claude_dir).unwrap_or(DiskCache { months: HashMap::new() });
+        let disk_cache = load_disk_cache(self.primary_dir()).unwrap_or(DiskCache { months: HashMap::new() });
         let result = self.merge_and_finalize(
             state.daily_map.clone(),
             state.model_usage_map.clone(),
@@ -530,7 +537,7 @@ impl ClaudeCodeProvider {
     fn full_parse(&self) -> Result<AllStats, String> {
         let current_month = current_month_str();
 
-        let mut disk_cache = load_disk_cache(&self.claude_dir).unwrap_or(DiskCache {
+        let mut disk_cache = load_disk_cache(self.primary_dir()).unwrap_or(DiskCache {
             months: HashMap::new(),
         });
         let has_historical = !disk_cache.months.is_empty();
@@ -563,7 +570,7 @@ impl ClaudeCodeProvider {
                 });
             }
             if !new_cache.months.is_empty() {
-                save_disk_cache(&self.claude_dir, &new_cache);
+                save_disk_cache(self.primary_dir(), &new_cache);
                 disk_cache = new_cache;
             }
 

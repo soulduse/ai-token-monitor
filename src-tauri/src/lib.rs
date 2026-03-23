@@ -10,10 +10,23 @@ use tauri::{Emitter, Manager};
 
 use providers::types::UserPreferences;
 
-fn get_claude_dir() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_default()
-        .join(".claude")
+/// Discover all Claude config directories (~/.claude, ~/.claude-work, etc.)
+/// Returns directories that contain a `projects/` subfolder.
+/// Claude Code supports CLAUDE_CONFIG_DIR for running multiple accounts/configs.
+pub fn get_claude_dirs() -> Vec<PathBuf> {
+    let home = dirs::home_dir().unwrap_or_default();
+    let mut dirs = vec![home.join(".claude")];
+
+    if let Ok(entries) = std::fs::read_dir(&home) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with(".claude-") && entry.path().join("projects").is_dir() {
+                dirs.push(entry.path());
+            }
+        }
+    }
+
+    dirs
 }
 
 pub fn update_tray_title(app_handle: &tauri::AppHandle) {
@@ -59,8 +72,7 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
 }
 
 fn start_file_watcher(app_handle: tauri::AppHandle) {
-    let claude_dir = get_claude_dir();
-    let projects_dir = claude_dir.join("projects");
+    let claude_dirs = get_claude_dirs();
 
     thread::spawn(move || {
         let (tx, rx) = mpsc::channel();
@@ -85,8 +97,11 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
             Err(_) => return,
         };
 
-        if projects_dir.exists() {
-            let _ = watcher.watch(&projects_dir, RecursiveMode::Recursive);
+        for claude_dir in &claude_dirs {
+            let projects_dir = claude_dir.join("projects");
+            if projects_dir.exists() {
+                let _ = watcher.watch(&projects_dir, RecursiveMode::Recursive);
+            }
         }
 
         // Adaptive debounce: escalate during burst activity
