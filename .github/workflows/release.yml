@@ -2,11 +2,41 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+    paths:
+      - 'package.json'
 
 jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Get current version
+        id: version
+        run: echo "version=v$(node -p 'require("./package.json").version')" >> $GITHUB_OUTPUT
+
+      - name: Check if version changed
+        id: check
+        run: |
+          CURRENT=$(node -p 'require("./package.json").version')
+          PREVIOUS=$(git show HEAD~1:package.json | node -p 'JSON.parse(require("fs").readFileSync("/dev/stdin","utf8")).version')
+          if [ "$CURRENT" != "$PREVIOUS" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Version changed: $PREVIOUS -> $CURRENT"
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "Version unchanged: $CURRENT"
+          fi
+
   build-macos:
+    needs: check-version
+    if: needs.check-version.outputs.changed == 'true'
     runs-on: macos-latest
     permissions:
       contents: write
@@ -58,22 +88,23 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: ${{ github.ref_name }}
+          tagName: ${{ needs.check-version.outputs.version }}
+          releaseName: ${{ needs.check-version.outputs.version }}
           releaseBody: |
-            ## AI Token Monitor ${{ github.ref_name }}
+            ## AI Token Monitor ${{ needs.check-version.outputs.version }}
 
             ### Download
             - macOS (Apple Silicon): `.dmg` 파일을 다운로드하세요.
             - Windows: `.exe` 인스톨러를 다운로드하세요.
 
             ### Changes
-            See [commit history](https://github.com/${{ github.repository }}/commits/${{ github.ref_name }}) for details.
+            See [commit history](https://github.com/${{ github.repository }}/commits/main) for details.
           releaseDraft: false
           prerelease: false
 
   build-windows:
-    needs: build-macos
+    needs: [check-version, build-macos]
+    if: needs.check-version.outputs.changed == 'true'
     runs-on: windows-latest
     permissions:
       contents: write
@@ -103,16 +134,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: ${{ github.ref_name }}
+          tagName: ${{ needs.check-version.outputs.version }}
+          releaseName: ${{ needs.check-version.outputs.version }}
           releaseBody: |
-            ## AI Token Monitor ${{ github.ref_name }}
+            ## AI Token Monitor ${{ needs.check-version.outputs.version }}
 
             ### Download
             - macOS (Apple Silicon): `.dmg` 파일을 다운로드하세요.
             - Windows: `.exe` 인스톨러를 다운로드하세요.
 
             ### Changes
-            See [commit history](https://github.com/${{ github.repository }}/commits/${{ github.ref_name }}) for details.
+            See [commit history](https://github.com/${{ github.repository }}/commits/main) for details.
           releaseDraft: false
           prerelease: false
