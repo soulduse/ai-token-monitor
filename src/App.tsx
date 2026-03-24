@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useTokenStats } from "./hooks/useTokenStats";
+import { useCombinedStats } from "./hooks/useCombinedStats";
 import { useToday } from "./hooks/useToday";
 import { getTotalTokens } from "./lib/format";
 import { SettingsProvider, useSettings } from "./contexts/SettingsContext";
@@ -18,9 +18,14 @@ import { CacheEfficiency } from "./components/CacheEfficiency";
 import { Leaderboard } from "./components/Leaderboard";
 import { ActivityGraph } from "./components/ActivityGraph";
 import { SupportBanner } from "./components/SupportBanner";
+import { SourceSelector } from "./components/SourceSelector";
 
 function AppContent() {
-  const { stats, error, loading } = useTokenStats();
+  const { prefs } = useSettings();
+  const { stats, error, loading } = useCombinedStats({
+    includeClaude: prefs.include_claude,
+    includeCodex: prefs.include_codex,
+  });
   const t = useI18n();
   const [activeTab, setActiveTab] = useState<TabType>("overview");
   const todayStr = useToday();
@@ -44,7 +49,7 @@ function AppContent() {
     return { today, weekAvg };
   }, [stats, todayStr]);
 
-  if (loading) {
+  if (loading && !stats) {
     return (
       <PopoverShell>
         <Header />
@@ -98,6 +103,7 @@ function AppContent() {
   return (
     <PopoverShell>
       <Header stats={stats} />
+      <SourceSelector />
       <TabBar activeTab={activeTab} onChange={setActiveTab} />
 
       {/* Keep mounted tabs alive to avoid remount/recalculation on switch */}
@@ -118,7 +124,7 @@ function AppContent() {
 
       {/* Leaderboard lazy-loads (network requests), keep conditional */}
       {activeTab === "leaderboard" && (
-        <Leaderboard stats={stats} />
+        <Leaderboard />
       )}
 
       <SupportBanner />

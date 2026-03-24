@@ -4,6 +4,19 @@ import { useSettings } from "../contexts/SettingsContext";
 import { InfoTooltip } from "./InfoTooltip";
 import { useI18n } from "../i18n/I18nContext";
 
+const CLAUDE_PRICING = [
+  { model: "Opus", input: "$5", output: "$25", cacheR: "$0.50", cacheW: "$6.25" },
+  { model: "Sonnet", input: "$3", output: "$15", cacheR: "$0.30", cacheW: "$3.75" },
+  { model: "Haiku", input: "$1", output: "$5", cacheR: "$0.10", cacheW: "$1.25" },
+];
+
+const CODEX_PRICING = [
+  { model: "gpt-4.1", input: "$2.00", output: "$8.00", cacheR: "$0.50", cacheW: "—" },
+  { model: "o4-mini", input: "$1.10", output: "$4.40", cacheR: "$0.55", cacheW: "—" },
+  { model: "codex-mini", input: "$1.50", output: "$6.00", cacheR: "—", cacheW: "—" },
+  { model: "o3", input: "$0.40", output: "$1.60", cacheR: "$0.20", cacheW: "—" },
+];
+
 interface Props {
   today: DailyUsage | null;
   weekAvg: number;
@@ -79,22 +92,37 @@ export function TodaySummary({ today, weekAvg }: Props) {
           tooltip={
             <InfoTooltip>
               <div style={{ fontWeight: 700, marginBottom: 6 }}>{t("today.costTooltipTitle")}</div>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 9 }}>
-                <thead>
-                  <tr style={{ opacity: 0.7 }}>
-                    <th style={{ textAlign: "left", paddingBottom: 2 }}>{t("today.costTooltipModel")}</th>
-                    <th style={{ textAlign: "right", paddingBottom: 2 }}>{t("today.costTooltipIn")}</th>
-                    <th style={{ textAlign: "right", paddingBottom: 2 }}>{t("today.costTooltipOut")}</th>
-                    <th style={{ textAlign: "right", paddingBottom: 2 }}>{t("today.costTooltipCacheR")}</th>
-                    <th style={{ textAlign: "right", paddingBottom: 2 }}>{t("today.costTooltipCacheW")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr><td>Opus</td><td style={{ textAlign: "right" }}>$5</td><td style={{ textAlign: "right" }}>$25</td><td style={{ textAlign: "right" }}>$0.50</td><td style={{ textAlign: "right" }}>$6.25</td></tr>
-                  <tr><td>Sonnet</td><td style={{ textAlign: "right" }}>$3</td><td style={{ textAlign: "right" }}>$15</td><td style={{ textAlign: "right" }}>$0.30</td><td style={{ textAlign: "right" }}>$3.75</td></tr>
-                  <tr><td>Haiku</td><td style={{ textAlign: "right" }}>$1</td><td style={{ textAlign: "right" }}>$5</td><td style={{ textAlign: "right" }}>$0.10</td><td style={{ textAlign: "right" }}>$1.25</td></tr>
-                </tbody>
-              </table>
+              {(prefs.include_claude ? [{ label: "Claude", rows: CLAUDE_PRICING }] : [])
+                .concat(prefs.include_codex ? [{ label: "Codex", rows: CODEX_PRICING }] : [])
+                .map(({ label, rows }) => (
+                <div key={label}>
+                  {prefs.include_claude && prefs.include_codex && (
+                    <div style={{ fontWeight: 600, fontSize: 9, marginTop: 4, marginBottom: 2, opacity: 0.7 }}>{label}</div>
+                  )}
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 9 }}>
+                    <thead>
+                      <tr style={{ opacity: 0.7 }}>
+                        <th style={{ textAlign: "left", paddingBottom: 2 }}>{t("today.costTooltipModel")}</th>
+                        <th style={{ textAlign: "right", paddingBottom: 2 }}>{t("today.costTooltipIn")}</th>
+                        <th style={{ textAlign: "right", paddingBottom: 2 }}>{t("today.costTooltipOut")}</th>
+                        <th style={{ textAlign: "right", paddingBottom: 2 }}>{t("today.costTooltipCacheR")}</th>
+                        <th style={{ textAlign: "right", paddingBottom: 2 }}>{t("today.costTooltipCacheW")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((r) => (
+                        <tr key={r.model}>
+                          <td>{r.model}</td>
+                          <td style={{ textAlign: "right" }}>{r.input}</td>
+                          <td style={{ textAlign: "right" }}>{r.output}</td>
+                          <td style={{ textAlign: "right" }}>{r.cacheR}</td>
+                          <td style={{ textAlign: "right" }}>{r.cacheW}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
               <div style={{ marginTop: 6, opacity: 0.7, fontSize: 9 }}>
                 {t("today.costTooltipNote")}
               </div>

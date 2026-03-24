@@ -1,16 +1,14 @@
+import { useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useLeaderboardSync } from "../hooks/useLeaderboardSync";
-import type { AllStats } from "../lib/types";
+import { useTokenStats } from "../hooks/useTokenStats";
+import type { LeaderboardProvider } from "../lib/types";
 import type { User } from "@supabase/supabase-js";
 import { useSettings } from "../contexts/SettingsContext";
 import { LeaderboardRow } from "./LeaderboardRow";
 import { useI18n } from "../i18n/I18nContext";
 
-interface Props {
-  stats: AllStats;
-}
-
-export function Leaderboard({ stats }: Props) {
+export function Leaderboard() {
   const { user, loading: authLoading, signIn, available } = useAuth();
   const { prefs } = useSettings();
   const t = useI18n();
@@ -43,7 +41,7 @@ export function Leaderboard({ stats }: Props) {
     />;
   }
 
-  return <LeaderboardContent stats={stats} user={user} />;
+  return <LeaderboardContent user={user} />;
 }
 
 function LeaderboardCTA({
@@ -133,22 +131,82 @@ function LeaderboardCTA({
   );
 }
 
-function LeaderboardContent({ stats, user }: { stats: AllStats; user: User }) {
+function LeaderboardContent({ user }: { user: User }) {
   const t = useI18n();
+  const { prefs } = useSettings();
+  const [provider, setProvider] = useState<LeaderboardProvider>("claude");
+
+  // Determine available provider tabs
+  const availableProviders: LeaderboardProvider[] = [];
+  if (prefs.include_claude) availableProviders.push("claude");
+  if (prefs.include_codex) availableProviders.push("codex");
+  // Default to claude if nothing enabled
+  if (availableProviders.length === 0) availableProviders.push("claude");
+
+  // Ensure selected provider is valid
+  const activeProvider = availableProviders.includes(provider) ? provider : availableProviders[0];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Provider tabs — only show if multiple providers */}
+      {availableProviders.length > 1 && (
+        <div style={{
+          display: "flex",
+          background: "var(--heat-0)",
+          borderRadius: 6,
+          padding: 2,
+          alignSelf: "center",
+        }}>
+          {availableProviders.map((p) => (
+            <button
+              key={p}
+              onClick={() => setProvider(p)}
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                padding: "4px 14px",
+                borderRadius: 4,
+                border: "none",
+                cursor: "pointer",
+                background: activeProvider === p ? "var(--accent-purple)" : "transparent",
+                color: activeProvider === p ? "#fff" : "var(--text-secondary)",
+                transition: "all 0.15s ease",
+              }}
+            >
+              {p === "claude" ? t("sources.claude") : t("sources.codex")}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <ProviderLeaderboard
+        provider={activeProvider}
+        user={user}
+      />
+    </div>
+  );
+}
+
+function ProviderLeaderboard({
+  provider,
+  user,
+}: {
+  provider: LeaderboardProvider;
+  user: User;
+}) {
+  const t = useI18n();
+  const { stats } = useTokenStats(provider);
   const { leaderboard, loading, period, setPeriod } = useLeaderboardSync({
     stats,
     user,
     optedIn: true,
+    provider,
   });
 
   const myRank = leaderboard.findIndex((e) => e.user_id === user.id) + 1;
 
   return (
-    <div style={{
-      display: "flex",
-      flexDirection: "column",
-      gap: 14,
-    }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {/* Period toggle */}
       <div style={{
         display: "flex",
