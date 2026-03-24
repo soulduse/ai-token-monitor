@@ -2,6 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::providers::claude_code::ClaudeCodeProvider;
+use crate::providers::codex::CodexProvider;
 use crate::providers::traits::TokenProvider;
 use crate::providers::types::{AllStats, UserPreferences};
 
@@ -27,6 +28,24 @@ pub async fn get_all_stats() -> Result<AllStats, String> {
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn get_codex_stats() -> Result<AllStats, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let provider = CodexProvider::new();
+        if !provider.is_available() {
+            return Err("Codex stats not available".to_string());
+        }
+        provider.fetch_stats()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub fn is_codex_available() -> bool {
+    CodexProvider::new().is_available()
 }
 
 #[tauri::command]

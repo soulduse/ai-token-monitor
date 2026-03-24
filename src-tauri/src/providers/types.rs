@@ -46,6 +46,10 @@ pub struct UserPreferences {
     pub language: String,
     #[serde(default = "default_config_dirs")]
     pub config_dirs: Vec<String>,
+    #[serde(default = "default_true")]
+    pub include_claude: bool,
+    #[serde(default)]
+    pub include_codex: bool,
 }
 
 fn default_theme() -> String {
@@ -64,6 +68,10 @@ fn default_config_dirs() -> Vec<String> {
     vec!["~/.claude".to_string()]
 }
 
+fn default_true() -> bool {
+    true
+}
+
 impl Default for UserPreferences {
     fn default() -> Self {
         Self {
@@ -74,6 +82,8 @@ impl Default for UserPreferences {
             color_mode: default_color_mode(),
             language: default_language(),
             config_dirs: default_config_dirs(),
+            include_claude: true,
+            include_codex: false,
         }
     }
 }

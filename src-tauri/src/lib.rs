@@ -53,31 +53,58 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
     }
 
     // Use cached stats only — never trigger a full re-parse from tray update
-    if let Some(stats) = providers::claude_code::get_cached_stats() {
-        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-        let today_cost = stats
-            .daily
-            .iter()
-            .find(|d| d.date == today)
-            .map(|d| d.cost_usd)
-            .unwrap_or(0.0);
+    // Sum costs from all enabled providers
+    let claude_cost = providers::claude_code::get_cached_stats()
+        .and_then(|s| {
+            let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+            s.daily.iter().find(|d| d.date == today).map(|d| d.cost_usd)
+        })
+        .unwrap_or(0.0);
 
-        if let Some(tray) = app_handle.tray_by_id("main-tray") {
-            let title = if today_cost >= 1.0 {
-                format!("${:.0}", today_cost)
-            } else {
-                format!("${:.2}", today_cost)
-            };
-            #[cfg(target_os = "macos")]
-            let _ = tray.set_title(Some(&title));
-            let _ = tray.set_tooltip(Some(&format!("AI Token Monitor - Today: {}", title)));
-        }
+    let codex_cost = if prefs.include_codex {
+        providers::codex::get_cached_stats()
+            .and_then(|s| {
+                let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+                s.daily.iter().find(|d| d.date == today).map(|d| d.cost_usd)
+            })
+            .unwrap_or(0.0)
+    } else {
+        0.0
+    };
+
+    let today_cost = claude_cost + codex_cost;
+
+    if let Some(tray) = app_handle.tray_by_id("main-tray") {
+        let title = if today_cost >= 1.0 {
+            format!("${:.0}", today_cost)
+        } else {
+            format!("${:.2}", today_cost)
+        };
+        #[cfg(target_os = "macos")]
+        let _ = tray.set_title(Some(&title));
+        let _ = tray.set_tooltip(Some(&format!("AI Token Monitor - Today: {}", title)));
     }
+
+}
+
+fn get_all_watch_dirs() -> Vec<PathBuf> {
+    let config_dirs = get_config_dirs_from_prefs();
+    let home = dirs::home_dir().unwrap_or_default();
+    let mut dirs: Vec<PathBuf> = config_dirs
+        .iter()
+        .map(|d| d.join("projects"))
+        .collect();
+
+    // Add Codex session directories
+    let codex_sessions = home.join(".codex").join("sessions");
+    dirs.push(codex_sessions);
+    let codex_archived = home.join(".codex").join("archived_sessions");
+    dirs.push(codex_archived);
+
+    dirs
 }
 
 fn start_file_watcher(app_handle: tauri::AppHandle) {
-    let config_dirs = get_config_dirs_from_prefs();
-
     thread::spawn(move || {
         let (tx, rx) = mpsc::channel();
 
@@ -102,11 +129,10 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
         };
 
         let mut watched_dirs: Vec<PathBuf> = Vec::new();
-        for dir in &config_dirs {
-            let projects_dir = dir.join("projects");
-            if projects_dir.exists() {
-                let _ = watcher.watch(&projects_dir, RecursiveMode::Recursive);
-                watched_dirs.push(projects_dir);
+        for dir in get_all_watch_dirs() {
+            if dir.exists() {
+                let _ = watcher.watch(&dir, RecursiveMode::Recursive);
+                watched_dirs.push(dir);
             }
         }
 
@@ -139,28 +165,26 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                     }
                     eprintln!("[WATCH] file changed (debounce={}s), invalidating cache", debounce.as_secs());
                     providers::claude_code::invalidate_stats_cache();
+                    providers::codex::invalidate_stats_cache();
                     let _ = app_handle.emit("stats-updated", ());
                     update_tray_title(&app_handle);
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
-                    // Re-read config dirs and update watched paths if changed
-                    let new_dirs = get_config_dirs_from_prefs();
-                    let new_projects: Vec<PathBuf> = new_dirs.iter()
-                        .map(|d| d.join("projects"))
+                    // Re-read watch dirs and update if changed
+                    let new_watch: Vec<PathBuf> = get_all_watch_dirs()
+                        .into_iter()
                         .filter(|p| p.exists())
                         .collect();
-                    if new_projects != watched_dirs {
-                        // Unwatch old dirs
+                    if new_watch != watched_dirs {
                         for dir in &watched_dirs {
                             let _ = watcher.unwatch(dir);
                         }
-                        // Watch new dirs
-                        for dir in &new_projects {
+                        for dir in &new_watch {
                             let _ = watcher.watch(dir, RecursiveMode::Recursive);
                         }
-                        watched_dirs = new_projects;
-                        // Trigger stats refresh for new dirs
+                        watched_dirs = new_watch;
                         providers::claude_code::invalidate_stats_cache();
+                        providers::codex::invalidate_stats_cache();
                         let _ = app_handle.emit("stats-updated", ());
                     }
                     update_tray_title(&app_handle);
@@ -250,6 +274,8 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .invoke_handler(tauri::generate_handler![
             commands::get_all_stats,
+            commands::get_codex_stats,
+            commands::is_codex_available,
             commands::get_preferences,
             commands::set_preferences,
             commands::detect_claude_dirs,
