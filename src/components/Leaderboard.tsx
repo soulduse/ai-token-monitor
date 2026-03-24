@@ -1,24 +1,32 @@
+import { useMemo } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useLeaderboardSync } from "../hooks/useLeaderboardSync";
 import { useTokenStats } from "../hooks/useTokenStats";
-import type { AllStats } from "../lib/types";
+import type { LeaderboardProvider } from "../lib/types";
 import type { User } from "@supabase/supabase-js";
 import { useSettings } from "../contexts/SettingsContext";
 import { LeaderboardRow } from "./LeaderboardRow";
 import { useI18n } from "../i18n/I18nContext";
 
-interface Props {
-  stats: AllStats;
-}
-
-export function Leaderboard({ stats }: Props) {
+export function Leaderboard() {
   const { user, loading: authLoading, signIn, available } = useAuth();
   const { prefs } = useSettings();
   const t = useI18n();
-  const { stats: leaderboardStats } = useTokenStats({
+  const { stats: claudeStats } = useTokenStats({
     includeClaude: true,
     includeCodex: false,
   });
+  const { stats: codexStats } = useTokenStats({
+    includeClaude: false,
+    includeCodex: true,
+  });
+  const providers = useMemo<LeaderboardProvider[]>(
+    () => [
+      ...(prefs.include_claude ? ["claude" as const] : []),
+      ...(prefs.include_codex ? ["codex" as const] : []),
+    ],
+    [prefs.include_claude, prefs.include_codex]
+  );
 
   if (!available) {
     return (
@@ -48,7 +56,16 @@ export function Leaderboard({ stats }: Props) {
     />;
   }
 
-  return <LeaderboardContent stats={leaderboardStats ?? stats} user={user} />;
+  return (
+    <LeaderboardContent
+      user={user}
+      providers={providers}
+      providerStats={{
+        claude: claudeStats,
+        codex: codexStats,
+      }}
+    />
+  );
 }
 
 function LeaderboardCTA({
@@ -147,12 +164,21 @@ function LeaderboardCTA({
   );
 }
 
-function LeaderboardContent({ stats, user }: { stats: AllStats; user: User }) {
+function LeaderboardContent({
+  user,
+  providers,
+  providerStats,
+}: {
+  user: User;
+  providers: LeaderboardProvider[];
+  providerStats: Partial<Record<LeaderboardProvider, ReturnType<typeof useTokenStats>["stats"]>>;
+}) {
   const t = useI18n();
   const { leaderboard, loading, period, setPeriod } = useLeaderboardSync({
-    stats,
     user,
     optedIn: true,
+    providers,
+    providerStats,
   });
 
   const myRank = leaderboard.findIndex((e) => e.user_id === user.id) + 1;

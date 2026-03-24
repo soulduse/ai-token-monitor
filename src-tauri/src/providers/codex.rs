@@ -16,6 +16,13 @@ struct CachedStats {
     computed_at: Instant,
 }
 
+struct ModelPricing {
+    input: f64,
+    output: f64,
+    cache_read: f64,
+    cache_write: f64,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct TokenSnapshot {
     total_usage_tokens: Option<u64>,
@@ -153,8 +160,18 @@ impl CodexProvider {
                                     cache_write_tokens: 0,
                                 });
 
+                            let pricing = get_pricing(&current_model);
+                            let cost = calculate_cost(
+                                &pricing,
+                                snapshot.input_tokens,
+                                snapshot.output_tokens,
+                                snapshot.cache_read_tokens,
+                                0,
+                            );
+
                             *daily.tokens.entry(current_model.clone()).or_insert(0) +=
                                 snapshot.total_tokens;
+                            daily.cost_usd += cost;
                             daily.input_tokens += snapshot.input_tokens;
                             daily.output_tokens += snapshot.output_tokens;
                             daily.cache_read_tokens += snapshot.cache_read_tokens;
@@ -175,6 +192,7 @@ impl CodexProvider {
                             model.input_tokens += snapshot.input_tokens;
                             model.output_tokens += snapshot.output_tokens;
                             model.cache_read += snapshot.cache_read_tokens;
+                            model.cost_usd += cost;
                         }
                         _ => {}
                     }
@@ -247,6 +265,47 @@ impl CodexProvider {
 
         Ok(stats)
     }
+}
+
+fn get_pricing(model: &str) -> ModelPricing {
+    // Temporary heuristic: map Codex family names onto the existing Claude-style tiers
+    // so leaderboard and analytics can show an estimated cost until a dedicated pricing
+    // policy exists.
+    if model.contains("max") {
+        ModelPricing {
+            input: 5.0,
+            output: 25.0,
+            cache_read: 0.50,
+            cache_write: 6.25,
+        }
+    } else if model.contains("mini") || model.contains("nano") || model.contains("spark") {
+        ModelPricing {
+            input: 1.0,
+            output: 5.0,
+            cache_read: 0.10,
+            cache_write: 1.25,
+        }
+    } else {
+        ModelPricing {
+            input: 3.0,
+            output: 15.0,
+            cache_read: 0.30,
+            cache_write: 3.75,
+        }
+    }
+}
+
+fn calculate_cost(
+    pricing: &ModelPricing,
+    input: u64,
+    output: u64,
+    cache_read: u64,
+    cache_write: u64,
+) -> f64 {
+    (input as f64 / 1_000_000.0) * pricing.input
+        + (output as f64 / 1_000_000.0) * pricing.output
+        + (cache_read as f64 / 1_000_000.0) * pricing.cache_read
+        + (cache_write as f64 / 1_000_000.0) * pricing.cache_write
 }
 
 fn extract_date(value: &Value) -> Option<String> {
@@ -388,5 +447,16 @@ mod tests {
         });
 
         assert!(extract_token_snapshot(&info).is_none());
+    }
+
+    #[test]
+    fn pricing_heuristic_uses_expected_tiers() {
+        let default = get_pricing("gpt-5.4");
+        let mini = get_pricing("gpt-5.4-mini");
+        let max = get_pricing("gpt-5.1-codex-max");
+
+        assert!((default.input - 3.0).abs() < 0.001);
+        assert!((mini.input - 1.0).abs() < 0.001);
+        assert!((max.input - 5.0).abs() < 0.001);
     }
 }

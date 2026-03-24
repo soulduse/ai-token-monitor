@@ -27,6 +27,8 @@ export interface AllStats {
   first_session_date: string | null;
 }
 
+export type LeaderboardProvider = "claude" | "codex";
+
 export interface UserPreferences {
   number_format: "compact" | "full";
   show_tray_cost: boolean;

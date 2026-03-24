@@ -124,7 +124,7 @@ function AppContent() {
 
       {/* Leaderboard lazy-loads (network requests), keep conditional */}
       {activeTab === "leaderboard" && (
-        <Leaderboard stats={stats} />
+        <Leaderboard />
       )}
 
       <SupportBanner />
