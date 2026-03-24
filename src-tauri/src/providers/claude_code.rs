@@ -81,8 +81,15 @@ fn calculate_cost(pricing: &ModelPricing, input: u64, output: u64, cache_read: u
 
 // --- Persistent disk cache for historical month data ---
 
+/// Cache version — bump when the stored date format changes to force a full rebuild.
+/// v1 (missing/0): dates stored as UTC strings (bug)
+/// v2: dates stored as local-timezone strings (correct)
+const CACHE_VERSION: u32 = 2;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DiskCache {
+    #[serde(default)]
+    version: u32,
     months: HashMap<String, MonthData>,
 }
 
@@ -97,10 +104,17 @@ fn disk_cache_path(claude_dir: &PathBuf) -> PathBuf {
     claude_dir.join("ai-token-monitor-cache.json")
 }
 
+/// Load disk cache, returning None if missing or built with an older version.
+/// An outdated cache is also deleted so it gets rebuilt cleanly on next save.
 fn load_disk_cache(claude_dir: &PathBuf) -> Option<DiskCache> {
     let path = disk_cache_path(claude_dir);
     let content = fs::read_to_string(&path).ok()?;
-    serde_json::from_str(&content).ok()
+    let cache: DiskCache = serde_json::from_str(&content).ok()?;
+    if cache.version < CACHE_VERSION {
+        let _ = fs::remove_file(&path);
+        return None;
+    }
+    Some(cache)
 }
 
 fn save_disk_cache(claude_dir: &PathBuf, cache: &DiskCache) {
@@ -256,7 +270,16 @@ fn parse_session_line(line: &str) -> Option<SessionEntry> {
     usage.get("input_tokens")?;
 
     let timestamp = value.get("timestamp")?.as_str()?;
-    let date = timestamp.get(..10)?.to_string();
+    // Convert UTC timestamp to local date so early-morning sessions (before midnight UTC)
+    // are attributed to the correct local calendar day.
+    let date = {
+        use chrono::{DateTime, Utc};
+        if let Ok(utc_dt) = timestamp.parse::<DateTime<Utc>>() {
+            utc_dt.with_timezone(&chrono::Local).format("%Y-%m-%d").to_string()
+        } else {
+            timestamp.get(..10)?.to_string()
+        }
+    };
 
     let model = message.get("model")?.as_str()?.to_string();
 
@@ -564,7 +587,7 @@ impl ClaudeCodeProvider {
         }
 
         // Merge with disk cache
-        let disk_cache = load_disk_cache(&self.primary_dir).unwrap_or(DiskCache { months: HashMap::new() });
+        let disk_cache = load_disk_cache(&self.primary_dir).unwrap_or(DiskCache { version: CACHE_VERSION, months: HashMap::new() });
         let result = self.merge_and_finalize(
             state.daily_map.clone(),
             state.model_usage_map.clone(),
@@ -581,6 +604,7 @@ impl ClaudeCodeProvider {
         let current_month = current_month_str();
 
         let mut disk_cache = load_disk_cache(&self.primary_dir).unwrap_or(DiskCache {
+            version: CACHE_VERSION,
             months: HashMap::new(),
         });
         let has_historical = !disk_cache.months.is_empty();
@@ -603,7 +627,7 @@ impl ClaudeCodeProvider {
                 }
             }
 
-            let mut new_cache = DiskCache { months: HashMap::new() };
+            let mut new_cache = DiskCache { version: CACHE_VERSION, months: HashMap::new() };
             for (month, month_data) in &month_entries {
                 let (daily_map, model_map, messages, _) = aggregate_entries(month_data);
                 new_cache.months.insert(month.clone(), MonthData {
@@ -704,7 +728,9 @@ mod tests {
     #[test]
     fn parse_session_line_extracts_fields() {
         let entry = parse_session_line(sample_jsonl_line()).expect("should parse");
-        assert_eq!(entry.date, "2026-03-23");
+        // Date depends on local timezone: UTC 10:00 may be 23rd or 24th depending on offset.
+        // Just verify it is a valid date string in YYYY-MM-DD format.
+        assert!(entry.date.starts_with("2026-03-2"), "unexpected date: {}", entry.date);
         assert!(entry.model.contains("sonnet"));
         assert_eq!(entry.session_id, "abc-123");
         assert_eq!(entry.message_id, "msg-1");

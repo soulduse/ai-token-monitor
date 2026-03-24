@@ -50,25 +50,13 @@ export function useLeaderboardSync({ stats, user, optedIn }: UseLeaderboardSyncP
   const [period, setPeriod] = useState<"today" | "week">("today");
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // Track which past days (before today) have already been synced this session
+  const syncedPastDatesRef = useRef<Set<string>>(new Set());
   const cacheRef = useRef<{
     data: LeaderboardEntry[];
     fetchedAt: number;
     period: "today" | "week";
   } | null>(null);
-
-  // Upload today's snapshot (debounced)
-  useEffect(() => {
-    if (!supabase || !user || !optedIn || !stats) return;
-
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      uploadSnapshot(user.id, stats);
-    }, 500);
-
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [stats, user, optedIn]);
 
   // Fetch leaderboard data
   const fetchLeaderboard = useCallback(async (forceRefresh = false) => {
@@ -142,6 +130,21 @@ export function useLeaderboardSync({ stats, user, optedIn }: UseLeaderboardSyncP
     }
   }, [period]);
 
+  // Upload snapshot (debounced), then immediately refresh leaderboard
+  useEffect(() => {
+    if (!supabase || !user || !optedIn || !stats) return;
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      await uploadSnapshot(user.id, stats, syncedPastDatesRef.current);
+      fetchLeaderboard(true);
+    }, 500);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [stats, user, optedIn, fetchLeaderboard]);
+
   // Auto-refresh every 60s (force refresh to bypass cache on interval)
   useEffect(() => {
     fetchLeaderboard();
@@ -152,21 +155,38 @@ export function useLeaderboardSync({ stats, user, optedIn }: UseLeaderboardSyncP
   return { leaderboard, loading, period, setPeriod, refetch: () => fetchLeaderboard(true) };
 }
 
-async function uploadSnapshot(userId: string, stats: AllStats) {
+async function uploadSnapshot(userId: string, stats: AllStats, syncedPastDates: Set<string>) {
   if (!supabase) return;
 
-  const today = toLocalDateStr(new Date());
-  const todayData = stats.daily.find((d) => d.date === today);
-  if (!todayData) return;
+  const now = new Date();
+  const today = toLocalDateStr(now);
+  const dow = now.getDay();
+  const mondayOffset = dow === 0 ? 6 : dow - 1;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - mondayOffset);
+  const weekStart = toLocalDateStr(monday);
 
-  const totalTokens = getTotalTokens(todayData.tokens);
+  // Always upload today; upload past days of this week only once per session
+  const toSync = stats.daily.filter(
+    (d) => d.date >= weekStart && d.date <= today &&
+      (d.date === today || !syncedPastDates.has(d.date))
+  );
+  if (toSync.length === 0) return;
 
-  await supabase.from("daily_snapshots").upsert({
+  const rows = toSync.map((d) => ({
     user_id: userId,
-    date: today,
-    total_tokens: totalTokens,
-    cost_usd: todayData.cost_usd,
-    messages: todayData.messages,
-    sessions: todayData.sessions,
-  }, { onConflict: "user_id,date" });
+    date: d.date,
+    total_tokens: getTotalTokens(d.tokens),
+    cost_usd: d.cost_usd,
+    messages: d.messages,
+    sessions: d.sessions,
+  }));
+
+  const { error } = await supabase.from("daily_snapshots").upsert(rows, { onConflict: "user_id,date" });
+
+  // Mark past days as synced so they won't be re-uploaded until next session
+  // Only mark if upsert succeeded — on failure, retry is needed next time
+  if (!error) {
+    toSync.forEach((d) => { if (d.date !== today) syncedPastDates.add(d.date); });
+  }
 }
