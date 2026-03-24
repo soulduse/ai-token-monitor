@@ -1,43 +1,35 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::{BufRead, BufReader, Seek, SeekFrom};
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use serde::{Deserialize, Serialize};
 
 use super::traits::TokenProvider;
 use super::types::{AllStats, DailyUsage, ModelUsage};
 
-/// In-memory cache for parsed stats to avoid re-parsing all JSONL files on every request.
-struct CachedStats {
+/// Unified incremental cache: stats + per-file metadata for mtime-based change detection.
+struct IncrementalCache {
     stats: AllStats,
     computed_at: Instant,
+    /// All parsed entries keyed by dedup key (message_id:request_id)
+    entries: HashMap<String, SessionEntry>,
+    /// File metadata for change detection: path → (modified_time, size)
+    file_meta: HashMap<PathBuf, (SystemTime, u64)>,
 }
 
-/// Incremental parsing state: tracks file offsets and accumulated data
-/// so only new lines need to be parsed on cache invalidation.
-struct IncrementalState {
-    file_offsets: HashMap<PathBuf, u64>,
-    dedup: HashMap<String, SessionEntry>,
-    daily_map: HashMap<String, DailyUsage>,
-    model_usage_map: HashMap<String, ModelUsage>,
-    daily_session_ids: HashMap<String, HashSet<String>>,
-    total_messages: u32,
-    first_date: Option<String>,
-}
-
-static STATS_CACHE: Mutex<Option<CachedStats>> = Mutex::new(None);
-static INCREMENTAL_STATE: Mutex<Option<IncrementalState>> = Mutex::new(None);
+static STATS_CACHE: Mutex<Option<IncrementalCache>> = Mutex::new(None);
+static PARSING: AtomicBool = AtomicBool::new(false);
 static CACHE_INVALIDATED: AtomicBool = AtomicBool::new(false);
 static CONFIG_DIRS_HASH: Mutex<u64> = Mutex::new(0);
-const CACHE_TTL: Duration = Duration::from_secs(300); // 5min fallback — primary invalidation is event-driven
+const CACHE_TTL: Duration = Duration::from_secs(120);
 
-/// Invalidate the stats cache so the next fetch re-parses JSONL files.
+/// Invalidate the stats cache so the next fetch re-checks file metadata.
 /// Called by the file watcher when JSONL/JSON changes are detected.
 pub fn invalidate_stats_cache() {
     CACHE_INVALIDATED.store(true, Ordering::Relaxed);
@@ -153,18 +145,16 @@ impl ClaudeCodeProvider {
         let home = dirs::home_dir().unwrap_or_default();
         let primary = home.join(".claude");
         let mut all_dirs: Vec<PathBuf> = Vec::new();
-        let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+        let mut seen: HashSet<PathBuf> = HashSet::new();
 
         for d in &config_dirs {
             let expanded = expand_tilde(d);
-            // Canonicalize to prevent duplicate symlinked paths
             let canonical = expanded.canonicalize().unwrap_or_else(|_| expanded.clone());
             if seen.insert(canonical) {
                 all_dirs.push(expanded);
             }
         }
 
-        // Ensure primary is always included at position 0
         let primary_canonical = primary.canonicalize().unwrap_or_else(|_| primary.clone());
         if !seen.contains(&primary_canonical) {
             all_dirs.insert(0, primary.clone());
@@ -173,72 +163,212 @@ impl ClaudeCodeProvider {
         Self { primary_dir: primary, all_dirs }
     }
 
-    /// Parse JSONL files into a dedup map, optionally resuming from known file offsets.
-    /// Returns updated file offsets.
-    fn parse_files_into(
-        &self,
-        dedup: &mut HashMap<String, SessionEntry>,
-        only_current_month: bool,
-        prev_offsets: &HashMap<PathBuf, u64>,
-    ) -> HashMap<PathBuf, u64> {
-        let mut new_offsets: HashMap<PathBuf, u64> = HashMap::new();
-
-        let current_month = if only_current_month {
-            Some(current_month_str())
-        } else {
-            None
-        };
-
+    /// Collect current file metadata (mtime, size) for all JSONL files across all config dirs.
+    fn collect_file_meta(&self) -> HashMap<PathBuf, (SystemTime, u64)> {
+        let mut meta = HashMap::new();
         for claude_dir in &self.all_dirs {
             let projects_dir = claude_dir.join("projects");
             let pattern = projects_dir.join("**").join("*.jsonl").to_string_lossy().to_string();
-
             let files = glob::glob(&pattern).unwrap_or_else(|_| glob::glob("").unwrap());
-
             for path in files.flatten() {
-                if let Some(ref month) = current_month {
-                    if let Ok(metadata) = fs::metadata(&path) {
-                        if let Ok(modified) = metadata.modified() {
-                            let modified_date: chrono::DateTime<chrono::Local> = modified.into();
-                            let file_month = modified_date.format("%Y-%m").to_string();
-                            if &file_month < month {
-                                continue;
-                            }
-                        }
-                    }
+                if let Ok(m) = fs::metadata(&path) {
+                    let mtime = m.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+                    meta.insert(path, (mtime, m.len()));
                 }
+            }
+        }
+        meta
+    }
 
-                if let Ok(mut file) = fs::File::open(&path) {
-                    let prev_offset = prev_offsets.get(&path).copied().unwrap_or(0);
-                    let file_len = file.metadata().map(|m| m.len()).unwrap_or(0);
-                    let start_offset = if prev_offset > file_len { 0 } else { prev_offset };
+    /// Parse a single JSONL file and return its entries keyed by dedup key.
+    fn parse_single_file(path: &PathBuf) -> HashMap<String, SessionEntry> {
+        let mut entries = HashMap::new();
+        if let Ok(file) = fs::File::open(path) {
+            let reader = BufReader::with_capacity(64 * 1024, file);
+            for line in reader.lines().map_while(Result::ok) {
+                if let Some(entry) = parse_session_line(&line) {
+                    let key = format!("{}:{}", entry.message_id, entry.request_id);
+                    entries.insert(key, entry);
+                }
+            }
+        }
+        entries
+    }
 
-                    if start_offset > 0 {
-                        let _ = file.seek(SeekFrom::Start(start_offset));
-                    }
+    /// Incrementally parse only changed files, reusing cached entries for unchanged files.
+    fn parse_incremental(
+        current_meta: &HashMap<PathBuf, (SystemTime, u64)>,
+        cached_entries: &HashMap<String, SessionEntry>,
+        cached_meta: &HashMap<PathBuf, (SystemTime, u64)>,
+    ) -> HashMap<String, SessionEntry> {
+        let mut entries = cached_entries.clone();
 
-                    let reader = BufReader::new(&file);
-                    for line in reader.lines().map_while(Result::ok) {
-                        if let Some(entry) = parse_session_line(&line) {
-                            if let Some(ref month) = current_month {
-                                if &date_to_month(&entry.date) < month {
-                                    continue;
-                                }
-                            }
-                            let key = format!("{}:{}", entry.message_id, entry.request_id);
-                            dedup.insert(key, entry);
-                        }
-                    }
+        let mut changed_files: Vec<&PathBuf> = Vec::new();
+        for (path, (mtime, size)) in current_meta {
+            match cached_meta.get(path) {
+                Some((cached_mtime, cached_size)) if cached_mtime == mtime && cached_size == size => {}
+                _ => { changed_files.push(path); }
+            }
+        }
 
-                    new_offsets.insert(path, file_len);
+        // If files were deleted, do a full re-parse (can't selectively remove entries per file)
+        let has_deleted = cached_meta.keys().any(|p| !current_meta.contains_key(p));
+        if has_deleted {
+            let mut fresh = HashMap::new();
+            for path in current_meta.keys() {
+                fresh.extend(Self::parse_single_file(path));
+            }
+            return fresh;
+        }
+
+        let changed_count = changed_files.len();
+        if changed_count > 0 {
+            let start = Instant::now();
+            for path in &changed_files {
+                let file_entries = Self::parse_single_file(path);
+                entries.extend(file_entries);
+            }
+            eprintln!(
+                "[PERF] Incremental parse: {} changed files in {:?} (total {} files)",
+                changed_count, start.elapsed(), current_meta.len()
+            );
+        }
+
+        entries
+    }
+
+    /// Build AllStats from parsed entries, merging with disk cache for historical months.
+    fn build_stats(&self, entries: &HashMap<String, SessionEntry>) -> AllStats {
+        let mut daily_map: HashMap<String, DailyUsage> = HashMap::new();
+        let mut model_usage_map: HashMap<String, ModelUsage> = HashMap::new();
+        let mut total_messages: u32 = 0;
+        let mut first_date: Option<String> = None;
+
+        for entry in entries.values() {
+            total_messages += 1;
+
+            if first_date.as_ref().map_or(true, |d| entry.date < *d) {
+                first_date = Some(entry.date.clone());
+            }
+
+            let pricing = get_pricing(&entry.model);
+            let cost = calculate_cost(
+                &pricing, entry.input_tokens, entry.output_tokens,
+                entry.cache_read_input_tokens, entry.cache_creation_input_tokens,
+            );
+            let total_tokens = entry.input_tokens + entry.output_tokens;
+
+            let daily = daily_map.entry(entry.date.clone()).or_insert_with(|| DailyUsage {
+                date: entry.date.clone(), tokens: HashMap::new(), cost_usd: 0.0,
+                messages: 0, sessions: 0, tool_calls: 0,
+                input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0,
+            });
+            *daily.tokens.entry(entry.model.clone()).or_insert(0) += total_tokens;
+            daily.cost_usd += cost;
+            daily.messages += 1;
+            daily.input_tokens += entry.input_tokens;
+            daily.output_tokens += entry.output_tokens;
+            daily.cache_read_tokens += entry.cache_read_input_tokens;
+            daily.cache_write_tokens += entry.cache_creation_input_tokens;
+
+            if !entry.session_id.is_empty() {
+                // session_id tracking is only used for counting here
+            }
+
+            let mu = model_usage_map.entry(entry.model.clone()).or_insert_with(|| ModelUsage {
+                input_tokens: 0, output_tokens: 0, cache_read: 0, cache_write: 0, cost_usd: 0.0,
+            });
+            mu.input_tokens += entry.input_tokens;
+            mu.output_tokens += entry.output_tokens;
+            mu.cache_read += entry.cache_read_input_tokens;
+            mu.cache_write += entry.cache_creation_input_tokens;
+            mu.cost_usd += cost;
+        }
+
+        // Count sessions and tool calls from stats-cache.json
+        if let Ok(cache) = self.parse_stats_cache() {
+            for activity in &cache.daily_activity {
+                if let Some(daily) = daily_map.get_mut(&activity.date) {
+                    daily.sessions = activity.session_count;
+                    daily.tool_calls = activity.tool_call_count;
                 }
             }
         }
 
-        new_offsets
+        // Merge with disk cache for historical months
+        let disk_cache = load_disk_cache(&self.primary_dir)
+            .unwrap_or(DiskCache { version: CACHE_VERSION, months: HashMap::new() });
+        for month_data in disk_cache.months.values() {
+            total_messages += month_data.total_messages;
+            for d in &month_data.daily {
+                if first_date.as_ref().map_or(true, |fd| d.date < *fd) {
+                    first_date = Some(d.date.clone());
+                }
+                daily_map.entry(d.date.clone()).or_insert_with(|| d.clone());
+            }
+            for (model, mu) in &month_data.model_usage {
+                let existing = model_usage_map.entry(model.clone()).or_insert_with(|| ModelUsage {
+                    input_tokens: 0, output_tokens: 0, cache_read: 0, cache_write: 0, cost_usd: 0.0,
+                });
+                existing.input_tokens += mu.input_tokens;
+                existing.output_tokens += mu.output_tokens;
+                existing.cache_read += mu.cache_read;
+                existing.cache_write += mu.cache_write;
+                existing.cost_usd += mu.cost_usd;
+            }
+        }
+
+        let mut daily: Vec<DailyUsage> = daily_map.into_values().collect();
+        daily.sort_by(|a, b| a.date.cmp(&b.date));
+        let total_sessions = daily.iter().map(|d| d.sessions as u32).sum::<u32>();
+
+        AllStats {
+            daily,
+            model_usage: model_usage_map,
+            total_sessions,
+            total_messages,
+            first_session_date: first_date,
+        }
+    }
+
+    fn parse_stats_cache(&self) -> Result<StatsCache, String> {
+        let path = self.primary_dir.join("stats-cache.json");
+        let content = fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read stats-cache.json: {}", e))?;
+        serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse stats-cache.json: {}", e))
+    }
+
+    /// Save completed historical months to disk cache for faster cold starts.
+    fn save_historical_months(&self, entries: &HashMap<String, SessionEntry>) {
+        let current_month = current_month_str();
+
+        let mut month_entries: HashMap<String, Vec<&SessionEntry>> = HashMap::new();
+        for entry in entries.values() {
+            let month = date_to_month(&entry.date);
+            if month < current_month {
+                month_entries.entry(month).or_default().push(entry);
+            }
+        }
+
+        if month_entries.is_empty() {
+            return;
+        }
+
+        let mut new_cache = DiskCache { version: CACHE_VERSION, months: HashMap::new() };
+        for (month, month_data) in &month_entries {
+            let (daily_map, model_map, messages, _) = aggregate_entries(month_data);
+            new_cache.months.insert(month.clone(), MonthData {
+                daily: daily_map.into_values().collect(),
+                model_usage: model_map,
+                total_messages: messages,
+            });
+        }
+        save_disk_cache(&self.primary_dir, &new_cache);
     }
 }
 
+#[derive(Clone)]
 struct SessionEntry {
     date: String,
     model: String,
@@ -298,21 +428,14 @@ fn parse_session_line(line: &str) -> Option<SessionEntry> {
     let cache_creation_input_tokens = usage.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
 
     Some(SessionEntry {
-        date,
-        model,
-        session_id,
-        message_id,
-        request_id,
-        input_tokens,
-        output_tokens,
-        cache_read_input_tokens,
-        cache_creation_input_tokens,
+        date, model, session_id, message_id, request_id,
+        input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,
     })
 }
 
-/// Aggregate session entries into daily and model maps
+/// Aggregate session entries into daily and model maps (for disk cache building).
 fn aggregate_entries(
-    entries: &[SessionEntry],
+    entries: &[&SessionEntry],
 ) -> (HashMap<String, DailyUsage>, HashMap<String, ModelUsage>, u32, Option<String>) {
     let mut daily_map: HashMap<String, DailyUsage> = HashMap::new();
     let mut model_usage_map: HashMap<String, ModelUsage> = HashMap::new();
@@ -329,84 +452,9 @@ fn aggregate_entries(
 
         let pricing = get_pricing(&entry.model);
         let cost = calculate_cost(
-            &pricing,
-            entry.input_tokens,
-            entry.output_tokens,
-            entry.cache_read_input_tokens,
-            entry.cache_creation_input_tokens,
+            &pricing, entry.input_tokens, entry.output_tokens,
+            entry.cache_read_input_tokens, entry.cache_creation_input_tokens,
         );
-
-        let total_tokens = entry.input_tokens + entry.output_tokens;
-
-        let daily = daily_map.entry(entry.date.clone()).or_insert_with(|| DailyUsage {
-            date: entry.date.clone(),
-            tokens: HashMap::new(),
-            cost_usd: 0.0,
-            messages: 0,
-            sessions: 0,
-            tool_calls: 0,
-            input_tokens: 0,
-            output_tokens: 0,
-            cache_read_tokens: 0,
-            cache_write_tokens: 0,
-        });
-        *daily.tokens.entry(entry.model.clone()).or_insert(0) += total_tokens;
-        daily.cost_usd += cost;
-        daily.messages += 1;
-        daily.input_tokens += entry.input_tokens;
-        daily.output_tokens += entry.output_tokens;
-        daily.cache_read_tokens += entry.cache_read_input_tokens;
-        daily.cache_write_tokens += entry.cache_creation_input_tokens;
-
-        if !entry.session_id.is_empty() {
-            daily_session_ids
-                .entry(entry.date.clone())
-                .or_default()
-                .insert(entry.session_id.clone());
-        }
-
-        let mu = model_usage_map.entry(entry.model.clone()).or_insert_with(|| ModelUsage {
-            input_tokens: 0,
-            output_tokens: 0,
-            cache_read: 0,
-            cache_write: 0,
-            cost_usd: 0.0,
-        });
-        mu.input_tokens += entry.input_tokens;
-        mu.output_tokens += entry.output_tokens;
-        mu.cache_read += entry.cache_read_input_tokens;
-        mu.cache_write += entry.cache_creation_input_tokens;
-        mu.cost_usd += cost;
-    }
-
-    for (date, session_ids) in &daily_session_ids {
-        if let Some(daily) = daily_map.get_mut(date) {
-            daily.sessions = session_ids.len() as u32;
-        }
-    }
-
-    (daily_map, model_usage_map, total_messages, first_date)
-}
-
-/// Same as aggregate_entries but works with borrowed references
-fn aggregate_entries_refs(
-    entries: &[&SessionEntry],
-) -> (HashMap<String, DailyUsage>, HashMap<String, ModelUsage>, u32, Option<String>) {
-    let mut daily_map: HashMap<String, DailyUsage> = HashMap::new();
-    let mut model_usage_map: HashMap<String, ModelUsage> = HashMap::new();
-    let mut daily_session_ids: HashMap<String, HashSet<String>> = HashMap::new();
-    let mut total_messages: u32 = 0;
-    let mut first_date: Option<String> = None;
-
-    for entry in entries {
-        total_messages += 1;
-        if first_date.as_ref().map_or(true, |d| entry.date < *d) {
-            first_date = Some(entry.date.clone());
-        }
-
-        let pricing = get_pricing(&entry.model);
-        let cost = calculate_cost(&pricing, entry.input_tokens, entry.output_tokens,
-            entry.cache_read_input_tokens, entry.cache_creation_input_tokens);
         let total_tokens = entry.input_tokens + entry.output_tokens;
 
         let daily = daily_map.entry(entry.date.clone()).or_insert_with(|| DailyUsage {
@@ -441,17 +489,8 @@ fn aggregate_entries_refs(
             daily.sessions = session_ids.len() as u32;
         }
     }
-    (daily_map, model_usage_map, total_messages, first_date)
-}
 
-fn build_session_ids(entries: &[&SessionEntry]) -> HashMap<String, HashSet<String>> {
-    let mut ids: HashMap<String, HashSet<String>> = HashMap::new();
-    for entry in entries {
-        if !entry.session_id.is_empty() {
-            ids.entry(entry.date.clone()).or_default().insert(entry.session_id.clone());
-        }
-    }
-    ids
+    (daily_map, model_usage_map, total_messages, first_date)
 }
 
 impl TokenProvider for ClaudeCodeProvider {
@@ -471,10 +510,6 @@ impl TokenProvider for ClaudeCodeProvider {
             let changed = *prev != dirs_hash;
             if changed {
                 *prev = dirs_hash;
-                // Reset all caches for fresh parse with new dirs
-                if let Ok(mut inc) = INCREMENTAL_STATE.lock() {
-                    *inc = None;
-                }
                 if let Ok(mut cache) = STATS_CACHE.lock() {
                     *cache = None;
                 }
@@ -495,15 +530,26 @@ impl TokenProvider for ClaudeCodeProvider {
             }
         }
 
-        // Try incremental update: read only new lines from JSONL files
-        if was_invalidated && !dirs_changed {
-            if let Some(stats) = self.try_incremental_update() {
-                return Ok(stats);
+        // Prevent thundering herd: if another thread is already parsing, return stale cache
+        if PARSING.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+            if let Ok(cache) = STATS_CACHE.lock() {
+                if let Some(ref cached) = *cache {
+                    return Ok(cached.stats.clone());
+                }
             }
+            std::thread::sleep(Duration::from_millis(100));
+            if let Ok(cache) = STATS_CACHE.lock() {
+                if let Some(ref cached) = *cache {
+                    return Ok(cached.stats.clone());
+                }
+            }
+            return Err("Stats computation in progress".to_string());
         }
 
-        // Full parse path (first launch, dirs changed, or TTL expiry)
-        self.full_parse()
+        // We hold the PARSING flag — ensure we clear it on exit
+        let result = self.do_fetch_stats();
+        PARSING.store(false, Ordering::SeqCst);
+        result
     }
 
     fn is_available(&self) -> bool {
@@ -512,209 +558,108 @@ impl TokenProvider for ClaudeCodeProvider {
 }
 
 impl ClaudeCodeProvider {
-    /// Try to incrementally update stats by reading only new lines.
-    /// Returns None if no incremental state exists (requires full parse).
-    fn try_incremental_update(&self) -> Option<AllStats> {
-        let mut inc_state = INCREMENTAL_STATE.lock().ok()?;
-        let state = inc_state.as_mut()?;
+    fn do_fetch_stats(&self) -> Result<AllStats, String> {
+        let start = Instant::now();
+        let current_meta = self.collect_file_meta();
 
-        // Parse only new lines using saved file offsets
-        let new_offsets = self.parse_files_into(
-            &mut state.dedup,
-            true, // current month only for incremental
-            &state.file_offsets,
-        );
-        state.file_offsets = new_offsets;
+        // Check if any files actually changed since last computation
+        let entries = if let Ok(cache) = STATS_CACHE.lock() {
+            if let Some(ref cached) = *cache {
+                if cached.file_meta == current_meta {
+                    // No files changed — refresh timestamp and return cached stats
+                    drop(cache);
+                    if let Ok(mut cache) = STATS_CACHE.lock() {
+                        if let Some(ref mut cached) = *cache {
+                            cached.computed_at = Instant::now();
+                        }
+                    }
+                    eprintln!("[PERF] No files changed, reusing cache ({:?})", start.elapsed());
+                    if let Ok(cache) = STATS_CACHE.lock() {
+                        if let Some(ref cached) = *cache {
+                            return Ok(cached.stats.clone());
+                        }
+                    }
+                    return Err("Cache lost during refresh".to_string());
+                }
 
-        // Re-aggregate from the full dedup map
-        let entries: Vec<&SessionEntry> = state.dedup.values().collect();
+                // Incremental parse — only changed files
+                Self::parse_incremental(&current_meta, &cached.entries, &cached.file_meta)
+            } else {
+                // First run — full parse
+                drop(cache);
+                eprintln!("[PERF] First run, full parse of {} files...", current_meta.len());
+                let full_start = Instant::now();
 
-        state.daily_map.clear();
-        state.model_usage_map.clear();
-        state.daily_session_ids.clear();
-        state.total_messages = 0;
-        state.first_date = None;
+                // Check disk cache for historical months to speed up cold start
+                let disk_cache = load_disk_cache(&self.primary_dir);
+                let has_historical = disk_cache.as_ref().map_or(false, |c| !c.months.is_empty());
 
-        for entry in &entries {
-            state.total_messages += 1;
+                let current_month = current_month_str();
+                let mut entries = HashMap::new();
 
-            if state.first_date.as_ref().map_or(true, |d| entry.date < *d) {
-                state.first_date = Some(entry.date.clone());
-            }
-
-            let pricing = get_pricing(&entry.model);
-            let cost = calculate_cost(
-                &pricing,
-                entry.input_tokens, entry.output_tokens,
-                entry.cache_read_input_tokens, entry.cache_creation_input_tokens,
-            );
-            let total_tokens = entry.input_tokens + entry.output_tokens;
-
-            let daily = state.daily_map.entry(entry.date.clone()).or_insert_with(|| DailyUsage {
-                date: entry.date.clone(), tokens: HashMap::new(), cost_usd: 0.0,
-                messages: 0, sessions: 0, tool_calls: 0,
-                input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0,
-            });
-            *daily.tokens.entry(entry.model.clone()).or_insert(0) += total_tokens;
-            daily.cost_usd += cost;
-            daily.messages += 1;
-            daily.input_tokens += entry.input_tokens;
-            daily.output_tokens += entry.output_tokens;
-            daily.cache_read_tokens += entry.cache_read_input_tokens;
-            daily.cache_write_tokens += entry.cache_creation_input_tokens;
-
-            if !entry.session_id.is_empty() {
-                state.daily_session_ids
-                    .entry(entry.date.clone())
-                    .or_default()
-                    .insert(entry.session_id.clone());
-            }
-
-            let mu = state.model_usage_map.entry(entry.model.clone()).or_insert_with(|| ModelUsage {
-                input_tokens: 0, output_tokens: 0, cache_read: 0, cache_write: 0, cost_usd: 0.0,
-            });
-            mu.input_tokens += entry.input_tokens;
-            mu.output_tokens += entry.output_tokens;
-            mu.cache_read += entry.cache_read_input_tokens;
-            mu.cache_write += entry.cache_creation_input_tokens;
-            mu.cost_usd += cost;
-        }
-
-        for (date, session_ids) in &state.daily_session_ids {
-            if let Some(daily) = state.daily_map.get_mut(date) {
-                daily.sessions = session_ids.len() as u32;
-            }
-        }
-
-        // Merge with disk cache
-        let disk_cache = load_disk_cache(&self.primary_dir).unwrap_or(DiskCache { version: CACHE_VERSION, months: HashMap::new() });
-        let result = self.merge_and_finalize(
-            state.daily_map.clone(),
-            state.model_usage_map.clone(),
-            state.total_messages,
-            state.first_date.clone(),
-            &disk_cache,
-        );
-
-        result.ok()
-    }
-
-    /// Full parse: reads all JSONL files from scratch and initializes incremental state.
-    fn full_parse(&self) -> Result<AllStats, String> {
-        let current_month = current_month_str();
-
-        let mut disk_cache = load_disk_cache(&self.primary_dir).unwrap_or(DiskCache {
-            version: CACHE_VERSION,
-            months: HashMap::new(),
-        });
-        let has_historical = !disk_cache.months.is_empty();
-
-        let only_current = has_historical;
-        let mut dedup: HashMap<String, SessionEntry> = HashMap::new();
-        let file_offsets = self.parse_files_into(&mut dedup, only_current, &HashMap::new());
-
-        // If no historical cache, split and save completed months
-        if !has_historical {
-            let mut current_dedup: HashMap<String, SessionEntry> = HashMap::new();
-            let mut month_entries: HashMap<String, Vec<SessionEntry>> = HashMap::new();
-
-            for (key, entry) in dedup {
-                let month = date_to_month(&entry.date);
-                if month >= current_month {
-                    current_dedup.insert(key, entry);
+                if has_historical {
+                    // Only parse files from current month (skip historical)
+                    for (path, (_, _)) in &current_meta {
+                        if let Ok(metadata) = fs::metadata(path) {
+                            if let Ok(modified) = metadata.modified() {
+                                let modified_date: chrono::DateTime<chrono::Local> = modified.into();
+                                let file_month = modified_date.format("%Y-%m").to_string();
+                                if file_month < current_month {
+                                    continue;
+                                }
+                            }
+                        }
+                        entries.extend(Self::parse_single_file(path));
+                    }
                 } else {
-                    month_entries.entry(month).or_default().push(entry);
+                    // Full parse all files
+                    for path in current_meta.keys() {
+                        entries.extend(Self::parse_single_file(path));
+                    }
+                    // Save historical months to disk cache for future cold starts
+                    self.save_historical_months(&entries);
+                    // Remove historical entries from memory (disk cache has them)
+                    entries.retain(|_, e| date_to_month(&e.date) >= current_month);
                 }
+
+                eprintln!("[PERF] Full parse completed in {:?}", full_start.elapsed());
+                entries
             }
-
-            let mut new_cache = DiskCache { version: CACHE_VERSION, months: HashMap::new() };
-            for (month, month_data) in &month_entries {
-                let (daily_map, model_map, messages, _) = aggregate_entries(month_data);
-                new_cache.months.insert(month.clone(), MonthData {
-                    daily: daily_map.into_values().collect(),
-                    model_usage: model_map,
-                    total_messages: messages,
-                });
-            }
-            if !new_cache.months.is_empty() {
-                save_disk_cache(&self.primary_dir, &new_cache);
-                disk_cache = new_cache;
-            }
-
-            dedup = current_dedup;
-        }
-
-        let entries: Vec<&SessionEntry> = dedup.values().collect();
-        let (daily_map, model_usage_map, total_messages, first_date) =
-            aggregate_entries_refs(&entries);
-
-        // Save incremental state for future updates
-        let daily_session_ids = build_session_ids(&entries);
-        if let Ok(mut inc) = INCREMENTAL_STATE.lock() {
-            *inc = Some(IncrementalState {
-                file_offsets,
-                dedup,
-                daily_map: daily_map.clone(),
-                model_usage_map: model_usage_map.clone(),
-                daily_session_ids,
-                total_messages,
-                first_date: first_date.clone(),
-            });
-        }
-
-        self.merge_and_finalize(daily_map, model_usage_map, total_messages, first_date, &disk_cache)
-    }
-
-    fn merge_and_finalize(
-        &self,
-        mut daily_map: HashMap<String, DailyUsage>,
-        mut model_usage_map: HashMap<String, ModelUsage>,
-        mut total_messages: u32,
-        mut first_date: Option<String>,
-        disk_cache: &DiskCache,
-    ) -> Result<AllStats, String> {
-        for (_month, month_data) in &disk_cache.months {
-            total_messages += month_data.total_messages;
-            for d in &month_data.daily {
-                if first_date.as_ref().map_or(true, |fd| d.date < *fd) {
-                    first_date = Some(d.date.clone());
-                }
-                daily_map.insert(d.date.clone(), d.clone());
-            }
-            for (model, mu) in &month_data.model_usage {
-                let existing = model_usage_map.entry(model.clone()).or_insert_with(|| ModelUsage {
-                    input_tokens: 0, output_tokens: 0, cache_read: 0, cache_write: 0, cost_usd: 0.0,
-                });
-                existing.input_tokens += mu.input_tokens;
-                existing.output_tokens += mu.output_tokens;
-                existing.cache_read += mu.cache_read;
-                existing.cache_write += mu.cache_write;
-                existing.cost_usd += mu.cost_usd;
-            }
-        }
-
-        let mut daily: Vec<DailyUsage> = daily_map.into_values().collect();
-        daily.sort_by(|a, b| a.date.cmp(&b.date));
-
-        let total_sessions = daily.iter().map(|d| d.sessions as u32).sum::<u32>();
-
-        let stats = AllStats {
-            daily,
-            model_usage: model_usage_map,
-            total_sessions,
-            total_messages,
-            first_session_date: first_date,
+        } else {
+            return Err("Failed to acquire cache lock".to_string());
         };
 
+        let stats = self.build_stats(&entries);
+
+        // Update cache with entries + file metadata
         if let Ok(mut cache) = STATS_CACHE.lock() {
-            *cache = Some(CachedStats {
+            *cache = Some(IncrementalCache {
                 stats: stats.clone(),
                 computed_at: Instant::now(),
+                entries,
+                file_meta: current_meta,
             });
         }
 
+        eprintln!("[PERF] Total fetch_stats: {:?}", start.elapsed());
         Ok(stats)
     }
+}
+
+// --- Deserialization types for stats-cache.json (supplementary) ---
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StatsCache {
+    daily_activity: Vec<DailyActivity>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DailyActivity {
+    date: String,
+    session_count: u32,
+    tool_call_count: u32,
 }
 
 #[cfg(test)]
@@ -782,4 +727,3 @@ mod tests {
         assert!((pricing.output - 15.0).abs() < 0.001);
     }
 }
-
