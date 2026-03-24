@@ -118,11 +118,14 @@ fn parse_session_line(line: &str) -> Option<SessionEntry> {
     usage.get("input_tokens")?;
 
     let timestamp = value.get("timestamp")?.as_str()?;
-    // Convert UTC timestamp to local timezone date (e.g. "2026-03-23T23:50:00Z" → "2026-03-24" in KST)
+    // e.g. "2026-03-23T23:50:00Z" → "2026-03-24" in UTC+9
     let date = chrono::DateTime::parse_from_rfc3339(timestamp)
         .ok()
         .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%d").to_string())
-        .unwrap_or_else(|| timestamp.get(..10).unwrap_or("").to_string());
+        .unwrap_or_else(|| {
+            eprintln!("[WARN] Failed to parse timestamp as RFC3339: {}", timestamp);
+            timestamp.get(..10).unwrap_or("1970-01-01").to_string()
+        });
 
     let model = message.get("model")?.as_str()?.to_string();
 
