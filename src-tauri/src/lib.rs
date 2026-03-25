@@ -287,7 +287,8 @@ pub fn run() {
             hide_window,
             quit_app,
             commands::capture_window,
-            commands::copy_png_to_clipboard
+            commands::copy_png_to_clipboard,
+            commands::get_pricing_table
         ])
         .setup(|app| {
             // Build tray icon

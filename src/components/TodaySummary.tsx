@@ -1,21 +1,25 @@
+import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { DailyUsage } from "../lib/types";
 import { formatTokens, formatCost, getTotalTokens } from "../lib/format";
 import { useSettings } from "../contexts/SettingsContext";
 import { InfoTooltip } from "./InfoTooltip";
 import { useI18n } from "../i18n/I18nContext";
 
-const CLAUDE_PRICING = [
-  { model: "Opus", input: "$5", output: "$25", cacheR: "$0.50", cacheW: "$6.25" },
-  { model: "Sonnet", input: "$3", output: "$15", cacheR: "$0.30", cacheW: "$3.75" },
-  { model: "Haiku", input: "$1", output: "$5", cacheR: "$0.10", cacheW: "$1.25" },
-];
+interface PricingRow {
+  model: string;
+  input: string;
+  output: string;
+  cache_read: string;
+  cache_write: string;
+}
 
-const CODEX_PRICING = [
-  { model: "gpt-4.1", input: "$2.00", output: "$8.00", cacheR: "$0.50", cacheW: "—" },
-  { model: "o4-mini", input: "$1.10", output: "$4.40", cacheR: "$0.55", cacheW: "—" },
-  { model: "codex-mini", input: "$1.50", output: "$6.00", cacheR: "—", cacheW: "—" },
-  { model: "o3", input: "$0.40", output: "$1.60", cacheR: "$0.20", cacheW: "—" },
-];
+interface PricingTable {
+  version: string;
+  last_updated: string;
+  claude: PricingRow[];
+  codex: PricingRow[];
+}
 
 interface Props {
   today: DailyUsage | null;
@@ -25,10 +29,15 @@ interface Props {
 export function TodaySummary({ today, weekAvg }: Props) {
   const { prefs } = useSettings();
   const t = useI18n();
+  const [pricing, setPricing] = useState<PricingTable | null>(null);
   const totalTokens = today ? getTotalTokens(today.tokens) : 0;
   const cost = today?.cost_usd ?? 0;
   const messages = today?.messages ?? 0;
   const sessions = today?.sessions ?? 0;
+
+  useEffect(() => {
+    invoke<PricingTable>("get_pricing_table").then(setPricing).catch(console.error);
+  }, []);
 
   const comparison = weekAvg > 0
     ? Math.round(((totalTokens - weekAvg) / weekAvg) * 100)
@@ -89,11 +98,11 @@ export function TodaySummary({ today, weekAvg }: Props) {
           label={t("today.cost")}
           value={formatCost(cost)}
           color="var(--accent-orange)"
-          tooltip={
-            <InfoTooltip>
+          tooltip={pricing && (
+            <InfoTooltip wide>
               <div style={{ fontWeight: 700, marginBottom: 6 }}>{t("today.costTooltipTitle")}</div>
-              {(prefs.include_claude ? [{ label: "Claude", rows: CLAUDE_PRICING }] : [])
-                .concat(prefs.include_codex ? [{ label: "Codex", rows: CODEX_PRICING }] : [])
+              {(prefs.include_claude ? [{ label: "Claude", rows: pricing.claude }] : [])
+                .concat(prefs.include_codex ? [{ label: "Codex", rows: pricing.codex }] : [])
                 .map(({ label, rows }) => (
                 <div key={label}>
                   {prefs.include_claude && prefs.include_codex && (
@@ -115,8 +124,8 @@ export function TodaySummary({ today, weekAvg }: Props) {
                           <td>{r.model}</td>
                           <td style={{ textAlign: "right" }}>{r.input}</td>
                           <td style={{ textAlign: "right" }}>{r.output}</td>
-                          <td style={{ textAlign: "right" }}>{r.cacheR}</td>
-                          <td style={{ textAlign: "right" }}>{r.cacheW}</td>
+                          <td style={{ textAlign: "right" }}>{r.cache_read}</td>
+                          <td style={{ textAlign: "right" }}>{r.cache_write}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -124,10 +133,10 @@ export function TodaySummary({ today, weekAvg }: Props) {
                 </div>
               ))}
               <div style={{ marginTop: 6, opacity: 0.7, fontSize: 9 }}>
-                {t("today.costTooltipNote")}
+                {t("today.costTooltipNote")} (v{pricing.version}, {pricing.last_updated})
               </div>
             </InfoTooltip>
-          }
+          )}
         />
         <StatChip label={t("today.messages")} value={String(messages)} color="var(--accent-purple)" />
         <StatChip label={t("today.sessions")} value={String(sessions)} color="var(--accent-mint)" />

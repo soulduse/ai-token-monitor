@@ -41,30 +41,9 @@ pub fn get_cached_stats() -> Option<AllStats> {
     STATS_CACHE.lock().ok()?.as_ref().map(|c| c.stats.clone())
 }
 
-/// Per-million-token pricing (from LiteLLM / Anthropic pricing page)
-struct ModelPricing {
-    input: f64,
-    output: f64,
-    cache_read: f64,
-    cache_write: f64,
-}
+use super::pricing;
 
-fn get_pricing(model: &str) -> ModelPricing {
-    // Pricing per million tokens (https://docs.anthropic.com/en/docs/about-claude/pricing)
-    // Cache read = 10% of input, Cache write = 125% of input
-    if model.contains("opus") {
-        ModelPricing { input: 5.0, output: 25.0, cache_read: 0.50, cache_write: 6.25 }
-    } else if model.contains("sonnet") {
-        ModelPricing { input: 3.0, output: 15.0, cache_read: 0.30, cache_write: 3.75 }
-    } else if model.contains("haiku") {
-        ModelPricing { input: 1.0, output: 5.0, cache_read: 0.10, cache_write: 1.25 }
-    } else {
-        // Default to Sonnet pricing
-        ModelPricing { input: 3.0, output: 15.0, cache_read: 0.30, cache_write: 3.75 }
-    }
-}
-
-fn calculate_cost(pricing: &ModelPricing, input: u64, output: u64, cache_read: u64, cache_write: u64) -> f64 {
+fn calculate_cost(pricing: &pricing::ClaudePricing, input: u64, output: u64, cache_read: u64, cache_write: u64) -> f64 {
     (input as f64 / 1_000_000.0) * pricing.input
         + (output as f64 / 1_000_000.0) * pricing.output
         + (cache_read as f64 / 1_000_000.0) * pricing.cache_read
@@ -251,7 +230,7 @@ impl ClaudeCodeProvider {
                 first_date = Some(entry.date.clone());
             }
 
-            let pricing = get_pricing(&entry.model);
+            let pricing = pricing::get_claude_pricing(&entry.model);
             let cost = calculate_cost(
                 &pricing, entry.input_tokens, entry.output_tokens,
                 entry.cache_read_input_tokens, entry.cache_creation_input_tokens,
@@ -450,7 +429,7 @@ fn aggregate_entries(
             first_date = Some(entry.date.clone());
         }
 
-        let pricing = get_pricing(&entry.model);
+        let pricing = pricing::get_claude_pricing(&entry.model);
         let cost = calculate_cost(
             &pricing, entry.input_tokens, entry.output_tokens,
             entry.cache_read_input_tokens, entry.cache_creation_input_tokens,
@@ -700,7 +679,7 @@ mod tests {
 
     #[test]
     fn cost_calculation_sonnet() {
-        let pricing = get_pricing("claude-sonnet-4-6-20260320");
+        let pricing = pricing::get_claude_pricing("claude-sonnet-4-6-20260320");
         let cost = calculate_cost(&pricing, 1_000_000, 1_000_000, 1_000_000, 1_000_000);
         let expected = 3.0 + 15.0 + 0.30 + 3.75;
         assert!((cost - expected).abs() < 0.001, "cost={cost}, expected={expected}");
@@ -708,21 +687,21 @@ mod tests {
 
     #[test]
     fn cost_calculation_opus() {
-        let pricing = get_pricing("claude-opus-4-6-20260320");
+        let pricing = pricing::get_claude_pricing("claude-opus-4-6-20260320");
         let cost = calculate_cost(&pricing, 1_000_000, 0, 0, 0);
         assert!((cost - 5.0).abs() < 0.001);
     }
 
     #[test]
     fn cost_calculation_haiku() {
-        let pricing = get_pricing("claude-haiku-4-5-20251001");
+        let pricing = pricing::get_claude_pricing("claude-haiku-4-5-20251001");
         let cost = calculate_cost(&pricing, 1_000_000, 1_000_000, 0, 0);
         assert!((cost - 6.0).abs() < 0.001);
     }
 
     #[test]
     fn unknown_model_defaults_to_sonnet_pricing() {
-        let pricing = get_pricing("claude-unknown-model");
+        let pricing = pricing::get_claude_pricing("claude-unknown-model");
         assert!((pricing.input - 3.0).abs() < 0.001);
         assert!((pricing.output - 15.0).abs() < 0.001);
     }

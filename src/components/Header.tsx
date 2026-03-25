@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { SettingsOverlay } from "./SettingsOverlay";
 import { WrappedOverlay } from "./wrapped/WrappedOverlay";
 import { ReceiptOverlay } from "./receipt/ReceiptOverlay";
@@ -89,44 +90,63 @@ export function Header({ stats, updater }: Props) {
         position: "relative",
       }}
     >
-      <div style={{
-        width: 36,
-        height: 36,
-        borderRadius: "var(--radius-sm)",
-        background: "linear-gradient(135deg, var(--accent-purple), var(--accent-pink))",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: 20,
-        flexShrink: 0,
-      }}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <line x1="18" y1="20" x2="18" y2="10"/>
-          <line x1="12" y1="20" x2="12" y2="4"/>
-          <line x1="6" y1="20" x2="6" y2="14"/>
-          <polyline points="4 7 8 3 12 7" stroke="white" strokeWidth="1.5" fill="none"/>
-        </svg>
-      </div>
-      <div style={{ flex: 1 }}>
+      {/* Draggable title area */}
+      <div
+        onMouseDown={(e) => {
+          if (e.button === 0) {
+            e.preventDefault();
+            getCurrentWindow().startDragging();
+          }
+        }}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          flex: 1,
+          cursor: "grab",
+          userSelect: "none",
+        } as React.CSSProperties}
+      >
         <div style={{
-          fontSize: 15,
-          fontWeight: 800,
-          letterSpacing: "-0.3px",
-          color: "var(--text-primary)",
+          width: 36,
+          height: 36,
+          borderRadius: "var(--radius-sm)",
+          background: "linear-gradient(135deg, var(--accent-purple), var(--accent-pink))",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 20,
+          flexShrink: 0,
+          pointerEvents: "none",
         }}>
-          {t("app.title")}
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"/>
+            <line x1="12" y1="20" x2="12" y2="4"/>
+            <line x1="6" y1="20" x2="6" y2="14"/>
+            <polyline points="4 7 8 3 12 7" stroke="white" strokeWidth="1.5" fill="none"/>
+          </svg>
         </div>
-        {updater?.updateAvailable ? (
-          <UpdateIndicator updater={updater} t={t} />
-        ) : (
+        <div style={{ pointerEvents: "none" }}>
           <div style={{
-            fontSize: 11,
-            color: "var(--text-secondary)",
-            fontWeight: 600,
+            fontSize: 15,
+            fontWeight: 800,
+            letterSpacing: "-0.3px",
+            color: "var(--text-primary)",
           }}>
-            {t("app.subtitle")}
+            {t("app.title")}
           </div>
-        )}
+          {updater?.updateAvailable ? (
+            <UpdateIndicator updater={updater} t={t} />
+          ) : (
+            <div style={{
+              fontSize: 11,
+              color: "var(--text-secondary)",
+              fontWeight: 600,
+            }}>
+              {t("app.subtitle")}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Wrapped button */}

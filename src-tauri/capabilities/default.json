@@ -5,6 +5,7 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:window:allow-start-dragging",
     "opener:default",
     "clipboard-manager:allow-write-image",
     "clipboard-manager:allow-write-text",

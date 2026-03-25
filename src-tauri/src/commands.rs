@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use crate::providers::claude_code::ClaudeCodeProvider;
 use crate::providers::codex::CodexProvider;
+use crate::providers::pricing;
 use crate::providers::traits::TokenProvider;
 use crate::providers::types::{AllStats, UserPreferences};
 
@@ -329,4 +330,9 @@ pub fn capture_window(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn capture_window(_app: tauri::AppHandle) -> Result<(), String> {
     Err("Screenshot not supported on this platform".to_string())
+}
+
+#[tauri::command]
+pub fn get_pricing_table() -> pricing::PricingTable {
+    pricing::get_pricing_table()
 }

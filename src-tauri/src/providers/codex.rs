@@ -37,37 +37,9 @@ pub fn get_cached_stats() -> Option<AllStats> {
     STATS_CACHE.lock().ok()?.as_ref().map(|c| c.stats.clone())
 }
 
-// --- Pricing (actual OpenAI API pricing per million tokens) ---
+use super::pricing;
 
-struct ModelPricing {
-    input: f64,
-    output: f64,
-    cached_input: f64,
-}
-
-fn get_pricing(model: &str) -> ModelPricing {
-    // https://developers.openai.com/api/docs/pricing (March 2026)
-    if model.contains("gpt-5.2-codex") {
-        ModelPricing { input: 1.25, output: 10.00, cached_input: 0.125 }
-    } else if model.contains("gpt-5.1-codex-mini") {
-        ModelPricing { input: 0.25, output: 2.00, cached_input: 0.0 }
-    } else if model.contains("gpt-4.1-mini") {
-        ModelPricing { input: 0.40, output: 1.60, cached_input: 0.10 }
-    } else if model.contains("gpt-4.1") {
-        ModelPricing { input: 2.00, output: 8.00, cached_input: 0.50 }
-    } else if model.contains("o4-mini") {
-        ModelPricing { input: 1.10, output: 4.40, cached_input: 0.55 }
-    } else if model.contains("o3") {
-        ModelPricing { input: 0.40, output: 1.60, cached_input: 0.20 }
-    } else if model.contains("codex-mini") {
-        ModelPricing { input: 1.50, output: 6.00, cached_input: 0.0 }
-    } else {
-        // Default to o4-mini pricing (most common Codex CLI model)
-        ModelPricing { input: 1.10, output: 4.40, cached_input: 0.55 }
-    }
-}
-
-fn calculate_cost(pricing: &ModelPricing, input: u64, output: u64, cached: u64) -> f64 {
+fn calculate_cost(pricing: &pricing::CodexPricing, input: u64, output: u64, cached: u64) -> f64 {
     (input as f64 / 1_000_000.0) * pricing.input
         + (output as f64 / 1_000_000.0) * pricing.output
         + (cached as f64 / 1_000_000.0) * pricing.cached_input
@@ -280,7 +252,7 @@ impl CodexProvider {
                 first_date = Some(entry.date.clone());
             }
 
-            let pricing = get_pricing(&entry.model);
+            let pricing = pricing::get_codex_pricing(&entry.model);
             let cost = calculate_cost(&pricing, entry.input_tokens, entry.output_tokens, entry.cached_tokens);
 
             let daily = daily_map.entry(entry.date.clone()).or_insert_with(|| DailyUsage {
@@ -584,32 +556,32 @@ mod tests {
 
     #[test]
     fn test_pricing_models() {
-        let o3 = get_pricing("o3-2025-04-16");
+        let o3 = pricing::get_codex_pricing("o3-2025-04-16");
         assert!((o3.input - 0.40).abs() < 0.001);
         assert!((o3.output - 1.60).abs() < 0.001);
 
-        let o4mini = get_pricing("o4-mini-2025-04-16");
+        let o4mini = pricing::get_codex_pricing("o4-mini-2025-04-16");
         assert!((o4mini.input - 1.10).abs() < 0.001);
 
-        let gpt41 = get_pricing("gpt-4.1-2025-04-14");
+        let gpt41 = pricing::get_codex_pricing("gpt-4.1-2025-04-14");
         assert!((gpt41.input - 2.00).abs() < 0.001);
 
-        let gpt41mini = get_pricing("gpt-4.1-mini-2025-04-14");
+        let gpt41mini = pricing::get_codex_pricing("gpt-4.1-mini-2025-04-14");
         assert!((gpt41mini.input - 0.40).abs() < 0.001);
 
-        let codex_mini = get_pricing("codex-mini-latest");
+        let codex_mini = pricing::get_codex_pricing("codex-mini-latest");
         assert!((codex_mini.input - 1.50).abs() < 0.001);
 
-        let gpt52codex = get_pricing("gpt-5.2-codex");
+        let gpt52codex = pricing::get_codex_pricing("gpt-5.2-codex");
         assert!((gpt52codex.input - 1.25).abs() < 0.001);
 
-        let unknown = get_pricing("some-future-model");
+        let unknown = pricing::get_codex_pricing("some-future-model");
         assert!((unknown.input - 1.10).abs() < 0.001);
     }
 
     #[test]
     fn test_calculate_cost() {
-        let pricing = ModelPricing { input: 1.0, output: 5.0, cached_input: 0.5 };
+        let pricing = pricing::CodexPricing { input: 1.0, output: 5.0, cached_input: 0.5 };
         let cost = calculate_cost(&pricing, 1_000_000, 500_000, 200_000);
         let expected = 1.0 + 2.5 + 0.1;
         assert!((cost - expected).abs() < 0.0001);
