@@ -330,12 +330,24 @@ export function Header({ stats, updater }: Props) {
   );
 }
 
+const indicatorWrapStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  fontSize: 11,
+  fontWeight: 600,
+  pointerEvents: "auto",
+  cursor: "default",
+};
+
 function UpdateIndicator({ updater, t }: { updater: UpdaterState; t: ReturnType<typeof useI18n> }) {
   const { version, downloading, downloaded, progress, error, download, install } = updater;
 
+  const stopDrag = (e: React.MouseEvent) => e.stopPropagation();
+
   if (error) {
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600 }}>
+      <div style={indicatorWrapStyle} onMouseDown={stopDrag}>
         <span title={error} style={{ color: "var(--red, #ef4444)", cursor: "help" }}>{t("update.error")}</span>
         <button onClick={download} style={indicatorBtnStyle}>{t("update.download")}</button>
       </div>
@@ -344,7 +356,7 @@ function UpdateIndicator({ updater, t }: { updater: UpdaterState; t: ReturnType<
 
   if (downloaded) {
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600 }}>
+      <div style={indicatorWrapStyle} onMouseDown={stopDrag}>
         <span style={{ color: "var(--accent-mint, #34d399)" }}>{t("update.restart")}</span>
         <button onClick={install} style={indicatorBtnStyle}>{t("update.restartBtn")}</button>
       </div>
@@ -353,7 +365,7 @@ function UpdateIndicator({ updater, t }: { updater: UpdaterState; t: ReturnType<
 
   if (downloading) {
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600 }}>
+      <div style={indicatorWrapStyle} onMouseDown={stopDrag}>
         <span style={{ color: "var(--text-secondary)" }}>
           {t("update.downloading", { progress: String(progress) })}
         </span>
@@ -373,7 +385,7 @@ function UpdateIndicator({ updater, t }: { updater: UpdaterState; t: ReturnType<
   }
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600 }}>
+    <div style={indicatorWrapStyle} onMouseDown={stopDrag}>
       <span style={{ color: "var(--accent, #3b82f6)" }}>
         {t("update.available", { version })}
       </span>
