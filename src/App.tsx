@@ -18,7 +18,6 @@ import { CacheEfficiency } from "./components/CacheEfficiency";
 import { Leaderboard } from "./components/Leaderboard";
 import { ActivityGraph } from "./components/ActivityGraph";
 import { SupportBanner } from "./components/SupportBanner";
-import { UpdateBanner } from "./components/UpdateBanner";
 import { SourceSelector } from "./components/SourceSelector";
 import { SalaryComparator } from "./components/SalaryComparator";
 import { useUpdater } from "./hooks/useUpdater";
@@ -56,7 +55,7 @@ function AppContent() {
   if (loading && !stats) {
     return (
       <PopoverShell>
-        <Header />
+        <Header updater={updater} />
         <div style={{
           display: "flex",
           alignItems: "center",
@@ -75,7 +74,7 @@ function AppContent() {
   if (error || !stats) {
     return (
       <PopoverShell>
-        <Header />
+        <Header updater={updater} />
         <div style={{
           display: "flex",
           flexDirection: "column",
@@ -106,7 +105,7 @@ function AppContent() {
 
   return (
     <PopoverShell>
-      <Header stats={stats} />
+      <Header stats={stats} updater={updater} />
       <SourceSelector />
       <TabBar activeTab={activeTab} onChange={setActiveTab} />
 
@@ -132,7 +131,6 @@ function AppContent() {
         <Leaderboard />
       )}
 
-      <UpdateBanner updater={updater} />
       <SupportBanner />
     </PopoverShell>
   );

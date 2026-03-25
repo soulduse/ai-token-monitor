@@ -5,14 +5,16 @@ import { SettingsOverlay } from "./SettingsOverlay";
 import { WrappedOverlay } from "./wrapped/WrappedOverlay";
 import { ReceiptOverlay } from "./receipt/ReceiptOverlay";
 import type { AllStats } from "../lib/types";
+import type { UpdaterState } from "../hooks/useUpdater";
 import { formatTokens, formatCost, getTotalTokens, toLocalDateStr } from "../lib/format";
 import { useI18n } from "../i18n/I18nContext";
 
 interface Props {
   stats?: AllStats | null;
+  updater?: UpdaterState;
 }
 
-export function Header({ stats }: Props) {
+export function Header({ stats, updater }: Props) {
   const [showSettings, setShowSettings] = useState(false);
   const [showWrapped, setShowWrapped] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
@@ -114,13 +116,17 @@ export function Header({ stats }: Props) {
         }}>
           {t("app.title")}
         </div>
-        <div style={{
-          fontSize: 11,
-          color: "var(--text-secondary)",
-          fontWeight: 600,
-        }}>
-          {t("app.subtitle")}
-        </div>
+        {updater?.updateAvailable ? (
+          <UpdateIndicator updater={updater} t={t} />
+        ) : (
+          <div style={{
+            fontSize: 11,
+            color: "var(--text-secondary)",
+            fontWeight: 600,
+          }}>
+            {t("app.subtitle")}
+          </div>
+        )}
       </div>
 
       {/* Wrapped button */}
@@ -303,4 +309,68 @@ export function Header({ stats }: Props) {
     </div>
   );
 }
+
+function UpdateIndicator({ updater, t }: { updater: UpdaterState; t: ReturnType<typeof useI18n> }) {
+  const { version, downloading, downloaded, progress, error, download, install } = updater;
+
+  if (error) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600 }}>
+        <span style={{ color: "var(--red, #ef4444)" }}>{t("update.error")}</span>
+        <button onClick={download} style={indicatorBtnStyle}>{t("update.download")}</button>
+      </div>
+    );
+  }
+
+  if (downloaded) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600 }}>
+        <span style={{ color: "var(--accent-mint, #34d399)" }}>{t("update.restart")}</span>
+        <button onClick={install} style={indicatorBtnStyle}>{t("update.restartBtn")}</button>
+      </div>
+    );
+  }
+
+  if (downloading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600 }}>
+        <span style={{ color: "var(--text-secondary)" }}>
+          {t("update.downloading", { progress: String(progress) })}
+        </span>
+        <div style={{
+          width: 40, height: 3, borderRadius: 2,
+          background: "var(--bg-tertiary, rgba(128,128,128,0.2))",
+          overflow: "hidden",
+        }}>
+          <div style={{
+            width: `${progress}%`, height: "100%", borderRadius: 2,
+            background: "var(--accent, #3b82f6)",
+            transition: "width 0.3s ease",
+          }} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600 }}>
+      <span style={{ color: "var(--accent, #3b82f6)" }}>
+        {t("update.available", { version })}
+      </span>
+      <button onClick={download} style={indicatorBtnStyle}>{t("update.download")}</button>
+    </div>
+  );
+}
+
+const indicatorBtnStyle: React.CSSProperties = {
+  padding: "2px 8px",
+  fontSize: 10,
+  fontWeight: 700,
+  border: "none",
+  borderRadius: 4,
+  cursor: "pointer",
+  background: "var(--accent, #3b82f6)",
+  color: "#fff",
+  lineHeight: 1.4,
+};
 

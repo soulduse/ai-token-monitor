@@ -11,7 +11,6 @@ export interface UpdaterState {
   error: string | null;
   download: () => void;
   install: () => void;
-  dismiss: () => void;
 }
 
 export function useUpdater(): UpdaterState {
@@ -21,7 +20,6 @@ export function useUpdater(): UpdaterState {
   const [downloaded, setDownloaded] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [dismissed, setDismissed] = useState(false);
   const updateRef = useRef<Update | null>(null);
 
   useEffect(() => {
@@ -78,6 +76,7 @@ export function useUpdater(): UpdaterState {
       setDownloaded(true);
       setDownloading(false);
     } catch (e) {
+      console.error("[updater] download failed:", e);
       setError(e instanceof Error ? e.message : String(e));
       setDownloading(false);
     }
@@ -87,13 +86,8 @@ export function useUpdater(): UpdaterState {
     await relaunch();
   }, []);
 
-  const dismiss = useCallback(() => {
-    setDismissed(true);
-    setError(null);
-  }, []);
-
   return {
-    updateAvailable: updateAvailable && !dismissed,
+    updateAvailable,
     version,
     downloading,
     downloaded,
@@ -101,6 +95,5 @@ export function useUpdater(): UpdaterState {
     error,
     download,
     install,
-    dismiss,
   };
 }
