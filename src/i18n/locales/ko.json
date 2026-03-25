@@ -180,5 +180,12 @@
   "export.totalCost": "총 비용",
   "export.totalSessions": "총 세션",
   "export.totalMessages": "총 메시지",
-  "export.models": "모델"
+  "export.models": "모델",
+
+  "update.available": "v{{version}} 업데이트 가능",
+  "update.download": "업데이트",
+  "update.downloading": "다운로드 중... {{progress}}%",
+  "update.restart": "업데이트 준비 완료",
+  "update.restartBtn": "재시작",
+  "update.error": "업데이트 실패"
 }

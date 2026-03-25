@@ -180,5 +180,12 @@
   "export.totalCost": "總費用",
   "export.totalSessions": "總工作階段",
   "export.totalMessages": "總訊息",
-  "export.models": "模型"
+  "export.models": "模型",
+
+  "update.available": "v{{version}} 可用",
+  "update.download": "更新",
+  "update.downloading": "下載中... {{progress}}%",
+  "update.restart": "更新已就緒",
+  "update.restartBtn": "重啟",
+  "update.error": "更新失敗"
 }

@@ -180,5 +180,12 @@
   "export.totalCost": "総コスト",
   "export.totalSessions": "総セッション",
   "export.totalMessages": "総メッセージ",
-  "export.models": "モデル"
+  "export.models": "モデル",
+
+  "update.available": "v{{version}} が利用可能",
+  "update.download": "更新",
+  "update.downloading": "ダウンロード中... {{progress}}%",
+  "update.restart": "更新の準備完了",
+  "update.restartBtn": "再起動",
+  "update.error": "更新に失敗しました"
 }

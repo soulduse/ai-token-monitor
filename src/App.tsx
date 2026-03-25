@@ -18,8 +18,10 @@ import { CacheEfficiency } from "./components/CacheEfficiency";
 import { Leaderboard } from "./components/Leaderboard";
 import { ActivityGraph } from "./components/ActivityGraph";
 import { SupportBanner } from "./components/SupportBanner";
+import { UpdateBanner } from "./components/UpdateBanner";
 import { SourceSelector } from "./components/SourceSelector";
 import { SalaryComparator } from "./components/SalaryComparator";
+import { useUpdater } from "./hooks/useUpdater";
 
 function AppContent() {
   const { prefs } = useSettings();
@@ -28,6 +30,7 @@ function AppContent() {
     includeCodex: prefs.include_codex,
   });
   const t = useI18n();
+  const updater = useUpdater();
   const [activeTab, setActiveTab] = useState<TabType>("overview");
   const todayStr = useToday();
 
@@ -129,6 +132,7 @@ function AppContent() {
         <Leaderboard />
       )}
 
+      <UpdateBanner updater={updater} />
       <SupportBanner />
     </PopoverShell>
   );

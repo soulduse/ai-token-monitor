@@ -180,5 +180,12 @@
   "export.totalCost": "Gesamtkosten",
   "export.totalSessions": "Gesamt-Sitzungen",
   "export.totalMessages": "Gesamt-Nachrichten",
-  "export.models": "Modelle"
+  "export.models": "Modelle",
+
+  "update.available": "v{{version}} verfügbar",
+  "update.download": "Aktualisieren",
+  "update.downloading": "Herunterladen... {{progress}}%",
+  "update.restart": "Update bereit",
+  "update.restartBtn": "Neustarten",
+  "update.error": "Update fehlgeschlagen"
 }
