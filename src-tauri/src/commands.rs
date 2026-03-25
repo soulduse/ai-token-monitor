@@ -18,8 +18,8 @@ fn prefs_path() -> PathBuf {
 }
 
 #[tauri::command]
-pub async fn get_all_stats() -> Result<AllStats, String> {
-    tauri::async_runtime::spawn_blocking(|| {
+pub async fn get_all_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
+    let result = tauri::async_runtime::spawn_blocking(|| {
         let prefs = get_preferences();
         let provider = ClaudeCodeProvider::new(prefs.config_dirs);
         if !provider.is_available() {
@@ -28,12 +28,17 @@ pub async fn get_all_stats() -> Result<AllStats, String> {
         provider.fetch_stats()
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    if result.is_ok() {
+        crate::update_tray_title(&app);
+    }
+    result
 }
 
 #[tauri::command]
-pub async fn get_codex_stats() -> Result<AllStats, String> {
-    tauri::async_runtime::spawn_blocking(|| {
+pub async fn get_codex_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
+    let result = tauri::async_runtime::spawn_blocking(|| {
         let provider = CodexProvider::new();
         if !provider.is_available() {
             return Err("Codex stats not available".to_string());
@@ -41,7 +46,12 @@ pub async fn get_codex_stats() -> Result<AllStats, String> {
         provider.fetch_stats()
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    if result.is_ok() {
+        crate::update_tray_title(&app);
+    }
+    result
 }
 
 #[tauri::command]
