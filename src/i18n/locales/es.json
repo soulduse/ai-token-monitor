@@ -180,5 +180,12 @@
   "export.totalCost": "Costo total",
   "export.totalSessions": "Total sesiones",
   "export.totalMessages": "Total mensajes",
-  "export.models": "Modelos"
+  "export.models": "Modelos",
+
+  "update.available": "v{{version}} disponible",
+  "update.download": "Actualizar",
+  "update.downloading": "Descargando... {{progress}}%",
+  "update.restart": "Listo para actualizar",
+  "update.restartBtn": "Reiniciar",
+  "update.error": "Error de actualización"
 }

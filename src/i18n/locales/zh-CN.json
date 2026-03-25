@@ -180,5 +180,12 @@
   "export.totalCost": "总费用",
   "export.totalSessions": "总会话",
   "export.totalMessages": "总消息",
-  "export.models": "模型"
+  "export.models": "模型",
+
+  "update.available": "v{{version}} 可用",
+  "update.download": "更新",
+  "update.downloading": "下载中... {{progress}}%",
+  "update.restart": "更新已就绪",
+  "update.restartBtn": "重启",
+  "update.error": "更新失败"
 }

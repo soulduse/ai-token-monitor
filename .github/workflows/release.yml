@@ -157,12 +157,15 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ needs.bump-version.outputs.tag }}
           releaseName: ${{ needs.bump-version.outputs.tag }}
           releaseBody: ${{ needs.bump-version.outputs.changelog }}
           releaseDraft: false
           prerelease: false
+          updaterJsonKeepUniversal: true
 
   build-windows:
     needs: [bump-version, build-macos]
@@ -193,9 +196,12 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ needs.bump-version.outputs.tag }}
           releaseName: ${{ needs.bump-version.outputs.tag }}
           releaseBody: ${{ needs.bump-version.outputs.changelog }}
           releaseDraft: false
           prerelease: false
+          updaterJsonKeepUniversal: true
