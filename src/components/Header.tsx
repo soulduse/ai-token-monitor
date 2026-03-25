@@ -336,7 +336,7 @@ function UpdateIndicator({ updater, t }: { updater: UpdaterState; t: ReturnType<
   if (error) {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600 }}>
-        <span style={{ color: "var(--red, #ef4444)" }}>{t("update.error")}</span>
+        <span title={error} style={{ color: "var(--red, #ef4444)", cursor: "help" }}>{t("update.error")}</span>
         <button onClick={download} style={indicatorBtnStyle}>{t("update.download")}</button>
       </div>
     );
