@@ -8,6 +8,7 @@
   "tab.overview": "Overview",
   "tab.analytics": "Analytics",
   "tab.leaderboard": "Leaderboard",
+  "tab.chat": "Chat",
 
   "sources.title": "Sources",
   "sources.claude": "Claude",
@@ -197,5 +198,16 @@
   "usageAlert.extraUsage": "Extra Usage",
   "usageAlert.stale": "Updating...",
   "usageAlert.resetsIn": "Resets in {{time}}",
-  "usageAlert.resetsNow": "Resetting..."
+  "usageAlert.resetsNow": "Resetting...",
+
+  "chat.join": "Join the Chat",
+  "chat.description": "Chat with other developers on the leaderboard. Sign in and enable the leaderboard to participate.",
+  "chat.placeholder": "Type a message...",
+  "chat.send": "Send",
+  "chat.loading": "Loading messages...",
+  "chat.empty": "No messages yet. Start the conversation!",
+  "chat.loadMore": "Load older messages",
+  "chat.rateLimited": "Slow down! Try again in a moment.",
+  "chat.delete": "Delete",
+  "chat.maxLength": "Max 500 characters"
 }

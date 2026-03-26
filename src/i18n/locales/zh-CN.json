@@ -8,6 +8,7 @@
   "tab.overview": "概览",
   "tab.analytics": "分析",
   "tab.leaderboard": "排行榜",
+  "tab.chat": "聊天",
 
   "sources.title": "来源",
   "sources.claude": "Claude",
@@ -197,5 +198,16 @@
   "usageAlert.extraUsage": "额外用量",
   "usageAlert.stale": "更新中...",
   "usageAlert.resetsIn": "{{time}}后重置",
-  "usageAlert.resetsNow": "重置中..."
+  "usageAlert.resetsNow": "重置中...",
+
+  "chat.join": "加入聊天",
+  "chat.description": "与排行榜上的其他开发者聊天。登录并启用排行榜即可参与。",
+  "chat.placeholder": "输入消息...",
+  "chat.send": "发送",
+  "chat.loading": "加载消息中...",
+  "chat.empty": "还没有消息。开始第一段对话吧！",
+  "chat.loadMore": "加载更早的消息",
+  "chat.rateLimited": "发送太快了！请稍后再试。",
+  "chat.delete": "删除",
+  "chat.maxLength": "最多500个字符"
 }

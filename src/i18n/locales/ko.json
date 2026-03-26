@@ -8,6 +8,7 @@
   "tab.overview": "개요",
   "tab.analytics": "분석",
   "tab.leaderboard": "리더보드",
+  "tab.chat": "채팅",
 
   "sources.title": "소스",
   "sources.claude": "Claude",
@@ -197,5 +198,16 @@
   "usageAlert.extraUsage": "추가 사용량",
   "usageAlert.stale": "업데이트 중...",
   "usageAlert.resetsIn": "{{time}} 후 리셋",
-  "usageAlert.resetsNow": "리셋 중..."
+  "usageAlert.resetsNow": "리셋 중...",
+
+  "chat.join": "채팅 참여하기",
+  "chat.description": "리더보드에 참여 중인 다른 개발자들과 대화하세요. 로그인 후 리더보드를 활성화하면 참여할 수 있습니다.",
+  "chat.placeholder": "메시지를 입력하세요...",
+  "chat.send": "전송",
+  "chat.loading": "메시지 로딩 중...",
+  "chat.empty": "아직 메시지가 없습니다. 첫 대화를 시작해보세요!",
+  "chat.loadMore": "이전 메시지 불러오기",
+  "chat.rateLimited": "너무 빨라요! 잠시 후 다시 시도하세요.",
+  "chat.delete": "삭제",
+  "chat.maxLength": "최대 500자"
 }

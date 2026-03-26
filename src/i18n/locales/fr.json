@@ -8,6 +8,7 @@
   "tab.overview": "Aperçu",
   "tab.analytics": "Analyse",
   "tab.leaderboard": "Classement",
+  "tab.chat": "Chat",
 
   "sources.title": "Sources",
   "sources.claude": "Claude",
@@ -197,5 +198,16 @@
   "usageAlert.extraUsage": "Utilisation supplémentaire",
   "usageAlert.stale": "Mise à jour...",
   "usageAlert.resetsIn": "Réinitialisation dans {{time}}",
-  "usageAlert.resetsNow": "Réinitialisation..."
+  "usageAlert.resetsNow": "Réinitialisation...",
+
+  "chat.join": "Rejoindre le chat",
+  "chat.description": "Discutez avec les autres développeurs du classement. Connectez-vous et activez le classement pour participer.",
+  "chat.placeholder": "Tapez un message...",
+  "chat.send": "Envoyer",
+  "chat.loading": "Chargement des messages...",
+  "chat.empty": "Aucun message pour l'instant. Lancez la conversation !",
+  "chat.loadMore": "Charger les anciens messages",
+  "chat.rateLimited": "Trop rapide ! Réessayez dans un instant.",
+  "chat.delete": "Supprimer",
+  "chat.maxLength": "500 caractères maximum"
 }

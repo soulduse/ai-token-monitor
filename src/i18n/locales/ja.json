@@ -8,6 +8,7 @@
   "tab.overview": "概要",
   "tab.analytics": "分析",
   "tab.leaderboard": "リーダーボード",
+  "tab.chat": "チャット",
 
   "sources.title": "ソース",
   "sources.claude": "Claude",
@@ -197,5 +198,16 @@
   "usageAlert.extraUsage": "追加使用量",
   "usageAlert.stale": "更新中...",
   "usageAlert.resetsIn": "{{time}}後にリセット",
-  "usageAlert.resetsNow": "リセット中..."
+  "usageAlert.resetsNow": "リセット中...",
+
+  "chat.join": "チャットに参加",
+  "chat.description": "リーダーボードの他の開発者とチャットしましょう。ログインしてリーダーボードを有効にすると参加できます。",
+  "chat.placeholder": "メッセージを入力...",
+  "chat.send": "送信",
+  "chat.loading": "メッセージを読み込み中...",
+  "chat.empty": "まだメッセージはありません。最初の会話を始めましょう！",
+  "chat.loadMore": "過去のメッセージを読み込む",
+  "chat.rateLimited": "少し待ってからもう一度お試しください。",
+  "chat.delete": "削除",
+  "chat.maxLength": "最大500文字"
 }

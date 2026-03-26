@@ -8,6 +8,7 @@
   "tab.overview": "Übersicht",
   "tab.analytics": "Analyse",
   "tab.leaderboard": "Rangliste",
+  "tab.chat": "Chat",
 
   "sources.title": "Quellen",
   "sources.claude": "Claude",
@@ -197,5 +198,16 @@
   "usageAlert.extraUsage": "Zusätzliche Nutzung",
   "usageAlert.stale": "Aktualisierung...",
   "usageAlert.resetsIn": "Zurücksetzen in {{time}}",
-  "usageAlert.resetsNow": "Wird zurückgesetzt..."
+  "usageAlert.resetsNow": "Wird zurückgesetzt...",
+
+  "chat.join": "Chat beitreten",
+  "chat.description": "Chatten Sie mit anderen Entwicklern in der Rangliste. Melden Sie sich an und aktivieren Sie die Rangliste, um teilzunehmen.",
+  "chat.placeholder": "Nachricht eingeben...",
+  "chat.send": "Senden",
+  "chat.loading": "Nachrichten werden geladen...",
+  "chat.empty": "Noch keine Nachrichten. Starten Sie das Gespräch!",
+  "chat.loadMore": "Ältere Nachrichten laden",
+  "chat.rateLimited": "Zu schnell! Versuchen Sie es gleich nochmal.",
+  "chat.delete": "Löschen",
+  "chat.maxLength": "Maximal 500 Zeichen"
 }

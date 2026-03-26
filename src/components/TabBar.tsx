@@ -1,6 +1,6 @@
 import { useI18n } from "../i18n/I18nContext";
 
-export type TabType = "overview" | "analytics" | "leaderboard";
+export type TabType = "overview" | "analytics" | "leaderboard" | "chat";
 
 interface Props {
   activeTab: TabType;
@@ -33,6 +33,12 @@ export function TabBar({ activeTab, onChange }: Props) {
         active={activeTab === "leaderboard"}
         onClick={() => onChange("leaderboard")}
         icon="🏆"
+      />
+      <TabButton
+        label={t("tab.chat")}
+        active={activeTab === "chat"}
+        onClick={() => onChange("chat")}
+        icon="💬"
       />
     </div>
   );

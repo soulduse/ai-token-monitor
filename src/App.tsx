@@ -16,6 +16,7 @@ import { ModelBreakdown } from "./components/ModelBreakdown";
 import { PeriodTotals } from "./components/PeriodTotals";
 import { CacheEfficiency } from "./components/CacheEfficiency";
 import { Leaderboard } from "./components/Leaderboard";
+import { ChatRoom } from "./components/ChatRoom";
 import { ActivityGraph } from "./components/ActivityGraph";
 import { SupportBanner } from "./components/SupportBanner";
 import { SourceSelector } from "./components/SourceSelector";
@@ -131,6 +132,11 @@ function AppContent() {
       {/* Leaderboard lazy-loads (network requests), keep conditional */}
       {activeTab === "leaderboard" && (
         <Leaderboard />
+      )}
+
+      {/* Chat lazy-loads (realtime subscription), keep conditional */}
+      {activeTab === "chat" && (
+        <ChatRoom />
       )}
 
       <SupportBanner />
