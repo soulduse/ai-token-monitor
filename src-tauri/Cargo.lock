@@ -19,7 +19,7 @@ dependencies = [
 
 [[package]]
 name = "ai-token-monitor"
-version = "0.10.0"
+version = "0.11.1"
 dependencies = [
  "chrono",
  "cocoa",

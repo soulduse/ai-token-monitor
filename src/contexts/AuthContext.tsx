@@ -9,9 +9,8 @@ import type { User } from "@supabase/supabase-js";
 const DEEP_LINK_CALLBACK = "ai-token-monitor://auth/callback";
 const AUTH_TIMEOUT_MS = 120_000;
 
-function isWindowsProduction(): boolean {
-  if (window.location.protocol === "http:") return false;
-  return /windows/i.test(navigator.userAgent);
+function isProduction(): boolean {
+  return window.location.protocol !== "http:";
 }
 
 interface AuthContextType {
@@ -65,9 +64,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Windows production: listen for deep link OAuth callback
+  // Production: listen for deep link OAuth callback (macOS + Windows)
   useEffect(() => {
-    if (!isWindowsProduction() || !supabase) return;
+    if (!isProduction() || !supabase) return;
 
     let cancelled = false;
     let unlisten: (() => void) | undefined;
@@ -132,8 +131,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     setLoading(true);
 
-    if (!isWindowsProduction()) {
-      // macOS production + dev mode: existing implicit flow
+    if (!isProduction()) {
+      // Dev mode: implicit flow via localhost
       await supabase.auth.signInWithOAuth({
         provider: "github",
         options: { redirectTo: window.location.origin },
@@ -141,7 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Windows production: PKCE + deep link
+    // Production (macOS + Windows): PKCE + deep link
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "github",
       options: {

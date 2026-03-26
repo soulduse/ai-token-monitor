@@ -473,7 +473,6 @@ pub fn run() {
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
 
-            // Log all window events
             let main_window = app.get_webview_window("main").unwrap();
             let win_clone = main_window.clone();
             main_window.on_window_event(move |event| {
