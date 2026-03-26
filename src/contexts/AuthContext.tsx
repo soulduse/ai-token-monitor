@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { supabase } from "../lib/supabase";
 import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { invoke } from "@tauri-apps/api/core";
 import type { User } from "@supabase/supabase-js";
 
 const DEEP_LINK_CALLBACK = "ai-token-monitor://auth/callback";
@@ -75,15 +76,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       for (const url of urls) {
         if (!url.startsWith(DEEP_LINK_CALLBACK)) continue;
         const code = new URL(url).searchParams.get("code");
-        if (code) {
-          try {
-            await supabase.auth.exchangeCodeForSession(code);
-          } catch (err) {
-            console.error("Session exchange failed:", err);
-          } finally {
-            if (timeoutRef.current) clearTimeout(timeoutRef.current);
-            setLoading(false);
-          }
+        if (!code) {
+          console.warn("[OAuth] Deep-link received but no code param:", url);
+          continue;
+        }
+        try {
+          await supabase.auth.exchangeCodeForSession(code);
+          // OAuth 성공 — single-instance 콜백에서 스킵한 윈도우 표시를 여기서 수행
+          await invoke("show_window");
+        } catch (err) {
+          console.error("[OAuth] Session exchange failed:", err);
+        } finally {
+          if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          setLoading(false);
         }
       }
     }).then((fn) => {

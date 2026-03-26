@@ -254,6 +254,13 @@ fn hide_window(window: tauri::WebviewWindow) {
 }
 
 #[tauri::command]
+fn show_window(window: tauri::WebviewWindow) {
+    eprintln!("[CMD] show_window called");
+    let _ = window.show();
+    let _ = window.set_focus();
+}
+
+#[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
     eprintln!("[CMD] quit_app called");
     app.exit(0);
@@ -262,8 +269,15 @@ fn quit_app(app: tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            // When a second instance is launched, show the existing window
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            // OAuth deep-link 콜백이면 윈도우를 표시하지 않음 —
+            // 프론트엔드에서 세션 교환 완료 후 직접 show_window를 호출한다.
+            let is_oauth_callback = args.iter().any(|a| a.contains("auth/callback"));
+            if is_oauth_callback {
+                eprintln!("[SINGLE-INSTANCE] OAuth callback detected, skipping window show");
+                return;
+            }
+
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.set_focus();
@@ -286,6 +300,7 @@ pub fn run() {
             get_home_dir,
             set_dialog_open,
             hide_window,
+            show_window,
             quit_app,
             commands::capture_window,
             commands::copy_png_to_clipboard,
