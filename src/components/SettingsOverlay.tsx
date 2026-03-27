@@ -7,6 +7,8 @@ import { useAuth } from "../hooks/useAuth";
 import { useI18n, LANGUAGE_OPTIONS } from "../i18n/I18nContext";
 import type { Locale } from "../i18n/I18nContext";
 
+type SettingsTab = "general" | "account" | "ai";
+
 interface Props {
   visible: boolean;
   onClose: () => void;
@@ -16,6 +18,7 @@ export function SettingsOverlay({ visible, onClose }: Props) {
   const { prefs, updatePrefs } = useSettings();
   const { user, profile, signIn, signOut, available: leaderboardAvailable } = useAuth();
   const [appVersion, setAppVersion] = useState("");
+  const [activeTab, setActiveTab] = useState<SettingsTab>("general");
   const t = useI18n();
 
   useEffect(() => {
@@ -43,7 +46,10 @@ export function SettingsOverlay({ visible, onClose }: Props) {
         boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
         padding: 12,
         zIndex: 51,
-        minWidth: 220,
+        width: 280,
+        maxHeight: "calc(100vh - 80px)",
+        display: "flex",
+        flexDirection: "column",
         border: "1px solid rgba(124, 92, 252, 0.1)",
       }}>
         <div style={{
@@ -52,202 +58,72 @@ export function SettingsOverlay({ visible, onClose }: Props) {
           color: "var(--text-secondary)",
           textTransform: "uppercase",
           letterSpacing: "0.5px",
-          marginBottom: 10,
+          marginBottom: 8,
         }}>
           {t("settings.title")}
         </div>
 
-        {/* Theme selector */}
-        <SettingRow label={t("settings.theme")}>
-          <ThemeSelector
-            value={prefs.theme}
-            onChange={(v) => updatePrefs({ theme: v })}
-          />
-        </SettingRow>
+        {/* Tab bar */}
+        <div style={{
+          display: "flex",
+          gap: 0,
+          marginBottom: 10,
+          borderBottom: "1px solid var(--heat-0)",
+        }}>
+          {(["general", "account", "ai"] as SettingsTab[]).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={{
+                flex: 1,
+                padding: "6px 8px",
+                fontSize: 10,
+                fontWeight: 700,
+                border: "none",
+                borderBottom: activeTab === tab ? "2px solid var(--accent-purple)" : "2px solid transparent",
+                cursor: "pointer",
+                background: "transparent",
+                color: activeTab === tab ? "var(--accent-purple)" : "var(--text-muted)",
+                transition: "all 0.15s ease",
+              }}
+            >
+              {t(`settings.tab.${tab}`)}
+            </button>
+          ))}
+        </div>
 
-        <SettingRow label={t("settings.appearance")}>
-          <ColorModeToggle
-            value={prefs.color_mode}
-            onChange={(v) => updatePrefs({ color_mode: v })}
-          />
-        </SettingRow>
+        {/* Tab content */}
+        <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+          {activeTab === "general" && (
+            <GeneralTab prefs={prefs} updatePrefs={updatePrefs} />
+          )}
+          {activeTab === "account" && (
+            <AccountTab
+              prefs={prefs}
+              updatePrefs={updatePrefs}
+              user={user}
+              profile={profile}
+              signIn={signIn}
+              signOut={signOut}
+              leaderboardAvailable={leaderboardAvailable}
+            />
+          )}
+          {activeTab === "ai" && (
+            <AiTranslationSection
+              aiKeys={prefs.ai_keys}
+              aiModel={prefs.ai_model}
+              onKeysChange={(keys) => updatePrefs({ ai_keys: keys })}
+              onModelChange={(model) => updatePrefs({ ai_model: model })}
+            />
+          )}
+        </div>
 
-        <SettingRow label={t("settings.language")}>
-          <LanguageSelector
-            value={prefs.language}
-            onChange={(v) => updatePrefs({ language: v })}
-          />
-        </SettingRow>
-
-        <SettingRow
-          label={t("settings.numberFormat")}
-          description={prefs.number_format === "compact" ? "377.0K" : "377,000"}
-        >
-          <ToggleButton
-            options={["compact", "full"]}
-            value={prefs.number_format}
-            onChange={(v) => updatePrefs({ number_format: v as "compact" | "full" })}
-          />
-        </SettingRow>
-
-        <SettingRow label={t("settings.menuBarCost")}>
-          <ToggleSwitch
-            checked={prefs.show_tray_cost}
-            onChange={(v) => updatePrefs({ show_tray_cost: v })}
-          />
-        </SettingRow>
-
-        <SettingRow label={t("settings.usageTracking")}>
-          <ToggleSwitch
-            checked={prefs.usage_tracking_enabled}
-            onChange={(v) => updatePrefs({ usage_tracking_enabled: v })}
-          />
-        </SettingRow>
-
-        {/* Salary section */}
-        <SettingRow
-          label={t("settings.monthlySalary")}
-          description="USD"
-        >
-          <input
-            type="number"
-            min={0}
-            step={100}
-            value={prefs.monthly_salary ?? ""}
-            placeholder="—"
-            onChange={(e) => {
-              const val = e.target.value;
-              updatePrefs({ monthly_salary: val ? Number(val) : undefined });
-            }}
-            style={{
-              width: 80,
-              fontSize: 11,
-              fontWeight: 600,
-              padding: "3px 6px",
-              borderRadius: 4,
-              border: "1px solid var(--heat-1)",
-              background: "var(--heat-0)",
-              color: "var(--text-primary)",
-              outline: "none",
-              textAlign: "right",
-            }}
-          />
-        </SettingRow>
-
-        {/* Config Directories section */}
+        {/* Footer: version + quit */}
         <div style={{
           height: 1,
           background: "var(--heat-0)",
           margin: "8px 0",
         }} />
-
-        <ConfigDirsSection
-          dirs={prefs.config_dirs}
-          onChange={(dirs) => updatePrefs({ config_dirs: dirs })}
-        />
-
-        {/* Leaderboard section */}
-        {leaderboardAvailable && (
-          <>
-            <div style={{
-              height: 1,
-              background: "var(--heat-0)",
-              margin: "8px 0",
-            }} />
-
-            <div style={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: "var(--text-secondary)",
-              textTransform: "uppercase",
-              letterSpacing: "0.5px",
-              marginBottom: 8,
-            }}>
-              {t("settings.leaderboard")}
-            </div>
-
-            <SettingRow label={t("settings.shareUsageData")}>
-              <ToggleSwitch
-                checked={prefs.leaderboard_opted_in}
-                onChange={(v) => updatePrefs({ leaderboard_opted_in: v })}
-              />
-            </SettingRow>
-
-            {user ? (
-              <div style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "6px 0",
-              }}>
-                <div style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}>
-                  {profile?.avatar_url && (
-                    <img
-                      src={profile.avatar_url}
-                      alt=""
-                      style={{ width: 18, height: 18, borderRadius: 9 }}
-                    />
-                  )}
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-primary)" }}>
-                    {profile?.nickname ?? t("settings.signedIn")}
-                  </span>
-                </div>
-                <button
-                  onClick={signOut}
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 600,
-                    padding: "3px 8px",
-                    borderRadius: 4,
-                    border: "none",
-                    cursor: "pointer",
-                    background: "var(--heat-0)",
-                    color: "var(--text-secondary)",
-                  }}
-                >
-                  {t("settings.signOut")}
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={signIn}
-                style={{
-                  width: "100%",
-                  padding: "6px 0",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  border: "none",
-                  borderRadius: 4,
-                  cursor: "pointer",
-                  background: "#24292e",
-                  color: "#fff",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 6,
-                  marginTop: 4,
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
-                </svg>
-                {t("settings.signInGithub")}
-              </button>
-            )}
-          </>
-        )}
-
-        {/* Quit */}
-        <div style={{
-          height: 1,
-          background: "var(--heat-0)",
-          margin: "8px 0",
-        }} />
-
         <div style={{
           display: "flex",
           alignItems: "center",
@@ -287,6 +163,222 @@ export function SettingsOverlay({ visible, onClose }: Props) {
     </>
   );
 }
+
+/* ========== General Tab ========== */
+
+function GeneralTab({
+  prefs,
+  updatePrefs,
+}: {
+  prefs: ReturnType<typeof useSettings>["prefs"];
+  updatePrefs: ReturnType<typeof useSettings>["updatePrefs"];
+}) {
+  return (
+    <div>
+      <SettingRow label={useI18n()("settings.theme")}>
+        <ThemeSelector
+          value={prefs.theme}
+          onChange={(v) => updatePrefs({ theme: v })}
+        />
+      </SettingRow>
+
+      <SettingRow label={useI18n()("settings.appearance")}>
+        <ColorModeToggle
+          value={prefs.color_mode}
+          onChange={(v) => updatePrefs({ color_mode: v })}
+        />
+      </SettingRow>
+
+      <SettingRow label={useI18n()("settings.language")}>
+        <LanguageSelector
+          value={prefs.language}
+          onChange={(v) => updatePrefs({ language: v })}
+        />
+      </SettingRow>
+
+      <SettingRow
+        label={useI18n()("settings.numberFormat")}
+        description={prefs.number_format === "compact" ? "377.0K" : "377,000"}
+      >
+        <ToggleButton
+          options={["compact", "full"]}
+          value={prefs.number_format}
+          onChange={(v) => updatePrefs({ number_format: v as "compact" | "full" })}
+        />
+      </SettingRow>
+
+      <SettingRow label={useI18n()("settings.menuBarCost")}>
+        <ToggleSwitch
+          checked={prefs.show_tray_cost}
+          onChange={(v) => updatePrefs({ show_tray_cost: v })}
+        />
+      </SettingRow>
+
+      <SettingRow label={useI18n()("settings.usageTracking")}>
+        <ToggleSwitch
+          checked={prefs.usage_tracking_enabled}
+          onChange={(v) => updatePrefs({ usage_tracking_enabled: v })}
+        />
+      </SettingRow>
+
+      <SettingRow
+        label={useI18n()("settings.monthlySalary")}
+        description="USD"
+      >
+        <input
+          type="number"
+          min={0}
+          step={100}
+          value={prefs.monthly_salary ?? ""}
+          placeholder="—"
+          onChange={(e) => {
+            const val = e.target.value;
+            updatePrefs({ monthly_salary: val ? Number(val) : undefined });
+          }}
+          style={{
+            width: 80,
+            fontSize: 11,
+            fontWeight: 600,
+            padding: "3px 6px",
+            borderRadius: 4,
+            border: "1px solid var(--heat-1)",
+            background: "var(--heat-0)",
+            color: "var(--text-primary)",
+            outline: "none",
+            textAlign: "right",
+          }}
+        />
+      </SettingRow>
+    </div>
+  );
+}
+
+/* ========== Account Tab ========== */
+
+function AccountTab({
+  prefs,
+  updatePrefs,
+  user,
+  profile,
+  signIn,
+  signOut,
+  leaderboardAvailable,
+}: {
+  prefs: ReturnType<typeof useSettings>["prefs"];
+  updatePrefs: ReturnType<typeof useSettings>["updatePrefs"];
+  user: ReturnType<typeof useAuth>["user"];
+  profile: ReturnType<typeof useAuth>["profile"];
+  signIn: () => Promise<void>;
+  signOut: () => Promise<void>;
+  leaderboardAvailable: boolean;
+}) {
+  const t = useI18n();
+
+  return (
+    <div>
+      <ConfigDirsSection
+        dirs={prefs.config_dirs}
+        onChange={(dirs) => updatePrefs({ config_dirs: dirs })}
+      />
+
+      {leaderboardAvailable && (
+        <>
+          <div style={{
+            height: 1,
+            background: "var(--heat-0)",
+            margin: "8px 0",
+          }} />
+
+          <div style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: "var(--text-secondary)",
+            textTransform: "uppercase",
+            letterSpacing: "0.5px",
+            marginBottom: 8,
+          }}>
+            {t("settings.leaderboard")}
+          </div>
+
+          <SettingRow label={t("settings.shareUsageData")}>
+            <ToggleSwitch
+              checked={prefs.leaderboard_opted_in}
+              onChange={(v) => updatePrefs({ leaderboard_opted_in: v })}
+            />
+          </SettingRow>
+
+          {user ? (
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "6px 0",
+            }}>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}>
+                {profile?.avatar_url && (
+                  <img
+                    src={profile.avatar_url}
+                    alt=""
+                    style={{ width: 18, height: 18, borderRadius: 9 }}
+                  />
+                )}
+                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-primary)" }}>
+                  {profile?.nickname ?? t("settings.signedIn")}
+                </span>
+              </div>
+              <button
+                onClick={signOut}
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  padding: "3px 8px",
+                  borderRadius: 4,
+                  border: "none",
+                  cursor: "pointer",
+                  background: "var(--heat-0)",
+                  color: "var(--text-secondary)",
+                }}
+              >
+                {t("settings.signOut")}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={signIn}
+              style={{
+                width: "100%",
+                padding: "6px 0",
+                fontSize: 11,
+                fontWeight: 600,
+                border: "none",
+                borderRadius: 4,
+                cursor: "pointer",
+                background: "#24292e",
+                color: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+                marginTop: 4,
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+              </svg>
+              {t("settings.signInGithub")}
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ========== Shared Components ========== */
 
 function SettingRow({
   label,
@@ -548,7 +640,6 @@ function ConfigDirsSection({
         defaultPath: home ? `${home}/.claude` : undefined,
       });
       if (!selected) return;
-      // Convert absolute path to ~/... format
       const homePath = selected.replace(/^\/Users\/[^/]+/, "~");
       if (dirs.includes(homePath) || dirs.includes(selected)) return;
       const valid = await invoke<boolean>("validate_claude_dir", { path: homePath });
@@ -579,7 +670,6 @@ function ConfigDirsSection({
         {t("settings.configDirs")}
       </div>
 
-      {/* Directory list */}
       <div style={{
         maxHeight: 120,
         overflowY: "auto",
@@ -646,7 +736,6 @@ function ConfigDirsSection({
         ))}
       </div>
 
-      {/* Buttons */}
       <div style={{ display: "flex", gap: 4 }}>
         <button
           onClick={handleAutoDetect}
@@ -688,7 +777,6 @@ function ConfigDirsSection({
         </button>
       </div>
 
-      {/* Feedback message */}
       {message && (
         <div style={{
           fontSize: 10,
@@ -697,6 +785,165 @@ function ConfigDirsSection({
           fontWeight: 500,
         }}>
           {message}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ========== AI Translation Tab ========== */
+
+interface AiProvider {
+  id: string;
+  i18nKey: string;
+  models: { id: string; label: string }[];
+}
+
+const AI_PROVIDERS: AiProvider[] = [
+  {
+    id: "gemini",
+    i18nKey: "settings.aiKeyGemini",
+    models: [
+      { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+      { id: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite" },
+      { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+      { id: "gemini-3-flash-preview", label: "Gemini 3 Flash" },
+      { id: "gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash Lite" },
+      { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro" },
+    ],
+  },
+  {
+    id: "openai",
+    i18nKey: "settings.aiKeyOpenAI",
+    models: [
+      { id: "gpt-5-mini", label: "GPT-5 Mini" },
+      { id: "gpt-5.4", label: "GPT-5.4" },
+      { id: "gpt-5.4-mini", label: "GPT-5.4 Mini" },
+      { id: "gpt-5.4-nano", label: "GPT-5.4 Nano" },
+    ],
+  },
+  {
+    id: "anthropic",
+    i18nKey: "settings.aiKeyAnthropic",
+    models: [
+      { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
+      { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+    ],
+  },
+];
+
+function AiTranslationSection({
+  aiKeys,
+  aiModel,
+  onKeysChange,
+  onModelChange,
+}: {
+  aiKeys?: { gemini?: string; openai?: string; anthropic?: string };
+  aiModel?: string;
+  onKeysChange: (keys: { gemini?: string; openai?: string; anthropic?: string }) => void;
+  onModelChange: (model: string | undefined) => void;
+}) {
+  const t = useI18n();
+  const keys = aiKeys ?? {};
+
+  const availableModels = AI_PROVIDERS.flatMap((p) => {
+    const key = keys[p.id as keyof typeof keys];
+    return key ? p.models : [];
+  });
+
+  const handleKeyChange = (provider: string, value: string) => {
+    const trimmed = value.trim();
+    onKeysChange({ ...keys, [provider]: trimmed || undefined });
+  };
+
+  const keyInputStyle = {
+    width: "100%",
+    fontSize: 10,
+    fontWeight: 500,
+    padding: "4px 8px",
+    borderRadius: 4,
+    border: "1px solid var(--heat-1)",
+    background: "var(--heat-0)",
+    color: "var(--text-primary)",
+    outline: "none",
+    fontFamily: "monospace",
+  } as const;
+
+  return (
+    <div>
+      <div style={{
+        fontSize: 12,
+        color: "var(--text-secondary)",
+        marginBottom: 12,
+        lineHeight: 1.6,
+        padding: "10px 12px",
+        background: "rgba(124, 92, 252, 0.05)",
+        borderRadius: 8,
+        border: "1px solid rgba(124, 92, 252, 0.1)",
+      }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: "var(--text-primary)" }}>{t("settings.aiDescription")}</div>
+        <div style={{ fontSize: 12, opacity: 0.85, whiteSpace: "pre-line", lineHeight: 1.6 }}>{t("settings.aiFeatures")}</div>
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+          marginTop: 8,
+          fontSize: 11,
+          opacity: 0.7,
+        }}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+          <span>{t("settings.aiKeySecure")}</span>
+        </div>
+      </div>
+
+      {AI_PROVIDERS.map((provider) => {
+        const key = keys[provider.id as keyof typeof keys] ?? "";
+        return (
+          <div key={provider.id} style={{ marginBottom: 6 }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 2 }}>
+              {t(provider.i18nKey)}
+            </div>
+            <input
+              type="password"
+              value={key}
+              onChange={(e) => handleKeyChange(provider.id, e.target.value)}
+              placeholder={t("settings.aiKeyPlaceholder")}
+              style={keyInputStyle}
+            />
+          </div>
+        );
+      })}
+
+      {availableModels.length > 0 ? (
+        <SettingRow label={t("settings.aiModel")}>
+          <select
+            value={aiModel ?? ""}
+            onChange={(e) => onModelChange(e.target.value || undefined)}
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              padding: "3px 6px",
+              borderRadius: 4,
+              border: "1px solid var(--heat-1)",
+              cursor: "pointer",
+              background: "var(--heat-0)",
+              color: "var(--text-primary)",
+              outline: "none",
+              maxWidth: 140,
+            }}
+          >
+            <option value="">—</option>
+            {availableModels.map((m) => (
+              <option key={m.id} value={m.id}>{m.label}</option>
+            ))}
+          </select>
+        </SettingRow>
+      ) : (
+        <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500, marginTop: 4 }}>
+          {t("settings.aiNoKeys")}
         </div>
       )}
     </div>

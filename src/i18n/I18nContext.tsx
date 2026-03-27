@@ -21,16 +21,20 @@ const locales: Record<Locale, Translations> = {
   fr, es, de,
 };
 
-export const LANGUAGE_OPTIONS: { id: Locale; label: string }[] = [
-  { id: "en", label: "English" },
-  { id: "ko", label: "한국어" },
-  { id: "ja", label: "日本語" },
-  { id: "zh-CN", label: "简体中文" },
-  { id: "zh-TW", label: "繁體中文" },
-  { id: "fr", label: "Français" },
-  { id: "es", label: "Español" },
-  { id: "de", label: "Deutsch" },
+export const LANGUAGE_OPTIONS: { id: Locale; label: string; englishName: string }[] = [
+  { id: "en", label: "English", englishName: "English" },
+  { id: "ko", label: "한국어", englishName: "Korean" },
+  { id: "ja", label: "日本語", englishName: "Japanese" },
+  { id: "zh-CN", label: "简体中文", englishName: "Simplified Chinese" },
+  { id: "zh-TW", label: "繁體中文", englishName: "Traditional Chinese" },
+  { id: "fr", label: "Français", englishName: "French" },
+  { id: "es", label: "Español", englishName: "Spanish" },
+  { id: "de", label: "Deutsch", englishName: "German" },
 ];
+
+export const LANGUAGE_NAMES: Record<string, string> = Object.fromEntries(
+  LANGUAGE_OPTIONS.map((l) => [l.id, l.englishName]),
+);
 
 type TFunction = (key: string, params?: Record<string, string | number>) => string;
 
