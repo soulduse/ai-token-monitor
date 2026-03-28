@@ -162,9 +162,8 @@ impl CodexProvider {
                                 continue;
                             }
 
-                            let date = dir_date
-                                .clone()
-                                .or_else(|| extract_date_from_timestamp(&value))
+                            let date = extract_date_from_timestamp(&value)
+                                .or_else(|| dir_date.clone())
                                 .unwrap_or_else(|| "1970-01-01".to_string());
 
                             let model = if current_model.is_empty() {
@@ -655,5 +654,55 @@ mod tests {
         assert_eq!(model.input_tokens, 110);
         assert_eq!(model.output_tokens, 55);
         assert_eq!(model.cache_read, 40);
+    }
+
+    #[test]
+    fn test_parse_single_file_prefers_event_timestamp_over_folder_date() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "ai-token-monitor-codex-test-{}",
+            std::process::id()
+        ));
+        let session_dir = temp_root.join("sessions/2026/03/27");
+        std::fs::create_dir_all(&session_dir).unwrap();
+        let file_path = session_dir.join("rollout-test.jsonl");
+
+        let event_value = serde_json::json!({
+            "type": "event_msg",
+            "timestamp": "2026-03-27T16:30:00.000Z",
+            "payload": {
+                "type": "token_count",
+                "info": {
+                    "last_token_usage": {
+                        "input_tokens": 10,
+                        "output_tokens": 5,
+                        "cached_input_tokens": 1,
+                        "total_tokens": 16
+                    }
+                }
+            }
+        });
+
+        let content = format!(
+            "{}\n{}\n{}\n",
+            serde_json::json!({
+                "type": "session_meta",
+                "payload": { "id": "session-1" }
+            }),
+            serde_json::json!({
+                "type": "turn_context",
+                "payload": { "model": "gpt-5-codex" }
+            }),
+            event_value
+        );
+        std::fs::write(&file_path, content).unwrap();
+
+        let expected_date = extract_date_from_timestamp(&event_value).unwrap();
+        let entries = CodexProvider::parse_single_file(&file_path);
+        let entry = entries.values().next().unwrap();
+
+        assert_eq!(entry.date, expected_date);
+
+        let _ = std::fs::remove_file(&file_path);
+        let _ = std::fs::remove_dir_all(&temp_root);
     }
 }
