@@ -7,7 +7,7 @@ import { WrappedOverlay } from "./wrapped/WrappedOverlay";
 import { ReceiptOverlay } from "./receipt/ReceiptOverlay";
 import type { AllStats } from "../lib/types";
 import type { UpdaterState } from "../hooks/useUpdater";
-import { formatTokens, formatCost, getTotalTokens, toLocalDateStr } from "../lib/format";
+import { formatTokens, formatCost, getModelTotalTokens, getTotalTokens, toLocalDateStr } from "../lib/format";
 import { useI18n } from "../i18n/I18nContext";
 
 interface Props {
@@ -69,7 +69,7 @@ export function Header({ stats, updater }: Props) {
       ``,
       `## ${t("export.models")}`,
       ...Object.entries(stats.model_usage).map(
-        ([model, u]) => `- **${model}**: ${formatTokens(u.input_tokens + u.output_tokens + u.cache_read, "full")} tokens, ${formatCost(u.cost_usd)}`
+        ([model, u]) => `- **${model}**: ${formatTokens(getModelTotalTokens(u), "full")} tokens, ${formatCost(u.cost_usd)}`
       ),
     ];
 
@@ -405,4 +405,3 @@ const indicatorBtnStyle: React.CSSProperties = {
   color: "#fff",
   lineHeight: 1.4,
 };
-

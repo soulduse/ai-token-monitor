@@ -220,6 +220,7 @@ impl ClaudeCodeProvider {
     fn build_stats(&self, entries: &HashMap<String, SessionEntry>) -> AllStats {
         let mut daily_map: HashMap<String, DailyUsage> = HashMap::new();
         let mut model_usage_map: HashMap<String, ModelUsage> = HashMap::new();
+        let mut daily_session_ids: HashMap<String, HashSet<String>> = HashMap::new();
         let mut total_messages: u32 = 0;
         let mut first_date: Option<String> = None;
 
@@ -235,7 +236,10 @@ impl ClaudeCodeProvider {
                 &pricing, entry.input_tokens, entry.output_tokens,
                 entry.cache_read_input_tokens, entry.cache_creation_input_tokens,
             );
-            let total_tokens = entry.input_tokens + entry.output_tokens;
+            let total_tokens = entry.input_tokens
+                + entry.output_tokens
+                + entry.cache_read_input_tokens
+                + entry.cache_creation_input_tokens;
 
             let daily = daily_map.entry(entry.date.clone()).or_insert_with(|| DailyUsage {
                 date: entry.date.clone(), tokens: HashMap::new(), cost_usd: 0.0,
@@ -251,7 +255,10 @@ impl ClaudeCodeProvider {
             daily.cache_write_tokens += entry.cache_creation_input_tokens;
 
             if !entry.session_id.is_empty() {
-                // session_id tracking is only used for counting here
+                daily_session_ids
+                    .entry(entry.date.clone())
+                    .or_default()
+                    .insert(entry.session_id.clone());
             }
 
             let mu = model_usage_map.entry(entry.model.clone()).or_insert_with(|| ModelUsage {
@@ -264,11 +271,19 @@ impl ClaudeCodeProvider {
             mu.cost_usd += cost;
         }
 
+        for (date, session_ids) in &daily_session_ids {
+            if let Some(daily) = daily_map.get_mut(date) {
+                daily.sessions = session_ids.len() as u32;
+            }
+        }
+
         // Count sessions and tool calls from stats-cache.json
         if let Ok(cache) = self.parse_stats_cache() {
             for activity in &cache.daily_activity {
                 if let Some(daily) = daily_map.get_mut(&activity.date) {
-                    daily.sessions = activity.session_count;
+                    if activity.session_count > 0 {
+                        daily.sessions = activity.session_count;
+                    }
                     daily.tool_calls = activity.tool_call_count;
                 }
             }
@@ -705,5 +720,58 @@ mod tests {
         let pricing = pricing::get_claude_pricing("claude-unknown-model");
         assert!((pricing.input - 3.0).abs() < 0.001);
         assert!((pricing.output - 15.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn build_stats_uses_real_total_tokens_and_session_fallback() {
+        let provider = ClaudeCodeProvider {
+            primary_dir: PathBuf::from("/tmp/nonexistent-claude-dir"),
+            all_dirs: vec![PathBuf::from("/tmp/nonexistent-claude-dir")],
+        };
+
+        let mut entries = HashMap::new();
+        entries.insert(
+            "msg-1:req-1".to_string(),
+            SessionEntry {
+                date: "2026-03-28".to_string(),
+                timestamp: "2026-03-28T10:00:00Z".to_string(),
+                model: "claude-opus-4-6".to_string(),
+                session_id: "session-a".to_string(),
+                message_id: "msg-1".to_string(),
+                request_id: "req-1".to_string(),
+                input_tokens: 100,
+                output_tokens: 50,
+                cache_read_input_tokens: 200,
+                cache_creation_input_tokens: 25,
+            },
+        );
+        entries.insert(
+            "msg-2:req-2".to_string(),
+            SessionEntry {
+                date: "2026-03-28".to_string(),
+                timestamp: "2026-03-28T10:05:00Z".to_string(),
+                model: "claude-opus-4-6".to_string(),
+                session_id: "session-b".to_string(),
+                message_id: "msg-2".to_string(),
+                request_id: "req-2".to_string(),
+                input_tokens: 80,
+                output_tokens: 20,
+                cache_read_input_tokens: 40,
+                cache_creation_input_tokens: 10,
+            },
+        );
+
+        let stats = provider.build_stats(&entries);
+        let day = &stats.daily[0];
+        let model = stats.model_usage.get("claude-opus-4-6").unwrap();
+
+        assert_eq!(day.tokens.get("claude-opus-4-6"), Some(&525));
+        assert_eq!(day.sessions, 2);
+        assert_eq!(day.cache_read_tokens, 240);
+        assert_eq!(day.cache_write_tokens, 35);
+        assert_eq!(model.input_tokens, 180);
+        assert_eq!(model.output_tokens, 70);
+        assert_eq!(model.cache_read, 240);
+        assert_eq!(model.cache_write, 35);
     }
 }

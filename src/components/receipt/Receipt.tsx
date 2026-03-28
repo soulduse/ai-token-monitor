@@ -1,6 +1,6 @@
 import { useMemo, forwardRef } from "react";
 import type { AllStats } from "../../lib/types";
-import { formatTokens, formatCost } from "../../lib/format";
+import { formatTokens, formatCost, getModelTotalTokens } from "../../lib/format";
 import {
   filterByPeriod,
   computeTotalCost,
@@ -58,7 +58,7 @@ export const Receipt = forwardRef<HTMLDivElement, Props>(
       for (const [model, info] of modelMap) {
         const overallUsage = stats.model_usage[model];
         if (overallUsage) {
-          const overallTotal = overallUsage.input_tokens + overallUsage.output_tokens + overallUsage.cache_read;
+          const overallTotal = getModelTotalTokens(overallUsage);
           if (overallTotal > 0) {
             info.cost = (info.tokens / overallTotal) * overallUsage.cost_usd;
           }

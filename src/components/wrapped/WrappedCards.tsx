@@ -1,5 +1,5 @@
 import { forwardRef } from "react";
-import { formatCost, formatTokens, formatDate } from "../../lib/format";
+import { formatCost, formatTokens, formatDate, getModelTotalTokens } from "../../lib/format";
 import { shortenModelName } from "../../lib/statsHelpers";
 import type { StreakInfo } from "../../lib/statsHelpers";
 import type { ModelUsage } from "../../lib/types";
@@ -78,7 +78,7 @@ const TopModelCard = forwardRef<HTMLDivElement, CardProps>(({ data }, ref) => {
 
   // Calculate usage percentages for top 3 models
   const allModels = Object.entries(data.modelUsage)
-    .map(([name, u]) => ({ name: shortenModelName(name), total: u.input_tokens + u.output_tokens + u.cache_read }))
+    .map(([name, u]) => ({ name: shortenModelName(name), total: getModelTotalTokens(u) }))
     .sort((a, b) => b.total - a.total)
     .slice(0, 3);
   const maxTotal = allModels[0]?.total ?? 1;

@@ -1,5 +1,5 @@
 import type { ModelUsage } from "../lib/types";
-import { formatTokens, formatCost } from "../lib/format";
+import { formatTokens, formatCost, getModelTotalTokens } from "../lib/format";
 import { useSettings } from "../contexts/SettingsContext";
 import { useI18n } from "../i18n/I18nContext";
 
@@ -25,13 +25,13 @@ export function ModelBreakdown({ modelUsage }: Props) {
   const t = useI18n();
   const models = Object.entries(modelUsage).sort(
     ([, a], [, b]) =>
-      b.input_tokens + b.output_tokens - (a.input_tokens + a.output_tokens)
+      getModelTotalTokens(b) - getModelTotalTokens(a)
   );
 
   if (models.length === 0) return null;
 
   const maxTotal = Math.max(
-    ...models.map(([, m]) => m.input_tokens + m.output_tokens + m.cache_read)
+    ...models.map(([, m]) => getModelTotalTokens(m))
   );
 
   return (
@@ -54,10 +54,10 @@ export function ModelBreakdown({ modelUsage }: Props) {
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {models.map(([model, usage]) => {
-          const total = usage.input_tokens + usage.output_tokens + usage.cache_read;
+          const total = getModelTotalTokens(usage);
           const inputPct = (usage.input_tokens / total) * 100;
           const outputPct = (usage.output_tokens / total) * 100;
-          const cachePct = (usage.cache_read / total) * 100;
+          const cachePct = ((usage.cache_read + usage.cache_write) / total) * 100;
           const barWidth = (total / maxTotal) * 100;
 
           return (

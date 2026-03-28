@@ -55,7 +55,6 @@ struct CodexEntry {
     input_tokens: u64,
     output_tokens: u64,
     cached_tokens: u64,
-    total_tokens: u64,
 }
 
 // --- Provider ---
@@ -182,7 +181,6 @@ impl CodexProvider {
                                 input_tokens: input,
                                 output_tokens: output,
                                 cached_tokens: cached,
-                                total_tokens: total,
                             });
                         }
                         _ => {}
@@ -254,6 +252,7 @@ impl CodexProvider {
 
             let pricing = pricing::get_codex_pricing(&entry.model);
             let cost = calculate_cost(&pricing, entry.input_tokens, entry.output_tokens, entry.cached_tokens);
+            let total_tokens = entry.input_tokens + entry.output_tokens + entry.cached_tokens;
 
             let daily = daily_map.entry(entry.date.clone()).or_insert_with(|| DailyUsage {
                 date: entry.date.clone(),
@@ -267,7 +266,7 @@ impl CodexProvider {
                 cache_read_tokens: 0,
                 cache_write_tokens: 0,
             });
-            *daily.tokens.entry(entry.model.clone()).or_insert(0) += entry.total_tokens;
+            *daily.tokens.entry(entry.model.clone()).or_insert(0) += total_tokens;
             daily.cost_usd += cost;
             daily.messages += 1;
             daily.input_tokens += entry.input_tokens;
@@ -599,7 +598,6 @@ mod tests {
                 input_tokens: 100,
                 output_tokens: 50,
                 cached_tokens: 25,
-                total_tokens: 150,
             },
         );
         entries.insert(
@@ -611,7 +609,6 @@ mod tests {
                 input_tokens: 200,
                 output_tokens: 25,
                 cached_tokens: 10,
-                total_tokens: 225,
             },
         );
 
@@ -620,5 +617,43 @@ mod tests {
         assert_eq!(stats.daily.len(), 1);
         assert_eq!(stats.daily[0].messages, 2);
         assert_eq!(stats.daily[0].sessions, 1);
+    }
+
+    #[test]
+    fn test_build_stats_uses_real_total_tokens_with_cached_input() {
+        let mut entries = HashMap::new();
+        entries.insert(
+            "session-a:1".to_string(),
+            CodexEntry {
+                date: "2026-03-24".to_string(),
+                model: "gpt-5-codex".to_string(),
+                session_id: "session-a".to_string(),
+                input_tokens: 100,
+                output_tokens: 50,
+                cached_tokens: 25,
+            },
+        );
+        entries.insert(
+            "session-b:1".to_string(),
+            CodexEntry {
+                date: "2026-03-24".to_string(),
+                model: "gpt-5-codex".to_string(),
+                session_id: "session-b".to_string(),
+                input_tokens: 10,
+                output_tokens: 5,
+                cached_tokens: 15,
+            },
+        );
+
+        let stats = CodexProvider::build_stats(&entries);
+        let day = &stats.daily[0];
+        let model = stats.model_usage.get("gpt-5-codex").unwrap();
+
+        assert_eq!(day.tokens.get("gpt-5-codex"), Some(&205));
+        assert_eq!(day.sessions, 2);
+        assert_eq!(day.cache_read_tokens, 40);
+        assert_eq!(model.input_tokens, 110);
+        assert_eq!(model.output_tokens, 55);
+        assert_eq!(model.cache_read, 40);
     }
 }
