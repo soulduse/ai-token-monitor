@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from "react";
 import type { DailyUsage } from "../lib/types";
-import { getTotalTokens, toLocalDateStr, formatTokens, formatCost } from "../lib/format";
+import { getDayTokens, toLocalDateStr, formatTokens, formatCost } from "../lib/format";
 import { useSettings } from "../contexts/SettingsContext";
 import { Heatmap3D } from "./Heatmap3D";
 import { ActivityStats } from "./ActivityStats";
@@ -87,7 +87,7 @@ export function ActivityGraph({ daily }: Props) {
       d.setDate(startDate.getDate() + i);
       const dateStr = toLocalDateStr(d);
       const usage = dateMap.get(dateStr);
-      const tokens = usage ? getTotalTokens(usage.tokens) : 0;
+      const tokens = usage ? getDayTokens(usage) : 0;
       const cost = usage?.cost_usd ?? 0;
       cells.push({ date: dateStr, tokens, cost });
       if (tokens > 0) values.push(tokens);

@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useCombinedStats } from "./hooks/useCombinedStats";
 import { useToday } from "./hooks/useToday";
 import { useUnreadChat } from "./hooks/useUnreadChat";
-import { getTotalTokens } from "./lib/format";
+import { getDayTokens } from "./lib/format";
 import { SettingsProvider, useSettings } from "./contexts/SettingsContext";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { I18nProvider, useI18n } from "./i18n/I18nContext";
@@ -26,6 +27,13 @@ import { UsageAlertBar } from "./components/UsageAlertBar";
 import { useUpdater } from "./hooks/useUpdater";
 
 function AppContent() {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") invoke("hide_window").catch(() => {});
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const { prefs } = useSettings();
   const { stats, error, loading } = useCombinedStats({
     includeClaude: prefs.include_claude,
@@ -53,7 +61,7 @@ function AppContent() {
         const diff = (new Date(todayStr).getTime() - new Date(d.date).getTime()) / 86400000;
         return diff >= 1 && diff <= 7;
       })
-      .map((d) => getTotalTokens(d.tokens));
+      .map((d) => getDayTokens(d));
 
     const weekAvg = last7.length > 0
       ? last7.reduce((a, b) => a + b, 0) / last7.length

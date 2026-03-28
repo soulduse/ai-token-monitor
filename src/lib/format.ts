@@ -31,6 +31,11 @@ export function getTotalTokens(tokens: Record<string, number>): number {
   return Object.values(tokens).reduce((sum, v) => sum + v, 0);
 }
 
+/** Total billable tokens for a day: input + output + cache_read + cache_write */
+export function getDayTokens(day: { tokens: Record<string, number>; cache_read_tokens: number; cache_write_tokens: number }): number {
+  return getTotalTokens(day.tokens) + day.cache_read_tokens + day.cache_write_tokens;
+}
+
 /** Format a Date to local YYYY-MM-DD string without UTC conversion */
 export function toLocalDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;

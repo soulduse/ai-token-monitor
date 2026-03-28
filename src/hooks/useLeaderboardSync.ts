@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import type { AllStats, LeaderboardProvider } from "../lib/types";
-import { getTotalTokens, toLocalDateStr } from "../lib/format";
+import { getDayTokens, toLocalDateStr } from "../lib/format";
 import type { User } from "@supabase/supabase-js";
 
 export interface LeaderboardEntry {
@@ -251,7 +251,7 @@ async function uploadSnapshot(
     user_id: userId,
     date: d.date,
     provider,
-    total_tokens: getTotalTokens(d.tokens),
+    total_tokens: getDayTokens(d),
     cost_usd: d.cost_usd,
     messages: d.messages,
     sessions: d.sessions,

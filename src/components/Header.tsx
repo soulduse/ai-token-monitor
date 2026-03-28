@@ -7,7 +7,7 @@ import { WrappedOverlay } from "./wrapped/WrappedOverlay";
 import { ReceiptOverlay } from "./receipt/ReceiptOverlay";
 import type { AllStats } from "../lib/types";
 import type { UpdaterState } from "../hooks/useUpdater";
-import { formatTokens, formatCost, getTotalTokens, toLocalDateStr } from "../lib/format";
+import { formatTokens, formatCost, getDayTokens, toLocalDateStr } from "../lib/format";
 import { useI18n } from "../i18n/I18nContext";
 
 interface Props {
@@ -46,10 +46,10 @@ export function Header({ stats, updater }: Props) {
 
     const todayStr = toLocalDateStr(new Date());
     const today = stats.daily.find((d) => d.date === todayStr);
-    const todayTokens = today ? getTotalTokens(today.tokens) : 0;
+    const todayTokens = today ? getDayTokens(today) : 0;
     const todayCost = today?.cost_usd ?? 0;
 
-    const totalTokens = stats.daily.reduce((sum, d) => sum + getTotalTokens(d.tokens), 0);
+    const totalTokens = stats.daily.reduce((sum, d) => sum + getDayTokens(d), 0);
     const totalCost = stats.daily.reduce((sum, d) => sum + d.cost_usd, 0);
 
     const lines = [

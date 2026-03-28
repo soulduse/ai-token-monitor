@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { DailyUsage } from "../lib/types";
-import { formatTokens, formatCost, getTotalTokens } from "../lib/format";
+import { formatTokens, formatCost, getDayTokens } from "../lib/format";
 import { useSettings } from "../contexts/SettingsContext";
 import { InfoTooltip } from "./InfoTooltip";
 import { useI18n } from "../i18n/I18nContext";
@@ -30,7 +30,7 @@ export function TodaySummary({ today, weekAvg }: Props) {
   const { prefs } = useSettings();
   const t = useI18n();
   const [pricing, setPricing] = useState<PricingTable | null>(null);
-  const totalTokens = today ? getTotalTokens(today.tokens) : 0;
+  const totalTokens = today ? getDayTokens(today) : 0;
   const cost = today?.cost_usd ?? 0;
   const messages = today?.messages ?? 0;
   const sessions = today?.sessions ?? 0;

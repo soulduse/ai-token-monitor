@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import type { DailyUsage } from "../lib/types";
-import { formatTokens, formatCost, getTotalTokens, toLocalDateStr } from "../lib/format";
+import { formatTokens, formatCost, getDayTokens, toLocalDateStr } from "../lib/format";
 import { useSettings } from "../contexts/SettingsContext";
 import { PeriodSelector } from "./PeriodSelector";
 import { useI18n } from "../i18n/I18nContext";
@@ -52,7 +52,7 @@ function aggregate(daily: DailyUsage[], start: string, end: string) {
 
   for (const d of daily) {
     if (d.date >= start && d.date <= end) {
-      tokens += getTotalTokens(d.tokens);
+      tokens += getDayTokens(d);
       cost += d.cost_usd;
       sessions += d.sessions;
       messages += d.messages;

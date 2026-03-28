@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import type { DailyUsage } from "../lib/types";
-import { formatTokens, formatCost, getTotalTokens, formatDate, toLocalDateStr } from "../lib/format";
+import { formatTokens, formatCost, getDayTokens, formatDate, toLocalDateStr } from "../lib/format";
 import { useSettings } from "../contexts/SettingsContext";
 import { useI18n } from "../i18n/I18nContext";
 
@@ -32,7 +32,7 @@ export function DailyChart({ daily, days = 7 }: Props) {
       const usage = dailyMap.get(dateStr);
       result.push({
         date: dateStr,
-        tokens: usage ? getTotalTokens(usage.tokens) : 0,
+        tokens: usage ? getDayTokens(usage) : 0,
         cost: usage?.cost_usd ?? 0,
       });
     }

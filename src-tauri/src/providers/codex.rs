@@ -163,9 +163,11 @@ impl CodexProvider {
                                 continue;
                             }
 
-                            let date = dir_date
-                                .clone()
-                                .or_else(|| extract_date_from_timestamp(&value))
+                            // Prefer event timestamp for accurate day attribution (handles
+                            // long-running sessions that span multiple calendar days).
+                            // Fall back to directory date if no timestamp is present.
+                            let date = extract_date_from_timestamp(&value)
+                                .or_else(|| dir_date.clone())
                                 .unwrap_or_else(|| "1970-01-01".to_string());
 
                             let model = if current_model.is_empty() {
@@ -267,7 +269,7 @@ impl CodexProvider {
                 cache_read_tokens: 0,
                 cache_write_tokens: 0,
             });
-            *daily.tokens.entry(entry.model.clone()).or_insert(0) += entry.total_tokens;
+            *daily.tokens.entry(entry.model.clone()).or_insert(0) += entry.total_tokens + entry.cached_tokens;
             daily.cost_usd += cost;
             daily.messages += 1;
             daily.input_tokens += entry.input_tokens;

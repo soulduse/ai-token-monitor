@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { DailyUsage } from "../lib/types";
-import { getTotalTokens, toLocalDateStr, formatTokens } from "../lib/format";
+import { getDayTokens, toLocalDateStr, formatTokens } from "../lib/format";
 import { useSettings } from "../contexts/SettingsContext";
 import { useI18n } from "../i18n/I18nContext";
 
@@ -23,7 +23,7 @@ export function ActivityStats({ daily, year }: Props) {
   const stats = useMemo(() => {
     const yearData = daily
       .filter((d) => d.date.startsWith(`${year}-`))
-      .map((d) => ({ date: d.date, tokens: getTotalTokens(d.tokens) }));
+      .map((d) => ({ date: d.date, tokens: getDayTokens(d) }));
 
     // Total tokens
     const total = yearData.reduce((sum, d) => sum + d.tokens, 0);

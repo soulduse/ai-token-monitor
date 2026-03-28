@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import type { DailyUsage } from "../lib/types";
-import { getTotalTokens, toLocalDateStr } from "../lib/format";
+import { getDayTokens, toLocalDateStr } from "../lib/format";
 import { HeatmapCell } from "./HeatmapCell";
 import { Tooltip } from "./Tooltip";
 import { useI18n } from "../i18n/I18nContext";
@@ -66,7 +66,7 @@ export function Heatmap({ daily, weeks: WEEKS = DEFAULT_WEEKS }: Props) {
       d.setDate(startDate.getDate() + i);
       const dateStr = d.toISOString().slice(0, 10);
       const usage = dateMap.get(dateStr);
-      const tokens = usage ? getTotalTokens(usage.tokens) : 0;
+      const tokens = usage ? getDayTokens(usage) : 0;
       const cost = usage?.cost_usd ?? 0;
       cells.push({ date: dateStr, tokens, cost });
       if (tokens > 0) values.push(tokens);

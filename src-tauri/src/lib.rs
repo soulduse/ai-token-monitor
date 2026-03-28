@@ -4,14 +4,17 @@ mod oauth_usage;
 mod providers;
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::Mutex;
 use std::thread;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 /// When true, the window will not auto-hide on focus loss (e.g. during dialog).
 static DIALOG_OPEN: AtomicBool = AtomicBool::new(false);
+
+/// Timestamp (ms) when the window was last shown — prevents immediate focus-loss hide.
+static LAST_SHOWN_MS: AtomicU64 = AtomicU64::new(0);
 
 /// Stores a deep-link URL that arrived before the frontend was ready (cold start).
 /// The frontend can retrieve it via the `get_pending_deep_link` command.
@@ -300,22 +303,31 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
     });
 }
 
-/// Activate the macOS app so it can properly receive focus
+/// Remove TaoTrayTarget subview from NSStatusBarButton.
+/// On macOS 26 Tahoe, TaoTrayTarget's mouseDown: never fires, blocking all tray clicks.
+/// Removing it lets the native NSMenu receive clicks again.
 #[cfg(target_os = "macos")]
-fn activate_app() {
-    #[allow(deprecated)]
-    use cocoa::appkit::NSApplication;
-    #[allow(deprecated)]
-    use cocoa::base::nil;
-    unsafe {
-        #[allow(deprecated)]
-        let ns_app = NSApplication::sharedApplication(nil);
-        #[allow(deprecated)]
-        ns_app.activateIgnoringOtherApps_(true);
-    }
+fn strip_tray_target_subview(tray: &tauri::tray::TrayIcon) {
+    use objc::runtime::Object;
+    use objc::{msg_send, sel, sel_impl};
+    let _ = tray.with_inner_tray_icon(|inner| {
+        let Some(si) = inner.ns_status_item() else { return };
+        let raw_si: *mut Object = &**si as *const _ as *mut Object;
+        unsafe {
+            let button: *mut Object = msg_send![raw_si, button];
+            if button.is_null() { return; }
+            let subviews: *mut Object = msg_send![button, subviews];
+            let count: usize = msg_send![subviews, count];
+            for i in (0..count).rev() {
+                let sv: *mut Object = msg_send![subviews, objectAtIndex: i];
+                let (): () = msg_send![sv, removeFromSuperview];
+            }
+        }
+    });
 }
 
-/// Set NSWindow level and collection behavior so the window appears over fullscreen apps
+/// Set NSWindow level and collection behavior so the window appears above all other apps.
+/// Must be called AFTER window.show() — macOS resets the level on show.
 #[cfg(target_os = "macos")]
 fn configure_window_for_fullscreen(window: &tauri::WebviewWindow) {
     #[allow(deprecated)]
@@ -327,16 +339,18 @@ fn configure_window_for_fullscreen(window: &tauri::WebviewWindow) {
         unsafe {
             #[allow(deprecated)]
             let ns_win = ns_win as cocoa::base::id;
-            // NSStatusWindowLevel (25) is above fullscreen spaces
+            // NSStatusWindowLevel (25) is above alwaysOnTop (3) and fullscreen spaces
             #[allow(deprecated)]
             ns_win.setLevel_(25);
-            // Allow the window to join any space including fullscreen
             #[allow(deprecated)]
             ns_win.setCollectionBehavior_(
                 NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces
                     | NSWindowCollectionBehavior::NSWindowCollectionBehaviorStationary
                     | NSWindowCollectionBehavior::NSWindowCollectionBehaviorIgnoresCycle,
             );
+            // Give keyboard focus so Escape key works
+            #[allow(deprecated)]
+            ns_win.makeKeyAndOrderFront_(cocoa::base::nil);
         }
     }
 }
@@ -426,68 +440,62 @@ pub fn run() {
             ai_translate::translate_reply
         ])
         .setup(|app| {
-            // Build tray icon
-            let _tray = TrayIconBuilder::with_id("main-tray")
+            // macOS 26 Tahoe: tray click events never fire because TaoTrayTarget NSView
+            // intercepts mouseDown: on the NSStatusBarButton. Fix: attach an NSMenu so
+            // the native click→menu path works, then strip the blocking subview after build.
+            #[cfg(target_os = "macos")]
+            let tray_menu = {
+                use tauri::menu::{MenuBuilder, MenuItem};
+                MenuBuilder::new(app)
+                    .item(&MenuItem::with_id(app, "show", "Show / Hide", true, None::<&str>)?)
+                    .item(&MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?)
+                    .build()?
+            };
+
+            let tray_builder = TrayIconBuilder::with_id("main-tray")
                 .icon(app.default_window_icon().cloned().unwrap())
-                .tooltip("AI Token Monitor")
-                .on_tray_icon_event(|tray, event| {
-                    match &event {
-                        tauri::tray::TrayIconEvent::Click { button, button_state, .. } => {
-                            eprintln!("[TRAY] Click: button={:?}, state={:?}", button, button_state);
-                        }
-                        tauri::tray::TrayIconEvent::DoubleClick { .. } => {
-                            eprintln!("[TRAY] DoubleClick");
-                        }
-                        tauri::tray::TrayIconEvent::Enter { .. } => {
-                            eprintln!("[TRAY] Enter");
-                        }
-                        tauri::tray::TrayIconEvent::Leave { .. } => {
-                            eprintln!("[TRAY] Leave");
-                        }
-                        tauri::tray::TrayIconEvent::Move { .. } => {
-                            // too noisy, skip
-                        }
-                        _ => {
-                            eprintln!("[TRAY] Other event: {:?}", event);
-                        }
-                    }
+                .tooltip("AI Token Monitor");
 
-                    // Only handle mouse DOWN — Click fires for both Down and Up
-                    if let tauri::tray::TrayIconEvent::Click {
-                        button_state: tauri::tray::MouseButtonState::Down,
-                        ..
-                    } = event
-                    {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            let visible = window.is_visible().unwrap_or(false);
-                            eprintln!("[TRAY] Window visible={}, toggling", visible);
-                            if visible {
-                                let _ = window.hide();
-                                eprintln!("[TRAY] Window hidden");
-                            } else {
-                                // Pre-fetch stats before showing window (uses cache if fresh)
-                                let _ = app.emit("stats-updated", ());
-                                let _ = position_window_near_tray(&window, tray);
+            #[cfg(target_os = "macos")]
+            let tray_builder = tray_builder
+                .menu(&tray_menu)
+                .show_menu_on_left_click(true);
 
-                                // Ensure window appears over fullscreen apps
-                                #[cfg(target_os = "macos")]
-                                configure_window_for_fullscreen(&window);
-
-                                let _ = window.show();
-                                eprintln!("[TRAY] Window shown");
-
-                                #[cfg(target_os = "macos")]
-                                activate_app();
-                                eprintln!("[TRAY] App activated");
-
-                                let _ = window.set_focus();
-                                eprintln!("[TRAY] Focus set");
+            let _tray = tray_builder
+                .on_menu_event(|app, event| {
+                    match event.id().as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                if window.is_visible().unwrap_or(false) {
+                                    let _ = window.hide();
+                                } else {
+                                    let _ = app.emit("stats-updated", ());
+                                    if let Some(tray) = app.tray_by_id("main-tray") {
+                                        let _ = position_window_near_tray(&window, &tray);
+                                    }
+                                    let now_ms = SystemTime::now()
+                                        .duration_since(UNIX_EPOCH)
+                                        .map(|d| d.as_millis() as u64)
+                                        .unwrap_or(0);
+                                    LAST_SHOWN_MS.store(now_ms, Ordering::SeqCst);
+                                    let _ = window.show();
+                                    // MUST be after show() — macOS resets level on show
+                                    #[cfg(target_os = "macos")]
+                                    configure_window_for_fullscreen(&window);
+                                }
                             }
                         }
+                        "quit" => { app.exit(0); }
+                        _ => {}
                     }
                 })
                 .build(app)?;
+
+            // Strip TaoTrayTarget subview to restore native click routing on macOS 26
+            #[cfg(target_os = "macos")]
+            if let Some(tray) = app.handle().tray_by_id("main-tray") {
+                strip_tray_target_subview(&tray);
+            }
 
             // Cold start (Windows only): check if the app was launched with a deep-link URL as arg.
             // macOS delivers deep links via Apple Events, not process args.
@@ -515,25 +523,21 @@ pub fn run() {
             main_window.on_window_event(move |event| {
                 match event {
                     tauri::WindowEvent::Focused(focused) => {
-                        eprintln!("[WINDOW] Focused({})", focused);
                         if !focused {
-                            // Skip auto-hide when a dialog (e.g. folder picker) is open
-                            if DIALOG_OPEN.load(Ordering::Relaxed) {
-                                eprintln!("[WINDOW] Skipping hide — dialog is open");
-                                return;
-                            }
-                            // Delay hide to prevent race condition with fullscreen spaces
-                            // where macOS fires focus-lost immediately after show
+                            if DIALOG_OPEN.load(Ordering::Relaxed) { return; }
                             let win = win_clone.clone();
                             std::thread::spawn(move || {
                                 std::thread::sleep(std::time::Duration::from_millis(200));
-                                // Only hide if still unfocused after delay and no dialog open
-                                if !DIALOG_OPEN.load(Ordering::Relaxed)
-                                    && !win.is_focused().unwrap_or(true)
-                                {
-                                    let _ = win.hide();
-                                    eprintln!("[WINDOW] Hidden on focus lost (delayed)");
+                                if win.is_focused().unwrap_or(true) { return; }
+                                // Grace period: ignore focus-loss immediately after show
+                                let now_ms = SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .map(|d| d.as_millis() as u64)
+                                    .unwrap_or(0);
+                                if now_ms.saturating_sub(LAST_SHOWN_MS.load(Ordering::SeqCst)) < 1200 {
+                                    return;
                                 }
+                                let _ = win.hide();
                             });
                         }
                     }

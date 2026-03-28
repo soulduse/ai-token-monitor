@@ -1,5 +1,5 @@
 import type { DailyUsage, ModelUsage } from "./types";
-import { getTotalTokens, toLocalDateStr } from "./format";
+import { getDayTokens, toLocalDateStr } from "./format";
 
 export type Period = "today" | "week" | "month" | "year" | "all";
 
@@ -36,13 +36,13 @@ export function computeTotalCost(daily: DailyUsage[]): number {
 }
 
 export function computeTotalTokens(daily: DailyUsage[]): number {
-  return daily.reduce((sum, d) => sum + getTotalTokens(d.tokens), 0);
+  return daily.reduce((sum, d) => sum + getDayTokens(d), 0);
 }
 
 export function findBusiestDay(daily: DailyUsage[]): { date: string; tokens: number } {
   let best = { date: "", tokens: 0 };
   for (const d of daily) {
-    const t = getTotalTokens(d.tokens);
+    const t = getDayTokens(d);
     if (t > best.tokens) best = { date: d.date, tokens: t };
   }
   return best;
@@ -97,7 +97,7 @@ export function computeStreaks(daily: DailyUsage[], year?: number): StreakInfo {
     : daily;
 
   const activeDates = new Set(
-    filtered.filter((d) => getTotalTokens(d.tokens) > 0).map((d) => d.date)
+    filtered.filter((d) => getDayTokens(d) > 0).map((d) => d.date)
   );
 
   // Current streak (if not active today, start from yesterday)
