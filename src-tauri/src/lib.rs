@@ -27,6 +27,7 @@ use notify::{Event, EventKind, RecursiveMode, Watcher};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager};
 
+use providers::traits::TokenProvider;
 use providers::types::UserPreferences;
 
 struct AlertState {
@@ -275,7 +276,18 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                     providers::claude_code::invalidate_stats_cache();
                     providers::codex::invalidate_stats_cache();
                     let _ = app_handle.emit("stats-updated", ());
-                    update_tray_title(&app_handle);
+                    // Re-parse in background so the tray reflects new data even when the
+                    // popup is closed (get_all_stats is only called by the frontend).
+                    let app_for_refresh = app_handle.clone();
+                    thread::spawn(move || {
+                        let prefs = commands::get_preferences();
+                        let provider = providers::claude_code::ClaudeCodeProvider::new(prefs.config_dirs.clone());
+                        let _ = provider.fetch_stats();
+                        if prefs.include_codex {
+                            let _ = providers::codex::CodexProvider::new().fetch_stats();
+                        }
+                        update_tray_title(&app_for_refresh);
+                    });
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     // Re-read watch dirs and update if changed
