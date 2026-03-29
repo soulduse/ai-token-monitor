@@ -315,37 +315,6 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
     });
 }
 
-/// Remove only the TaoTrayTarget subview from NSStatusBarButton (by class name).
-/// On macOS 26 Tahoe, TaoTrayTarget's mouseDown: never fires, blocking all tray clicks.
-/// Removing it lets the native NSMenu receive clicks again.
-/// We match on class name so we never strip the icon image view or other legitimate subviews.
-#[cfg(target_os = "macos")]
-fn strip_tray_target_subview(tray: &tauri::tray::TrayIcon) {
-    use objc::runtime::Object;
-    use objc::{msg_send, sel, sel_impl};
-    let _ = tray.with_inner_tray_icon(|inner| {
-        let Some(si) = inner.ns_status_item() else { return };
-        let raw_si: *mut Object = &**si as *const _ as *mut Object;
-        unsafe {
-            let button: *mut Object = msg_send![raw_si, button];
-            if button.is_null() { return; }
-            let subviews: *mut Object = msg_send![button, subviews];
-            let count: usize = msg_send![subviews, count];
-            for i in (0..count).rev() {
-                let sv: *mut Object = msg_send![subviews, objectAtIndex: i];
-                // Only remove subviews whose class name contains "TaoTrayTarget"
-                let cls: *mut Object = msg_send![sv, class];
-                let cls_name: *const std::os::raw::c_char = msg_send![cls, name];
-                let name = std::ffi::CStr::from_ptr(cls_name).to_string_lossy();
-                if name.contains("TaoTrayTarget") {
-                    eprintln!("[TRAY] Removing TaoTrayTarget subview from NSStatusBarButton");
-                    let (): () = msg_send![sv, removeFromSuperview];
-                }
-            }
-        }
-    });
-}
-
 /// Set NSWindow level and collection behavior so the window appears above all other apps.
 /// Must be called AFTER window.show() — macOS resets the level on show.
 #[cfg(target_os = "macos")]
@@ -510,12 +479,6 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
-
-            // Strip TaoTrayTarget subview to restore native click routing on macOS 26
-            #[cfg(target_os = "macos")]
-            if let Some(tray) = app.handle().tray_by_id("main-tray") {
-                strip_tray_target_subview(&tray);
-            }
 
             // Cold start (Windows only): check if the app was launched with a deep-link URL as arg.
             // macOS delivers deep links via Apple Events, not process args.
