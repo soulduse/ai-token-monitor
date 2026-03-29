@@ -315,6 +315,23 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
     });
 }
 
+/// Bring the app to the foreground so WKWebView renders.
+/// Required on macOS 26 Tahoe where the app runs as Accessory policy
+/// and won't auto-activate — without this the window appears but content is white.
+#[cfg(target_os = "macos")]
+fn activate_app() {
+    #[allow(deprecated)]
+    use cocoa::appkit::NSApplication;
+    #[allow(deprecated)]
+    use cocoa::base::nil;
+    unsafe {
+        #[allow(deprecated)]
+        let ns_app = NSApplication::sharedApplication(nil);
+        #[allow(deprecated)]
+        ns_app.activateIgnoringOtherApps_(true);
+    }
+}
+
 /// Set NSWindow level and collection behavior so the window appears above all other apps.
 /// Must be called AFTER window.show() — macOS resets the level on show.
 #[cfg(target_os = "macos")]
@@ -471,6 +488,8 @@ pub fn run() {
                                     // MUST be after show() — macOS resets level on show
                                     #[cfg(target_os = "macos")]
                                     configure_window_for_fullscreen(&window);
+                                    #[cfg(target_os = "macos")]
+                                    activate_app();
                                 }
                             }
                         }
