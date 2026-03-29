@@ -254,8 +254,12 @@ impl CodexProvider {
                 first_date = Some(entry.date.clone());
             }
 
+            // Normalize: OpenAI input_tokens INCLUDES cached as a subset.
+            // To match Claude semantics (input excludes cache), subtract before storing.
+            let net_input = entry.input_tokens.saturating_sub(entry.cached_tokens);
+
             let pricing = pricing::get_codex_pricing(&entry.model);
-            let cost = calculate_cost(&pricing, entry.input_tokens, entry.output_tokens, entry.cached_tokens);
+            let cost = calculate_cost(&pricing, net_input, entry.output_tokens, entry.cached_tokens);
 
             let daily = daily_map.entry(entry.date.clone()).or_insert_with(|| DailyUsage {
                 date: entry.date.clone(),
@@ -269,10 +273,10 @@ impl CodexProvider {
                 cache_read_tokens: 0,
                 cache_write_tokens: 0,
             });
-            *daily.tokens.entry(entry.model.clone()).or_insert(0) += entry.total_tokens;
+            *daily.tokens.entry(entry.model.clone()).or_insert(0) += net_input + entry.output_tokens;
             daily.cost_usd += cost;
             daily.messages += 1;
-            daily.input_tokens += entry.input_tokens;
+            daily.input_tokens += net_input;
             daily.output_tokens += entry.output_tokens;
             daily.cache_read_tokens += entry.cached_tokens;
 
@@ -288,7 +292,7 @@ impl CodexProvider {
                 cache_write: 0,
                 cost_usd: 0.0,
             });
-            mu.input_tokens += entry.input_tokens;
+            mu.input_tokens += net_input;
             mu.output_tokens += entry.output_tokens;
             mu.cache_read += entry.cached_tokens;
             mu.cost_usd += cost;
