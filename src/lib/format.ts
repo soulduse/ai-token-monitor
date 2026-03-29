@@ -36,6 +36,11 @@ export function getDayTokens(day: { tokens: Record<string, number>; cache_read_t
   return getTotalTokens(day.tokens) + day.cache_read_tokens + day.cache_write_tokens;
 }
 
+/** Cache-only tokens for a day (cache_read + cache_write) */
+export function getDayCacheTokens(day: { cache_read_tokens: number; cache_write_tokens: number }): number {
+  return day.cache_read_tokens + day.cache_write_tokens;
+}
+
 /** Format a Date to local YYYY-MM-DD string without UTC conversion */
 export function toLocalDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
