@@ -269,7 +269,7 @@ impl CodexProvider {
                 cache_read_tokens: 0,
                 cache_write_tokens: 0,
             });
-            *daily.tokens.entry(entry.model.clone()).or_insert(0) += entry.total_tokens + entry.cached_tokens;
+            *daily.tokens.entry(entry.model.clone()).or_insert(0) += entry.total_tokens;
             daily.cost_usd += cost;
             daily.messages += 1;
             daily.input_tokens += entry.input_tokens;

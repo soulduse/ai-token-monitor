@@ -303,9 +303,10 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
     });
 }
 
-/// Remove TaoTrayTarget subview from NSStatusBarButton.
+/// Remove only the TaoTrayTarget subview from NSStatusBarButton (by class name).
 /// On macOS 26 Tahoe, TaoTrayTarget's mouseDown: never fires, blocking all tray clicks.
 /// Removing it lets the native NSMenu receive clicks again.
+/// We match on class name so we never strip the icon image view or other legitimate subviews.
 #[cfg(target_os = "macos")]
 fn strip_tray_target_subview(tray: &tauri::tray::TrayIcon) {
     use objc::runtime::Object;
@@ -320,7 +321,14 @@ fn strip_tray_target_subview(tray: &tauri::tray::TrayIcon) {
             let count: usize = msg_send![subviews, count];
             for i in (0..count).rev() {
                 let sv: *mut Object = msg_send![subviews, objectAtIndex: i];
-                let (): () = msg_send![sv, removeFromSuperview];
+                // Only remove subviews whose class name contains "TaoTrayTarget"
+                let cls: *mut Object = msg_send![sv, class];
+                let cls_name: *const std::os::raw::c_char = msg_send![cls, name];
+                let name = std::ffi::CStr::from_ptr(cls_name).to_string_lossy();
+                if name.contains("TaoTrayTarget") {
+                    eprintln!("[TRAY] Removing TaoTrayTarget subview from NSStatusBarButton");
+                    let (): () = msg_send![sv, removeFromSuperview];
+                }
             }
         }
     });
@@ -534,7 +542,7 @@ pub fn run() {
                                     .duration_since(UNIX_EPOCH)
                                     .map(|d| d.as_millis() as u64)
                                     .unwrap_or(0);
-                                if now_ms.saturating_sub(LAST_SHOWN_MS.load(Ordering::SeqCst)) < 1200 {
+                                if now_ms.saturating_sub(LAST_SHOWN_MS.load(Ordering::SeqCst)) < 400 {
                                     return;
                                 }
                                 let _ = win.hide();

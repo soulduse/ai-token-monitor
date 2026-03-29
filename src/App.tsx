@@ -29,8 +29,13 @@ import { useUpdater } from "./hooks/useUpdater";
 function AppContent() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") invoke("hide_window").catch(() => {});
+      // Only hide the window if no overlay/modal has already handled this Escape press
+      if (e.key === "Escape" && !e.defaultPrevented) {
+        invoke("hide_window").catch(() => {});
+      }
     };
+    // Use capture=false so modal keydown handlers (which run first) can call
+    // e.preventDefault() to stop this from also closing the window.
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
