@@ -48,6 +48,7 @@ export interface UserPreferences {
     anthropic?: string;
   };
   ai_model?: string;
+  device_id?: string;
 }
 
 export interface UsageWindow {

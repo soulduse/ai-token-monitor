@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
-import type { AllStats, LeaderboardProvider } from "../lib/types";
+import type { AllStats, LeaderboardProvider, UserPreferences } from "../lib/types";
 import { getTotalTokens, toLocalDateStr } from "../lib/format";
 import type { User } from "@supabase/supabase-js";
 
@@ -42,13 +42,26 @@ interface UseLeaderboardSyncProps {
   user: User | null;
   optedIn: boolean;
   provider: LeaderboardProvider;
+  prefs: UserPreferences;
+  updatePrefs: (patch: Partial<UserPreferences>) => void;
 }
 
 const LEADERBOARD_CACHE_TTL = 180_000; // 3 minutes
 const LEADERBOARD_POLL_INTERVAL = 180_000; // 3 minutes
 
-export function useLeaderboardSync({ stats, user, optedIn, provider }: UseLeaderboardSyncProps) {
+export function useLeaderboardSync({ stats, user, optedIn, provider, prefs, updatePrefs }: UseLeaderboardSyncProps) {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const deviceIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (prefs.device_id) {
+      deviceIdRef.current = prefs.device_id;
+    } else {
+      const id = crypto.randomUUID().slice(0, 16);
+      deviceIdRef.current = id;
+      updatePrefs({ device_id: id });
+    }
+  }, [prefs.device_id, updatePrefs]);
   const [period, setPeriod] = useState<"today" | "week">("today");
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -83,20 +96,29 @@ export function useLeaderboardSync({ stats, user, optedIn, provider }: UseLeader
       const today = toLocalDateStr(new Date());
 
       if (period === "today") {
-        const query = supabase
+        const { data } = await supabase
           .from("daily_snapshots")
           .select("user_id, total_tokens, cost_usd, messages, sessions, profiles(nickname, avatar_url)")
           .eq("date", today)
           .eq("provider", provider)
-          .order("total_tokens", { ascending: false })
-          .limit(100);
-
-        const { data } = await query;
+          .limit(500);
 
         if (data) {
-          const entries = (data as SnapshotRow[]).map(toLeaderboardEntry);
-          setLeaderboard(entries);
-          cacheRef.current = { data: entries, fetchedAt: Date.now(), period, provider };
+          const userMap = new Map<string, LeaderboardEntry>();
+          for (const row of (data as SnapshotRow[])) {
+            const existing = userMap.get(row.user_id);
+            if (existing) {
+              existing.total_tokens += row.total_tokens;
+              existing.cost_usd += Number(row.cost_usd);
+              existing.messages += row.messages;
+              existing.sessions += row.sessions;
+            } else {
+              userMap.set(row.user_id, toLeaderboardEntry(row));
+            }
+          }
+          const sorted = Array.from(userMap.values()).sort((a, b) => b.total_tokens - a.total_tokens);
+          setLeaderboard(sorted);
+          cacheRef.current = { data: sorted, fetchedAt: Date.now(), period, provider };
         }
       } else {
         // Weekly: aggregate snapshots from monday to today
@@ -144,7 +166,7 @@ export function useLeaderboardSync({ stats, user, optedIn, provider }: UseLeader
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
-      await uploadSnapshot(user.id, stats, provider, syncedPastDatesRef.current);
+      await uploadSnapshot(user.id, stats, provider, syncedPastDatesRef.current, deviceIdRef.current ?? "default");
       fetchLeaderboard(true);
     }, 500);
 
@@ -190,6 +212,7 @@ async function uploadSnapshot(
   stats: AllStats,
   provider: LeaderboardProvider,
   syncedPastDates: Set<string>,
+  deviceId: string,
 ) {
   if (!supabase) return;
 
@@ -227,6 +250,7 @@ async function uploadSnapshot(
       .delete()
       .eq("user_id", userId)
       .eq("provider", provider)
+      .eq("device_id", deviceId)
       .in("date", toClean);
 
     if (!delError) {
@@ -251,6 +275,7 @@ async function uploadSnapshot(
     user_id: userId,
     date: d.date,
     provider,
+    device_id: deviceId,
     total_tokens: getTotalTokens(d.tokens),
     cost_usd: d.cost_usd,
     messages: d.messages,
@@ -258,7 +283,7 @@ async function uploadSnapshot(
   }));
 
   const { error } = await supabase.from("daily_snapshots").upsert(rows, {
-    onConflict: "user_id,date,provider",
+    onConflict: "user_id,date,provider,device_id",
   });
 
   // Mark past days as synced so they won't be re-uploaded until next session

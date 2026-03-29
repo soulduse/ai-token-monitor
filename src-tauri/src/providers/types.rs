@@ -62,6 +62,8 @@ pub struct UserPreferences {
     pub ai_keys: Option<AiKeys>,
     #[serde(default)]
     pub ai_model: Option<String>,
+    #[serde(default)]
+    pub device_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -112,6 +114,7 @@ impl Default for UserPreferences {
             usage_tracking_migrated: false,
             ai_keys: None,
             ai_model: None,
+            device_id: None,
         }
     }
 }
