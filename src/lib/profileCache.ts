@@ -32,11 +32,17 @@ export function getOrFetchProfile(
   if (cached) return Promise.resolve(cached);
   if (inflight.has(uid)) return inflight.get(uid)!;
 
-  const p = fetcher().then((profile) => {
-    setCachedProfile(uid, profile);
-    inflight.delete(uid);
-    return profile;
-  });
+  const p = fetcher()
+    .then((profile) => {
+      setCachedProfile(uid, profile);
+      return profile;
+    })
+    .catch(() => {
+      return { nickname: "Unknown", avatar_url: null } as ProfileData;
+    })
+    .finally(() => {
+      inflight.delete(uid);
+    });
   inflight.set(uid, p);
   return p;
 }

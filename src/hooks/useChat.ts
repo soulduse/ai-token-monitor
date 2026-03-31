@@ -201,24 +201,27 @@ export function useChat(userId: string | null, enabled: boolean = true) {
         schema: "public",
         table: "chat_messages",
       }, async (payload) => {
-        const row = payload.new as { id: string; user_id: string; content: string; created_at: string; reply_to?: string | null };
-        const profile = await fetchProfileRef.current(row.user_id);
-        let msg: ChatMessage = {
-          ...row,
-          reply_to: row.reply_to ?? null,
-          replied_message: null,
-          nickname: profile.nickname,
-          avatar_url: profile.avatar_url,
-        };
-        // Enrich reply
-        if (msg.reply_to) {
-          const enriched = await enrichRepliesRef.current([msg]);
-          msg = enriched[0];
+        try {
+          const row = payload.new as { id: string; user_id: string; content: string; created_at: string; reply_to?: string | null };
+          const profile = await fetchProfileRef.current(row.user_id);
+          let msg: ChatMessage = {
+            ...row,
+            reply_to: row.reply_to ?? null,
+            replied_message: null,
+            nickname: profile.nickname,
+            avatar_url: profile.avatar_url,
+          };
+          if (msg.reply_to) {
+            const enriched = await enrichRepliesRef.current([msg]);
+            msg = enriched[0];
+          }
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === msg.id)) return prev;
+            return [...prev, msg];
+          });
+        } catch {
+          // Silently handled — profileCache returns fallback data on failure
         }
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === msg.id)) return prev;
-          return [...prev, msg];
-        });
       })
       .on("postgres_changes", {
         event: "DELETE",
