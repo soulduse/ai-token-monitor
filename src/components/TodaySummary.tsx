@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { DailyUsage } from "../lib/types";
-import { formatTokens, formatCost, getTotalTokens } from "../lib/format";
+import { formatTokens, formatCost, getTotalTokens, getDayCacheTokens } from "../lib/format";
 import { useSettings } from "../contexts/SettingsContext";
 import { InfoTooltip } from "./InfoTooltip";
 import { useI18n } from "../i18n/I18nContext";
@@ -31,6 +31,7 @@ export function TodaySummary({ today, weekAvg }: Props) {
   const t = useI18n();
   const [pricing, setPricing] = useState<PricingTable | null>(null);
   const totalTokens = today ? getTotalTokens(today.tokens) : 0;
+  const cacheTokens = today ? getDayCacheTokens(today) : 0;
   const cost = today?.cost_usd ?? 0;
   const messages = today?.messages ?? 0;
   const sessions = today?.sessions ?? 0;
@@ -73,6 +74,11 @@ export function TodaySummary({ today, weekAvg }: Props) {
         <span style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600 }}>
           {t("today.tokens")}
         </span>
+        {cacheTokens > 0 && (
+          <span style={{ fontSize: 10, color: "var(--text-secondary)", fontWeight: 500, opacity: 0.75 }}>
+            ({formatTokens(cacheTokens, prefs.number_format)} cached)
+          </span>
+        )}
         {comparison !== 0 && (
           <span style={{
             fontSize: 11,

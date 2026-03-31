@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import type { DailyUsage } from "../lib/types";
-import { formatTokens, formatCost, getTotalTokens, toLocalDateStr } from "../lib/format";
+import { formatTokens, formatCost, getTotalTokens, getDayCacheTokens, toLocalDateStr } from "../lib/format";
 import { useSettings } from "../contexts/SettingsContext";
 import { PeriodSelector } from "./PeriodSelector";
 import { useI18n } from "../i18n/I18nContext";
@@ -46,6 +46,7 @@ function getMonthRange(offset: number): { start: string; end: string; labelKey: 
 
 function aggregate(daily: DailyUsage[], start: string, end: string) {
   let tokens = 0;
+  let cacheTokens = 0;
   let cost = 0;
   let sessions = 0;
   let messages = 0;
@@ -53,13 +54,14 @@ function aggregate(daily: DailyUsage[], start: string, end: string) {
   for (const d of daily) {
     if (d.date >= start && d.date <= end) {
       tokens += getTotalTokens(d.tokens);
+      cacheTokens += getDayCacheTokens(d);
       cost += d.cost_usd;
       sessions += d.sessions;
       messages += d.messages;
     }
   }
 
-  return { tokens, cost, sessions, messages };
+  return { tokens, cacheTokens, cost, sessions, messages };
 }
 
 export function PeriodTotals({ daily }: Props) {
@@ -91,6 +93,7 @@ export function PeriodTotals({ daily }: Props) {
       <PeriodCard
         label={weekLabel}
         tokens={weekData.tokens}
+        cacheTokens={weekData.cacheTokens}
         cost={weekData.cost}
         sessions={weekData.sessions}
         color="var(--accent-purple)"
@@ -102,6 +105,7 @@ export function PeriodTotals({ daily }: Props) {
       <PeriodCard
         label={monthLabel}
         tokens={monthData.tokens}
+        cacheTokens={monthData.cacheTokens}
         cost={monthData.cost}
         sessions={monthData.sessions}
         color="var(--accent-pink)"
@@ -117,6 +121,7 @@ export function PeriodTotals({ daily }: Props) {
 function PeriodCard({
   label,
   tokens,
+  cacheTokens,
   cost,
   sessions,
   color,
@@ -127,6 +132,7 @@ function PeriodCard({
 }: {
   label: string;
   tokens: number;
+  cacheTokens: number;
   cost: number;
   sessions: number;
   color: string;
@@ -150,14 +156,20 @@ function PeriodCard({
         onNext={onNext}
         canNext={canNext}
       />
-      <div style={{
-        fontSize: 20,
-        fontWeight: 800,
-        color,
-        letterSpacing: "-0.5px",
-        marginTop: 6,
-      }}>
-        {formatTokens(tokens, numberFormat)}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginTop: 6 }}>
+        <span style={{
+          fontSize: 20,
+          fontWeight: 800,
+          color,
+          letterSpacing: "-0.5px",
+        }}>
+          {formatTokens(tokens, numberFormat)}
+        </span>
+        {cacheTokens > 0 && (
+          <span style={{ fontSize: 9, color: "var(--text-secondary)", fontWeight: 500, opacity: 0.75 }}>
+            ({formatTokens(cacheTokens, numberFormat)} cached)
+          </span>
+        )}
       </div>
       <div style={{
         display: "flex",
