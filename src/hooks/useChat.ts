@@ -154,6 +154,12 @@ export function useChat(userId: string | null, enabled: boolean = true) {
     });
   }, []);
 
+  // Stable refs for realtime handlers (avoid subscription recreation)
+  const fetchProfileRef = useRef(fetchProfile);
+  fetchProfileRef.current = fetchProfile;
+  const enrichRepliesRef = useRef(enrichReplies);
+  enrichRepliesRef.current = enrichReplies;
+
   // Initial fetch
   useEffect(() => {
     if (!supabase || !userId || !enabled) return;
@@ -196,7 +202,7 @@ export function useChat(userId: string | null, enabled: boolean = true) {
         table: "chat_messages",
       }, async (payload) => {
         const row = payload.new as { id: string; user_id: string; content: string; created_at: string; reply_to?: string | null };
-        const profile = await fetchProfile(row.user_id);
+        const profile = await fetchProfileRef.current(row.user_id);
         let msg: ChatMessage = {
           ...row,
           reply_to: row.reply_to ?? null,
@@ -206,7 +212,7 @@ export function useChat(userId: string | null, enabled: boolean = true) {
         };
         // Enrich reply
         if (msg.reply_to) {
-          const enriched = await enrichReplies([msg]);
+          const enriched = await enrichRepliesRef.current([msg]);
           msg = enriched[0];
         }
         setMessages((prev) => {
@@ -274,7 +280,7 @@ export function useChat(userId: string | null, enabled: boolean = true) {
       channel.unsubscribe();
       channelRef.current = null;
     };
-  }, [userId, enabled, fetchProfile, enrichReplies]);
+  }, [userId, enabled]);
 
   // Toggle reaction (uses ref to avoid stale closure)
   const toggleReaction = useCallback(async (messageId: string, type: ReactionType) => {

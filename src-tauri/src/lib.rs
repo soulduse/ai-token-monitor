@@ -596,20 +596,34 @@ pub fn run() {
                 thread::spawn(move || {
                     let rt = tauri::async_runtime::handle();
                     loop {
-                        let prefs = commands::get_preferences();
-                        if prefs.usage_tracking_enabled {
-                            // Skip if cache was recently populated (e.g. by enable_usage_tracking)
-                            if !oauth_usage::is_cache_fresh(30) {
-                                if let Some(_) = rt.block_on(oauth_usage::fetch_and_cache_usage()) {
-                                    let _ = handle.emit("usage-updated", ());
-                                    if prefs.usage_alerts_enabled {
-                                        check_and_fire_alerts(&handle);
+                        let poll_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            let prefs = commands::get_preferences();
+                            if prefs.usage_tracking_enabled {
+                                // Skip if cache was recently populated (e.g. by enable_usage_tracking)
+                                if !oauth_usage::is_cache_fresh(30) {
+                                    if let Some(_) = rt.block_on(oauth_usage::fetch_and_cache_usage()) {
+                                        let _ = handle.emit("usage-updated", ());
+                                        if prefs.usage_alerts_enabled {
+                                            check_and_fire_alerts(&handle);
+                                        }
                                     }
                                 }
+                                thread::sleep(std::time::Duration::from_secs(300));
+                            } else {
+                                thread::sleep(std::time::Duration::from_secs(5));
                             }
-                            thread::sleep(std::time::Duration::from_secs(300));
-                        } else {
-                            thread::sleep(std::time::Duration::from_secs(5));
+                        }));
+
+                        if let Err(panic_info) = poll_result {
+                            let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                                s.to_string()
+                            } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                                s.clone()
+                            } else {
+                                "unknown panic".to_string()
+                            };
+                            eprintln!("[OAUTH-POLL] panic caught, will retry: {}", msg);
+                            thread::sleep(std::time::Duration::from_secs(30));
                         }
                     }
                 });

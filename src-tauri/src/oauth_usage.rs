@@ -40,6 +40,16 @@ static OAUTH_CACHE: Mutex<Option<CacheEntry>> = Mutex::new(None);
 /// and the polling loop race to call fetch simultaneously.
 static FETCH_IN_PROGRESS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// RAII guard that resets FETCH_IN_PROGRESS to false when dropped.
+/// Ensures the flag is cleared even if the inner fetch panics.
+struct FetchGuard;
+
+impl Drop for FetchGuard {
+    fn drop(&mut self) {
+        FETCH_IN_PROGRESS.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 /// Return cached OAuth usage data without fetching.
 pub fn get_cached_usage() -> Option<OAuthUsage> {
     let cache = OAUTH_CACHE.lock().ok()?;
@@ -74,9 +84,8 @@ pub async fn fetch_and_cache_usage() -> Option<OAuthUsage> {
         return get_cached_usage();
     }
 
-    let result = fetch_and_cache_usage_inner().await;
-    FETCH_IN_PROGRESS.store(false, Ordering::SeqCst);
-    result
+    let _guard = FetchGuard;
+    fetch_and_cache_usage_inner().await
 }
 
 async fn fetch_and_cache_usage_inner() -> Option<OAuthUsage> {
