@@ -134,16 +134,12 @@ fn read_oauth_token_macos() -> Option<String> {
 
 #[cfg(target_os = "macos")]
 fn read_oauth_token_keychain() -> Option<String> {
-    use security_framework::passwords::get_generic_password;
-
     let account = whoami::username();
 
-    // Try legacy name first (avoids `security dump-keychain` prompt)
+    // Try legacy name first (avoids `security dump-keychain` discovery)
     let legacy = "Claude Code-credentials";
-    if let Ok(password) = get_generic_password(legacy, &account) {
-        if let Some(token) = extract_token_from_keychain_data(&password) {
-            return Some(token);
-        }
+    if let Some(token) = read_keychain_password(legacy, &account) {
+        return Some(token);
     }
 
     // Claude Code v2.1.52+ uses "Claude Code-credentials-{hash}" service name.
@@ -153,13 +149,30 @@ fn read_oauth_token_keychain() -> Option<String> {
         if service == legacy {
             continue; // Already tried
         }
-        if let Ok(password) = get_generic_password(service, &account) {
-            if let Some(token) = extract_token_from_keychain_data(&password) {
-                return Some(token);
-            }
+        if let Some(token) = read_keychain_password(service, &account) {
+            return Some(token);
         }
     }
     None
+}
+
+/// Read a password from macOS Keychain via `/usr/bin/security` CLI.
+/// Claude Code stores credentials using the same `security` binary,
+/// so it's always in the keychain item's ACL — no permission prompts.
+#[cfg(target_os = "macos")]
+fn read_keychain_password(service: &str, account: &str) -> Option<String> {
+    use std::process::Command;
+
+    let output = Command::new("security")
+        .args(["find-generic-password", "-s", service, "-a", account, "-w"])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    extract_token_from_keychain_data(&output.stdout)
 }
 
 /// Cached keychain service names to avoid repeated `security dump-keychain` calls
