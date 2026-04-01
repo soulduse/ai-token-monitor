@@ -35,6 +35,10 @@ struct CacheEntry {
 
 static OAUTH_CACHE: Mutex<Option<CacheEntry>> = Mutex::new(None);
 
+/// Tracks when we can retry after a 429 response.
+/// Stores the Instant after which we're allowed to call the API again.
+static RATE_LIMIT_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
+
 /// Flag to prevent concurrent fetch_and_cache_usage calls.
 /// This avoids duplicate keychain prompts when enable_usage_tracking
 /// and the polling loop race to call fetch simultaneously.
@@ -89,12 +93,28 @@ pub async fn fetch_and_cache_usage() -> Option<OAuthUsage> {
 }
 
 async fn fetch_and_cache_usage_inner() -> Option<OAuthUsage> {
+    // Skip API call if we're still within a Retry-After window
+    if let Ok(guard) = RATE_LIMIT_UNTIL.lock() {
+        if let Some(until) = *guard {
+            if Instant::now() < until {
+                return get_cached_usage().map(|mut u| {
+                    u.is_stale = true;
+                    u
+                });
+            }
+        }
+    }
+
     let token = read_oauth_token()?;
 
     match fetch_usage_from_api(&token).await {
         Ok(mut usage) => {
             usage.is_stale = false;
             usage.fetched_at = chrono::Local::now().to_rfc3339();
+            // Clear rate limit timer on success
+            if let Ok(mut guard) = RATE_LIMIT_UNTIL.lock() {
+                *guard = None;
+            }
             if let Ok(mut cache) = OAUTH_CACHE.lock() {
                 *cache = Some(CacheEntry {
                     usage: usage.clone(),
@@ -277,9 +297,9 @@ struct ApiUsageWindow {
 #[derive(Debug, Deserialize)]
 struct ApiExtraUsage {
     is_enabled: bool,
-    monthly_limit: f64,
-    used_credits: f64,
-    utilization: f64,
+    monthly_limit: Option<f64>,
+    used_credits: Option<f64>,
+    utilization: Option<f64>,
 }
 
 async fn fetch_usage_from_api(token: &str) -> Result<OAuthUsage, String> {
@@ -289,13 +309,23 @@ async fn fetch_usage_from_api(token: &str) -> Result<OAuthUsage, String> {
         .header("Authorization", format!("Bearer {}", token))
         .header("anthropic-beta", "oauth-2025-04-20")
         .header("Content-Type", "application/json")
+        .header("User-Agent", format!("claude-code/{}", env!("CARGO_PKG_VERSION")))
         .send()
         .await
         .map_err(|e| format!("HTTP request failed: {}", e))?;
 
     let status = response.status();
     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-        return Err("Rate limited (429)".to_string());
+        let retry_after_secs = response
+            .headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(300); // default 5 min if header missing
+        if let Ok(mut guard) = RATE_LIMIT_UNTIL.lock() {
+            *guard = Some(Instant::now() + std::time::Duration::from_secs(retry_after_secs));
+        }
+        return Err(format!("Rate limited (429), retry after {}s", retry_after_secs));
     }
     if !status.is_success() {
         return Err(format!("HTTP {}", status));
@@ -323,11 +353,16 @@ async fn fetch_usage_from_api(token: &str) -> Result<OAuthUsage, String> {
             utilization: w.utilization,
             resets_at: w.resets_at,
         }),
-        extra_usage: api.extra_usage.map(|e| ExtraUsage {
-            is_enabled: e.is_enabled,
-            monthly_limit: e.monthly_limit,
-            used_credits: e.used_credits,
-            utilization: e.utilization,
+        extra_usage: api.extra_usage.and_then(|e| {
+            let monthly_limit = e.monthly_limit?;
+            let used_credits = e.used_credits?;
+            let utilization = e.utilization?;
+            Some(ExtraUsage {
+                is_enabled: e.is_enabled,
+                monthly_limit: monthly_limit / 100.0,
+                used_credits: used_credits / 100.0,
+                utilization,
+            })
         }),
         fetched_at: String::new(),
         is_stale: false,
