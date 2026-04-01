@@ -138,6 +138,7 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const [translatingReply, setTranslatingReply] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const isAtBottomRef = useRef(true);
   const prevMessagesLenRef = useRef(0);
 
@@ -188,6 +189,7 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
     if (!result.error) {
       setInput("");
       setReplyingTo(null);
+      if (inputRef.current) inputRef.current.style.height = "auto";
       setTimeout(() => {
         scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
       }, 100);
@@ -380,14 +382,20 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
           </div>
         )}
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <input
-            type="text"
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+          <textarea
+            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value.slice(0, 500))}
             onKeyDown={handleKeyDown}
             placeholder={replyingTo ? t("chat.replyPlaceholder") : t("chat.placeholder")}
             disabled={sending}
+            rows={1}
+            onInput={(e) => {
+              const el = e.currentTarget;
+              el.style.height = "auto";
+              el.style.height = Math.min(el.scrollHeight, 80) + "px";
+            }}
             style={{
               flex: 1,
               padding: "8px 14px",
@@ -398,6 +406,10 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
               background: "var(--heat-0)",
               color: "var(--text-primary)",
               outline: "none",
+              resize: "none",
+              lineHeight: 1.4,
+              fontFamily: "inherit",
+              overflow: "hidden",
             }}
           />
 
