@@ -9,6 +9,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 export function useUnreadChat(isChatActive: boolean, userId: string | null) {
   const [unreadCount, setUnreadCount] = useState(0);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const channelCounterRef = useRef(0);
 
   // Reset when chat tab becomes active
   useEffect(() => {
@@ -17,33 +18,62 @@ export function useUnreadChat(isChatActive: boolean, userId: string | null) {
     }
   }, [isChatActive]);
 
-  // Subscribe to new messages
-  useEffect(() => {
+  const setupChannel = useCallback(() => {
     if (!supabase || !userId) return;
 
     const channel = supabase
-      .channel("chat_unread_badge")
+      .channel(`chat_unread_badge_${++channelCounterRef.current}`)
       .on("postgres_changes", {
         event: "INSERT",
         schema: "public",
         table: "chat_messages",
       }, (payload) => {
         const row = payload.new as { user_id: string };
-        // Don't count own messages
         if (row.user_id === userId) return;
         setUnreadCount((prev) => prev + 1);
       })
       .subscribe();
 
     channelRef.current = channel;
+  }, [userId]);
+
+  // Subscribe to new messages
+  useEffect(() => {
+    if (!supabase || !userId) return;
+
+    setupChannel();
 
     return () => {
-      channel.unsubscribe();
-      channelRef.current = null;
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [userId, setupChannel]);
+
+  const setupChannelRef = useRef(setupChannel);
+  setupChannelRef.current = setupChannel;
+
+  // Reconnect when window becomes visible again
+  useEffect(() => {
+    if (!supabase || !userId) return;
+
+    const handleVisibility = () => {
+      if (document.hidden) return;
+
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+      setupChannelRef.current();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [userId]);
 
-  // When chat is active, always report 0 (already reset above)
   const resetUnread = useCallback(() => setUnreadCount(0), []);
 
   return { unreadCount: isChatActive ? 0 : unreadCount, resetUnread };

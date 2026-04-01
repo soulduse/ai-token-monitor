@@ -39,6 +39,8 @@ export function useChat(userId: string | null, enabled: boolean = true) {
   const channelRef = useRef<RealtimeChannel | null>(null);
   const lastSendRef = useRef(0);
   const loadingMoreRef = useRef(false);
+  const lastSeenAtRef = useRef<string | null>(null);
+  const channelCounterRef = useRef(0);
 
   // Cache profile from a message (shared module-level cache)
   const cacheProfile = useCallback((msg: ChatMessage) => {
@@ -183,6 +185,9 @@ export function useChat(userId: string | null, enabled: boolean = true) {
         if (cancelled) return;
         setMessages(enriched);
         setHasMore(data.length === PAGE_SIZE);
+        if (enriched.length > 0) {
+          lastSeenAtRef.current = enriched[enriched.length - 1].created_at;
+        }
       }
       setLoading(false);
     })();
@@ -190,12 +195,12 @@ export function useChat(userId: string | null, enabled: boolean = true) {
     return () => { cancelled = true; };
   }, [userId, enabled, parseRow, cacheProfile, enrichReplies, fetchReactions]);
 
-  // Realtime subscription for messages + reactions
-  useEffect(() => {
-    if (!supabase || !userId || !enabled) return;
+  // Setup realtime channel (extracted for reuse on reconnect)
+  const setupChannel = useCallback(() => {
+    if (!supabase) return;
 
     const channel = supabase
-      .channel("chat_realtime")
+      .channel(`chat_realtime_${++channelCounterRef.current}`)
       .on("postgres_changes", {
         event: "INSERT",
         schema: "public",
@@ -219,6 +224,7 @@ export function useChat(userId: string | null, enabled: boolean = true) {
             if (prev.some((m) => m.id === msg.id)) return prev;
             return [...prev, msg];
           });
+          lastSeenAtRef.current = msg.created_at;
         } catch {
           // Silently handled — profileCache returns fallback data on failure
         }
@@ -278,10 +284,81 @@ export function useChat(userId: string | null, enabled: boolean = true) {
       .subscribe();
 
     channelRef.current = channel;
+  }, []);
+
+  // Fetch messages missed while window was hidden
+  const catchUpMessages = useCallback(async () => {
+    if (!supabase || !lastSeenAtRef.current) return;
+
+    const { data } = await supabase
+      .from("chat_messages")
+      .select("id, user_id, content, created_at, reply_to, profiles(nickname, avatar_url)")
+      .gt("created_at", lastSeenAtRef.current)
+      .order("created_at", { ascending: true })
+      .limit(PAGE_SIZE);
+
+    if (!data || data.length === 0) return;
+
+    let msgs = (data as typeof data).map(parseRow);
+    msgs.forEach(cacheProfile);
+    const ids = msgs.map((m) => m.id);
+    const [enriched] = await Promise.all([enrichReplies(msgs), fetchReactions(ids)]);
+
+    setMessages((prev) => {
+      const existingIds = new Set(prev.map((m) => m.id));
+      const newMsgs = enriched.filter((m) => !existingIds.has(m.id));
+      if (newMsgs.length === 0) return prev;
+      return [...prev, ...newMsgs];
+    });
+
+    const latest = enriched[enriched.length - 1];
+    if (latest && latest.created_at > (lastSeenAtRef.current ?? "")) {
+      lastSeenAtRef.current = latest.created_at;
+    }
+  }, [parseRow, cacheProfile, enrichReplies, fetchReactions]);
+
+  // Realtime subscription for messages + reactions
+  useEffect(() => {
+    if (!supabase || !userId || !enabled) return;
+
+    setupChannel();
 
     return () => {
-      channel.unsubscribe();
-      channelRef.current = null;
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [userId, enabled, setupChannel]);
+
+  // Stable refs for visibility handler (avoid effect re-registration)
+  const setupChannelRef = useRef(setupChannel);
+  setupChannelRef.current = setupChannel;
+  const catchUpMessagesRef = useRef(catchUpMessages);
+  catchUpMessagesRef.current = catchUpMessages;
+
+  // Reconnect realtime channel when window becomes visible again
+  // (macOS throttles WebSocket heartbeats in hidden windows, causing disconnection)
+  useEffect(() => {
+    if (!supabase || !userId || !enabled) return;
+
+    const handleVisibility = () => {
+      if (document.hidden) return;
+
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+
+      // Subscribe first so live events are captured,
+      // then catch up on missed messages (dedup handles overlap)
+      setupChannelRef.current();
+      catchUpMessagesRef.current();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [userId, enabled]);
 

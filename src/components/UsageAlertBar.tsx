@@ -209,7 +209,7 @@ export function UsageAlertBar() {
         <UsageRow
           label={t("usageAlert.extraUsage")}
           utilization={extra_usage.utilization}
-          subtitle={`$${extra_usage.used_credits.toFixed(0)} / $${extra_usage.monthly_limit.toFixed(0)}`}
+          subtitle={`$${extra_usage.used_credits.toFixed(2)} / $${extra_usage.monthly_limit.toFixed(2)}`}
         />
       )}
     </div>
