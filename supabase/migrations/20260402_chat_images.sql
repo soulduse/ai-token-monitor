@@ -45,23 +45,31 @@ using (
   and (storage.foldername(name))[1] = auth.uid()::text
 );
 
--- 7. Auto-delete storage image when chat message is deleted
--- Handles both manual deletion and 7-day cleanup cron
--- SECURITY DEFINER: needs to bypass storage RLS to delete any user's image
-create or replace function cleanup_chat_image() returns trigger as $$
+-- 7. Update cleanup function to handle image storage deletion
+-- Supabase blocks direct DELETE on storage.objects; use storage.delete_object() instead
+-- All messages: 7 days retention
+create or replace function cleanup_old_chat_messages() returns void as $$
 declare
-  storage_path text;
+  r record;
+  v_path text;
 begin
-  if old.image_url is not null then
-    storage_path := split_part(old.image_url, '/chat-images/', 2);
-    if storage_path is not null and storage_path != '' then
-      delete from storage.objects
-      where bucket_id = 'chat-images' and name = storage_path;
+  -- Delete storage images for image messages older than 7 days
+  for r in
+    select image_url from chat_messages
+    where created_at < now() - interval '7 days'
+    and image_url is not null
+  loop
+    v_path := split_part(r.image_url, '/chat-images/', 2);
+    if v_path is not null and v_path != '' then
+      begin
+        perform storage.delete_object('chat-images', v_path);
+      exception when others then
+        null; -- skip if already deleted
+      end;
     end if;
-  end if;
-  return old;
+  end loop;
+
+  -- Delete all messages older than 7 days
+  delete from chat_messages where created_at < now() - interval '7 days';
 end;
 $$ language plpgsql security definer;
-
-create trigger chat_image_cleanup after delete on chat_messages
-  for each row execute function cleanup_chat_image();

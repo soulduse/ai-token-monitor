@@ -424,13 +424,23 @@ export function useChat(userId: string | null, enabled: boolean = true) {
     return {};
   }, [userId]);
 
-  // Delete message (optimistic: Realtime DELETE event removes from UI)
+  // Delete message: remove storage image first (if any), then delete DB row
   const deleteMessage = useCallback(async (messageId: string): Promise<{ error?: string }> => {
     if (!supabase) return { error: "Not available" };
+
+    // Find message to check for attached image
+    const msg = messages.find((m) => m.id === messageId);
+    if (msg?.image_url) {
+      const path = msg.image_url.split("/chat-images/").pop();
+      if (path) {
+        await supabase.storage.from("chat-images").remove([path]);
+      }
+    }
+
     const { error } = await supabase.from("chat_messages").delete().eq("id", messageId);
     if (error) return { error: error.message };
     return {};
-  }, []);
+  }, [messages]);
 
   // Load more (older messages) with in-flight guard
   const loadMore = useCallback(async () => {

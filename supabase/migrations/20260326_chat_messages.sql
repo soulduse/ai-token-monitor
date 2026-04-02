@@ -40,7 +40,8 @@ $$ language plpgsql security definer;
 create trigger chat_rate_limit before insert on chat_messages
   for each row execute function check_chat_rate_limit();
 
--- Cleanup function for messages older than 7 days (schedule via pg_cron)
+-- Cleanup function (schedule via pg_cron)
+-- Note: overridden by 20260402_chat_images.sql to also handle storage cleanup
 create or replace function cleanup_old_chat_messages() returns void as $$
 begin
   delete from chat_messages where created_at < now() - interval '7 days';
