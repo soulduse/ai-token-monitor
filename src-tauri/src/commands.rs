@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 
 use crate::providers::claude_code::ClaudeCodeProvider;
 use crate::providers::codex::CodexProvider;
+use crate::providers::opencode::OpenCodeProvider;
 use crate::providers::pricing;
 use crate::providers::traits::TokenProvider;
 use crate::providers::types::{AiKeys, AllStats, UserPreferences};
@@ -64,6 +65,29 @@ pub async fn get_codex_stats(app: tauri::AppHandle) -> Result<AllStats, String> 
 #[tauri::command]
 pub fn is_codex_available() -> bool {
     CodexProvider::new().is_available()
+}
+
+#[tauri::command]
+pub async fn get_opencode_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
+    let result = tauri::async_runtime::spawn_blocking(|| {
+        let provider = OpenCodeProvider::new();
+        if !provider.is_available() {
+            return Err("OpenCode stats not available".to_string());
+        }
+        provider.fetch_stats()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if result.is_ok() {
+        crate::update_tray_title(&app);
+    }
+    result
+}
+
+#[tauri::command]
+pub fn is_opencode_available() -> bool {
+    OpenCodeProvider::new().is_available()
 }
 
 #[tauri::command]

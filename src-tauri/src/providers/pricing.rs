@@ -12,6 +12,8 @@ static PRICING: OnceLock<PricingConfig> = OnceLock::new();
 struct PricingConfig {
     claude: ProviderConfig,
     codex: ProviderConfig,
+    #[serde(default)]
+    opencode: Option<ProviderConfig>,
 }
 
 #[derive(Deserialize)]
@@ -52,6 +54,13 @@ pub struct CodexPricing {
     pub input: f64,
     pub output: f64,
     pub cached_input: f64,
+}
+
+pub struct OpenCodePricing {
+    pub input: f64,
+    pub output: f64,
+    pub cache_read: f64,
+    pub cache_write: f64,
 }
 
 // --- Loading ---
@@ -113,6 +122,40 @@ pub fn get_codex_pricing(model: &str) -> CodexPricing {
     }
 }
 
+pub fn get_opencode_pricing(model: &str) -> OpenCodePricing {
+    let cfg = config();
+    // Use dedicated opencode pricing if available, otherwise try to match
+    // against claude or codex pricing tables based on model name.
+    if let Some(ref oc) = cfg.opencode {
+        let entry = find_pricing(oc, model);
+        return OpenCodePricing {
+            input: entry.input,
+            output: entry.output,
+            cache_read: entry.cache_read,
+            cache_write: entry.cache_write,
+        };
+    }
+
+    // Fallback: try claude pricing first (for claude-* models), then codex
+    if model.contains("claude") || model.contains("sonnet") || model.contains("opus") || model.contains("haiku") {
+        let entry = find_pricing(&cfg.claude, model);
+        OpenCodePricing {
+            input: entry.input,
+            output: entry.output,
+            cache_read: entry.cache_read,
+            cache_write: entry.cache_write,
+        }
+    } else {
+        let entry = find_pricing(&cfg.codex, model);
+        OpenCodePricing {
+            input: entry.input,
+            output: entry.output,
+            cache_read: entry.cached_input,
+            cache_write: 0.0,
+        }
+    }
+}
+
 // --- Frontend API (pricing table for tooltip display) ---
 
 #[derive(Serialize, Clone)]
@@ -130,6 +173,8 @@ pub struct PricingTable {
     pub last_updated: String,
     pub claude: Vec<PricingRow>,
     pub codex: Vec<PricingRow>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub opencode: Vec<PricingRow>,
 }
 
 fn format_price(val: f64) -> String {
@@ -171,6 +216,7 @@ pub fn get_pricing_table() -> PricingTable {
         last_updated: raw.get("last_updated").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
         claude: deduplicated_rows(&cfg.claude, false),
         codex: deduplicated_rows(&cfg.codex, true),
+        opencode: cfg.opencode.as_ref().map(|oc| deduplicated_rows(oc, false)).unwrap_or_default(),
     }
 }
 
@@ -183,6 +229,8 @@ mod tests {
         let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
         assert!(!cfg.claude.models.is_empty());
         assert!(!cfg.codex.models.is_empty());
+        assert!(cfg.opencode.is_some());
+        assert!(!cfg.opencode.unwrap().models.is_empty());
     }
 
     #[test]
