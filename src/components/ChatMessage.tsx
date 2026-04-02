@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { openImagePopup } from "../lib/openImagePopup";
 import type { ChatMessage as ChatMessageData, ReactionMap, ReactionType } from "../hooks/useChat";
 import { useI18n } from "../i18n/I18nContext";
 import { RichMessageContent } from "./RichMessageContent";
@@ -40,7 +41,6 @@ interface Props {
   translation?: string | null;
   translating?: boolean;
   knownNicknames?: Set<string>;
-  onImageClick?: (src: string) => void;
 }
 
 function formatTime(dateStr: string): string {
@@ -298,7 +298,6 @@ export function ChatMessageRow({
   translation,
   translating,
   knownNicknames,
-  onImageClick,
 }: Props) {
   const [hovered, setHovered] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -350,7 +349,7 @@ export function ChatMessageRow({
               <img
                 src={message.image_url}
                 alt=""
-                onClick={(e) => { e.stopPropagation(); onImageClick?.(message.image_url!); }}
+                onClick={(e) => { e.stopPropagation(); openImagePopup(message.image_url!); }}
                 style={{
                   maxWidth: "100%",
                   maxHeight: 200,
@@ -483,7 +482,7 @@ export function ChatMessageRow({
                 <img
                   src={message.image_url}
                   alt=""
-                  onClick={(e) => { e.stopPropagation(); onImageClick?.(message.image_url!); }}
+                  onClick={(e) => { e.stopPropagation(); openImagePopup(message.image_url!); }}
                   style={{
                     maxWidth: "100%",
                     maxHeight: 200,
