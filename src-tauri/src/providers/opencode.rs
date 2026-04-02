@@ -65,24 +65,47 @@ impl OpenCodeProvider {
 
     /// Detect OpenCode data directory (platform-specific).
     fn detect_data_dir() -> PathBuf {
-        // Check OPENCODE_DATA_DIR env var first
-        if let Ok(dir) = std::env::var("OPENCODE_DATA_DIR") {
-            return PathBuf::from(dir);
+        let home = dirs::home_dir().unwrap_or_default();
+        Self::detect_data_dir_from(
+            std::env::var("OPENCODE_DATA_DIR").ok().map(PathBuf::from),
+            std::env::var("LOCALAPPDATA").ok().map(PathBuf::from),
+            std::env::var("APPDATA").ok().map(PathBuf::from),
+            home,
+        )
+    }
+
+    fn shared_data_dir(home: &PathBuf) -> PathBuf {
+        home.join(".local").join("share").join("opencode")
+    }
+
+    fn detect_data_dir_from(
+        env_override: Option<PathBuf>,
+        local_app_data: Option<PathBuf>,
+        app_data: Option<PathBuf>,
+        home: PathBuf,
+    ) -> PathBuf {
+        if let Some(dir) = env_override {
+            return dir;
         }
 
-        #[cfg(target_os = "windows")]
-        {
-            if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
-                return PathBuf::from(local_app_data).join("opencode");
+        let shared = Self::shared_data_dir(&home);
+        if shared.exists() {
+            return shared;
+        }
+
+        if let Some(dir) = local_app_data.map(|p| p.join("opencode")) {
+            if dir.exists() {
+                return dir;
             }
         }
 
-        // macOS / Linux: ~/.local/share/opencode
-        dirs::home_dir()
-            .unwrap_or_default()
-            .join(".local")
-            .join("share")
-            .join("opencode")
+        if let Some(dir) = app_data.map(|p| p.join("opencode")) {
+            if dir.exists() {
+                return dir;
+            }
+        }
+
+        shared
     }
 
     fn db_path(&self) -> PathBuf {
@@ -735,5 +758,91 @@ mod tests {
         let path_str = provider.data_dir.to_string_lossy();
         // Should contain "opencode" in the path
         assert!(path_str.contains("opencode"));
+    }
+
+    #[test]
+    fn test_detect_data_dir_prefers_env_override() {
+        let path = PathBuf::from("D:/custom/opencode-data");
+        let detected = OpenCodeProvider::detect_data_dir_from(
+            Some(path.clone()),
+            Some(PathBuf::from("C:/Users/test/AppData/Local")),
+            Some(PathBuf::from("C:/Users/test/AppData/Roaming")),
+            PathBuf::from("C:/Users/test"),
+        );
+
+        assert_eq!(detected, path);
+    }
+
+    #[test]
+    fn test_detect_data_dir_prefers_shared_path_when_present() {
+        let base = std::env::temp_dir().join(format!(
+            "ai-token-monitor-opencode-shared-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&base);
+
+        let home = base.join("home");
+        let shared = OpenCodeProvider::shared_data_dir(&home);
+        let local = base.join("Local").join("opencode");
+        fs::create_dir_all(&shared).unwrap();
+        fs::create_dir_all(&local).unwrap();
+
+        let detected = OpenCodeProvider::detect_data_dir_from(
+            None,
+            Some(base.join("Local")),
+            Some(base.join("Roaming")),
+            home,
+        );
+
+        assert_eq!(detected, shared);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn test_detect_data_dir_falls_back_to_localappdata() {
+        let base = std::env::temp_dir().join(format!(
+            "ai-token-monitor-opencode-local-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&base);
+
+        let home = base.join("home");
+        let local_root = base.join("Local");
+        let local = local_root.join("opencode");
+        fs::create_dir_all(&local).unwrap();
+
+        let detected = OpenCodeProvider::detect_data_dir_from(
+            None,
+            Some(local_root),
+            Some(base.join("Roaming")),
+            home,
+        );
+
+        assert_eq!(detected, local);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn test_detect_data_dir_falls_back_to_appdata() {
+        let base = std::env::temp_dir().join(format!(
+            "ai-token-monitor-opencode-roaming-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&base);
+
+        let home = base.join("home");
+        let roaming_root = base.join("Roaming");
+        let roaming = roaming_root.join("opencode");
+        fs::create_dir_all(&roaming).unwrap();
+
+        let detected = OpenCodeProvider::detect_data_dir_from(
+            None,
+            Some(base.join("Local")),
+            Some(roaming_root),
+            home,
+        );
+
+        assert_eq!(detected, roaming);
+        let _ = fs::remove_dir_all(&base);
     }
 }
