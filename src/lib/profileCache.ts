@@ -23,6 +23,18 @@ export function setCachedProfile(uid: string, profile: ProfileData): void {
   cache.set(uid, { ...profile, fetchedAt: Date.now() });
 }
 
+/** Return all non-expired cached profiles (for mention autocomplete) */
+export function getAllCachedProfiles(): Map<string, ProfileData> {
+  const result = new Map<string, ProfileData>();
+  const now = Date.now();
+  for (const [uid, entry] of cache) {
+    if (now - entry.fetchedAt <= PROFILE_TTL) {
+      result.set(uid, { nickname: entry.nickname, avatar_url: entry.avatar_url });
+    }
+  }
+  return result;
+}
+
 /** Deduplicate concurrent fetches for the same uid */
 export function getOrFetchProfile(
   uid: string,

@@ -4,6 +4,11 @@ import { useSettings } from "../contexts/SettingsContext";
 import { useChat } from "../hooks/useChat";
 import { useTranslate } from "../hooks/useTranslate";
 import { ChatMessageRow, DateSeparator, formatDateSeparator, TranslateIcon } from "./ChatMessage";
+import { MentionAutocomplete } from "./MentionAutocomplete";
+import type { MentionAutocompleteRef } from "./MentionAutocomplete";
+import { ImageLightbox } from "./ImageLightbox";
+import { getAllCachedProfiles } from "../lib/profileCache";
+import { uploadChatImage } from "../lib/chatImageUpload";
 import { useI18n, LANGUAGE_NAMES } from "../i18n/I18nContext";
 import type { ChatMessage } from "../hooks/useChat";
 
@@ -137,10 +142,28 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
   const [rateLimited, setRateLimited] = useState(false);
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const [translatingReply, setTranslatingReply] = useState(false);
+  const [mentionState, setMentionState] = useState<{ query: string; startIndex: number; anchorRect: DOMRect | null } | null>(null);
+  const [pendingImage, setPendingImage] = useState<{ blob: Blob; preview: string } | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const mentionRef = useRef<MentionAutocompleteRef>(null);
   const isAtBottomRef = useRef(true);
   const prevMessagesLenRef = useRef(0);
+
+  // Build known nicknames set from profile cache for mention highlighting
+  const knownNicknames = useMemo(() => {
+    const profiles = getAllCachedProfiles();
+    const set = new Set<string>();
+    for (const p of profiles.values()) {
+      set.add(p.nickname.toLowerCase());
+    }
+    return set;
+    // Re-compute when messages change (new profiles may have been cached)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length]);
 
   // Auto-scroll to bottom on new messages (only if user is at bottom)
   useEffect(() => {
@@ -178,15 +201,36 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
   }, [input, replyingTo, translatingReply, invokeTranslateReply]);
 
   const handleSend = useCallback(async () => {
-    if (!input.trim() || sending || translatingReply) return;
+    if ((!input.trim() && !pendingImage) || sending || translatingReply || uploadingImage) return;
 
-    const result = await sendMessage(input, replyingTo?.id);
+    let imageUrl: string | undefined;
+
+    // Upload image if present
+    if (pendingImage) {
+      setUploadingImage(true);
+      const uploadResult = await uploadChatImage(pendingImage.blob, userId);
+      setUploadingImage(false);
+      if (uploadResult.error) {
+        setImageError(uploadResult.error);
+        setTimeout(() => setImageError(null), 3000);
+        URL.revokeObjectURL(pendingImage.preview);
+        setPendingImage(null);
+        return;
+      }
+      imageUrl = uploadResult.url;
+    }
+
+    const result = await sendMessage(input, replyingTo?.id, imageUrl);
     if (result.error === "rate_limited") {
       setRateLimited(true);
       setTimeout(() => setRateLimited(false), 3000);
       return;
     }
     if (!result.error) {
+      if (pendingImage) {
+        URL.revokeObjectURL(pendingImage.preview);
+        setPendingImage(null);
+      }
       setInput("");
       setReplyingTo(null);
       if (inputRef.current) inputRef.current.style.height = "auto";
@@ -194,9 +238,13 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
         scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
       }, 100);
     }
-  }, [input, sending, sendMessage, replyingTo, translatingReply]);
+  }, [input, sending, sendMessage, replyingTo, translatingReply, pendingImage, uploadingImage, userId]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // Delegate to mention autocomplete first
+    if (mentionState && mentionRef.current?.handleKeyDown(e)) {
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -204,7 +252,52 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
     if (e.key === "Escape" && replyingTo) {
       setReplyingTo(null);
     }
-  }, [handleSend, replyingTo]);
+  }, [handleSend, replyingTo, mentionState]);
+
+  const handleMentionSelect = useCallback((nickname: string) => {
+    if (!mentionState) return;
+    const before = input.slice(0, mentionState.startIndex);
+    const after = input.slice(mentionState.startIndex + 1 + mentionState.query.length); // skip @query
+    const newInput = `${before}@${nickname} ${after}`;
+    setInput(newInput.slice(0, 500));
+    setMentionState(null);
+    inputRef.current?.focus();
+  }, [mentionState, input]);
+
+  const handleMentionClose = useCallback(() => {
+    setMentionState(null);
+  }, []);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        e.preventDefault();
+        const blob = item.getAsFile();
+        if (!blob) return;
+        if (blob.size > 2 * 1024 * 1024) {
+          setImageError(t("chat.imageTooLarge"));
+          setTimeout(() => setImageError(null), 3000);
+          return;
+        }
+        const preview = URL.createObjectURL(blob);
+        setPendingImage({ blob, preview });
+        return;
+      }
+    }
+  }, []);
+
+  const handleRemovePendingImage = useCallback(() => {
+    if (pendingImage) {
+      URL.revokeObjectURL(pendingImage.preview);
+      setPendingImage(null);
+    }
+  }, [pendingImage]);
+
+  const handleImageClick = useCallback((src: string) => {
+    setLightboxSrc(src);
+  }, []);
 
   const handleReply = useCallback((message: ChatMessage) => {
     setReplyingTo(message);
@@ -306,11 +399,25 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
                 onReact={toggleReaction}
                 translation={translations[item.message.id] ?? null}
                 translating={translating.has(item.message.id)}
+                knownNicknames={knownNicknames}
+                onImageClick={handleImageClick}
               />
             );
           })
         )}
       </div>
+
+      {/* Mention autocomplete */}
+      {mentionState && (
+        <MentionAutocomplete
+          ref={mentionRef}
+          query={mentionState.query}
+          onSelect={handleMentionSelect}
+          onClose={handleMentionClose}
+          anchorRect={mentionState.anchorRect}
+          currentUserId={userId}
+        />
+      )}
 
       {/* Input bar (with optional reply preview integrated) */}
       <div style={{
@@ -318,6 +425,50 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
         background: "var(--bg-card)",
         padding: "8px 10px",
       }}>
+        {/* Pending image preview */}
+        {pendingImage && (
+          <div style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 6,
+            padding: "6px 10px",
+            marginBottom: 6,
+            borderRadius: 10,
+            background: "rgba(124, 92, 252, 0.08)",
+            borderLeft: "3px solid var(--accent-purple)",
+          }}>
+            <img
+              src={pendingImage.preview}
+              alt=""
+              style={{
+                maxWidth: 120,
+                maxHeight: 80,
+                borderRadius: 6,
+                objectFit: "cover",
+              }}
+            />
+            <div style={{ flex: 1, minWidth: 0, fontSize: 10, color: "var(--text-secondary)", fontWeight: 600, paddingTop: 2 }}>
+              {uploadingImage ? t("chat.uploading") : t("chat.imageReady")}
+            </div>
+            <button
+              onClick={handleRemovePendingImage}
+              disabled={uploadingImage}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: uploadingImage ? "default" : "pointer",
+                padding: 2,
+                color: "var(--text-muted)",
+                fontSize: 13,
+                lineHeight: 1,
+                flexShrink: 0,
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Reply preview */}
         {replyingTo && (
           <div style={{
@@ -386,10 +537,26 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
           <textarea
             ref={inputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value.slice(0, 500))}
+            onChange={(e) => {
+              const val = e.target.value.slice(0, 500);
+              setInput(val);
+
+              // Mention detection
+              const cursor = e.target.selectionStart ?? val.length;
+              const textBefore = val.slice(0, cursor);
+              const atMatch = textBefore.match(/(^|[\s\n])@(\S*)$/);
+              if (atMatch) {
+                const startIndex = textBefore.length - atMatch[2].length - 1; // position of @
+                const anchorRect = e.target.getBoundingClientRect();
+                setMentionState({ query: atMatch[2], startIndex, anchorRect });
+              } else {
+                setMentionState(null);
+              }
+            }}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={replyingTo ? t("chat.replyPlaceholder") : t("chat.placeholder")}
-            disabled={sending}
+            disabled={sending || uploadingImage}
             rows={1}
             onInput={(e) => {
               const el = e.currentTarget;
@@ -428,17 +595,17 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
         {/* Send button */}
         <button
           onClick={handleSend}
-          disabled={!input.trim() || sending}
+          disabled={(!input.trim() && !pendingImage) || sending || uploadingImage}
           style={{
             width: 32,
             height: 32,
             borderRadius: 16,
             border: "none",
-            cursor: input.trim() && !sending ? "pointer" : "default",
-            background: input.trim()
+            cursor: (input.trim() || pendingImage) && !sending && !uploadingImage ? "pointer" : "default",
+            background: (input.trim() || pendingImage)
               ? "linear-gradient(135deg, var(--accent-purple), var(--accent-pink, #c084fc))"
               : "var(--heat-1)",
-            color: input.trim() ? "#fff" : "var(--text-muted)",
+            color: (input.trim() || pendingImage) ? "#fff" : "var(--text-muted)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -453,8 +620,8 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
         </div>
       </div>
 
-      {/* Rate limit warning */}
-      {rateLimited && (
+      {/* Rate limit / image error warning */}
+      {(rateLimited || imageError) && (
         <div style={{
           textAlign: "center",
           padding: "4px 0",
@@ -463,8 +630,13 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
           color: "var(--accent-pink, #ef4444)",
           background: "var(--bg-card)",
         }}>
-          {t("chat.rateLimited")}
+          {rateLimited ? t("chat.rateLimited") : imageError}
         </div>
+      )}
+
+      {/* Image lightbox */}
+      {lightboxSrc && (
+        <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
       )}
     </div>
   );

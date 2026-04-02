@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { ChatMessage as ChatMessageData, ReactionMap, ReactionType } from "../hooks/useChat";
 import { useI18n } from "../i18n/I18nContext";
+import { RichMessageContent } from "./RichMessageContent";
 
 export function ReplyIcon({ size = 12 }: { size?: number }) {
   return (
@@ -38,6 +39,8 @@ interface Props {
   onReact?: (messageId: string, type: ReactionType) => void;
   translation?: string | null;
   translating?: boolean;
+  knownNicknames?: Set<string>;
+  onImageClick?: (src: string) => void;
 }
 
 function formatTime(dateStr: string): string {
@@ -294,6 +297,8 @@ export function ChatMessageRow({
   onReact,
   translation,
   translating,
+  knownNicknames,
+  onImageClick,
 }: Props) {
   const [hovered, setHovered] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -341,7 +346,22 @@ export function ChatMessageRow({
             {message.replied_message && (
               <ReplyPreview nickname={message.replied_message.nickname} content={message.replied_message.content} />
             )}
-            {message.content}
+            {message.image_url && (
+              <img
+                src={message.image_url}
+                alt=""
+                onClick={(e) => { e.stopPropagation(); onImageClick?.(message.image_url!); }}
+                style={{
+                  maxWidth: "100%",
+                  maxHeight: 200,
+                  borderRadius: 8,
+                  cursor: "zoom-in",
+                  marginBottom: message.content ? 6 : 0,
+                  display: "block",
+                }}
+              />
+            )}
+            {message.content && !(message.image_url && message.content === "[image]") && <RichMessageContent content={message.content} isMe knownNicknames={knownNicknames} />}
             {translation && (
               <div style={{
                 borderTop: "1px solid rgba(255,255,255,0.2)",
@@ -351,7 +371,7 @@ export function ChatMessageRow({
                 fontStyle: "italic",
                 opacity: 0.9,
               }}>
-                {translation}
+                <RichMessageContent content={translation} isMe knownNicknames={knownNicknames} />
               </div>
             )}
           </div>
@@ -459,7 +479,22 @@ export function ChatMessageRow({
               {message.replied_message && (
                 <ReplyPreview nickname={message.replied_message.nickname} content={message.replied_message.content} />
               )}
-              {message.content}
+              {message.image_url && (
+                <img
+                  src={message.image_url}
+                  alt=""
+                  onClick={(e) => { e.stopPropagation(); onImageClick?.(message.image_url!); }}
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: 200,
+                    borderRadius: 8,
+                    cursor: "zoom-in",
+                    marginBottom: message.content ? 6 : 0,
+                    display: "block",
+                  }}
+                />
+              )}
+              {message.content && !(message.image_url && message.content === "[image]") && <RichMessageContent content={message.content} isMe={false} knownNicknames={knownNicknames} />}
               {translation && (
                 <div style={{
                   borderTop: "1px solid var(--heat-1, rgba(0,0,0,0.08))",
@@ -469,7 +504,7 @@ export function ChatMessageRow({
                   fontStyle: "italic",
                   color: "var(--text-secondary)",
                 }}>
-                  {translation}
+                  <RichMessageContent content={translation} isMe={false} knownNicknames={knownNicknames} />
                 </div>
               )}
             </div>

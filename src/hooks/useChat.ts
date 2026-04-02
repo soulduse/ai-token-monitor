@@ -15,6 +15,7 @@ export interface ChatMessage {
   avatar_url: string | null;
   reply_to: string | null;
   replied_message: { nickname: string; content: string } | null;
+  image_url: string | null;
 }
 
 export interface ReactionMap {
@@ -77,6 +78,7 @@ export function useChat(userId: string | null, enabled: boolean = true) {
     content: string;
     created_at: string;
     reply_to?: string | null;
+    image_url?: string | null;
     profiles?: { nickname: string; avatar_url: string | null } | { nickname: string; avatar_url: string | null }[];
   }): ChatMessage => {
     const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
@@ -89,6 +91,7 @@ export function useChat(userId: string | null, enabled: boolean = true) {
       replied_message: null,
       nickname: profile?.nickname ?? "Unknown",
       avatar_url: profile?.avatar_url ?? null,
+      image_url: row.image_url ?? null,
     };
   }, []);
 
@@ -171,7 +174,7 @@ export function useChat(userId: string | null, enabled: boolean = true) {
       setLoading(true);
       const { data } = await supabase
         .from("chat_messages")
-        .select("id, user_id, content, created_at, reply_to, profiles(nickname, avatar_url)")
+        .select("id, user_id, content, created_at, reply_to, image_url, profiles(nickname, avatar_url)")
         .order("created_at", { ascending: false })
         .limit(PAGE_SIZE);
 
@@ -207,7 +210,7 @@ export function useChat(userId: string | null, enabled: boolean = true) {
         table: "chat_messages",
       }, async (payload) => {
         try {
-          const row = payload.new as { id: string; user_id: string; content: string; created_at: string; reply_to?: string | null };
+          const row = payload.new as { id: string; user_id: string; content: string; created_at: string; reply_to?: string | null; image_url?: string | null };
           const profile = await fetchProfileRef.current(row.user_id);
           let msg: ChatMessage = {
             ...row,
@@ -215,6 +218,7 @@ export function useChat(userId: string | null, enabled: boolean = true) {
             replied_message: null,
             nickname: profile.nickname,
             avatar_url: profile.avatar_url,
+            image_url: row.image_url ?? null,
           };
           if (msg.reply_to) {
             const enriched = await enrichRepliesRef.current([msg]);
@@ -292,7 +296,7 @@ export function useChat(userId: string | null, enabled: boolean = true) {
 
     const { data } = await supabase
       .from("chat_messages")
-      .select("id, user_id, content, created_at, reply_to, profiles(nickname, avatar_url)")
+      .select("id, user_id, content, created_at, reply_to, image_url, profiles(nickname, avatar_url)")
       .gt("created_at", lastSeenAtRef.current)
       .order("created_at", { ascending: true })
       .limit(PAGE_SIZE);
@@ -383,12 +387,13 @@ export function useChat(userId: string | null, enabled: boolean = true) {
     }
   }, [userId]);
 
-  // Send message (with optional reply)
-  const sendMessage = useCallback(async (content: string, replyTo?: string): Promise<{ error?: string }> => {
+  // Send message (with optional reply and image)
+  const sendMessage = useCallback(async (content: string, replyTo?: string, imageUrl?: string): Promise<{ error?: string }> => {
     if (!supabase || !userId) return { error: "Not authenticated" };
 
     const trimmed = content.trim();
-    if (!trimmed || trimmed.length > 500) return { error: "Invalid message" };
+    if (!trimmed && !imageUrl) return { error: "Invalid message" };
+    if (trimmed.length > 500) return { error: "Invalid message" };
 
     // Client-side cooldown
     const now = Date.now();
@@ -398,11 +403,12 @@ export function useChat(userId: string | null, enabled: boolean = true) {
 
     setSending(true);
 
-    const insertData: { user_id: string; content: string; reply_to?: string } = {
+    const insertData: { user_id: string; content: string; reply_to?: string; image_url?: string } = {
       user_id: userId,
-      content: trimmed,
+      content: trimmed || (imageUrl ? "[image]" : ""),
     };
     if (replyTo) insertData.reply_to = replyTo;
+    if (imageUrl) insertData.image_url = imageUrl;
 
     const { error } = await supabase.from("chat_messages").insert(insertData);
 
@@ -435,7 +441,7 @@ export function useChat(userId: string | null, enabled: boolean = true) {
       const oldest = messages[0];
       const { data } = await supabase
         .from("chat_messages")
-        .select("id, user_id, content, created_at, reply_to, profiles(nickname, avatar_url)")
+        .select("id, user_id, content, created_at, reply_to, image_url, profiles(nickname, avatar_url)")
         .lt("created_at", oldest.created_at)
         .order("created_at", { ascending: false })
         .limit(PAGE_SIZE);
