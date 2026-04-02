@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { check, Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { invoke } from "@tauri-apps/api/core";
 
 export interface UpdaterState {
   updateAvailable: boolean;
@@ -9,6 +10,7 @@ export interface UpdaterState {
   downloaded: boolean;
   progress: number;
   error: string | null;
+  restartFailed: boolean;
   download: () => void;
   install: () => void;
 }
@@ -20,6 +22,7 @@ export function useUpdater(): UpdaterState {
   const [downloaded, setDownloaded] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [restartFailed, setRestartFailed] = useState(false);
   const updateRef = useRef<Update | null>(null);
 
   useEffect(() => {
@@ -86,7 +89,19 @@ export function useUpdater(): UpdaterState {
   }, [downloading]);
 
   const install = useCallback(async () => {
-    await relaunch();
+    setRestartFailed(false);
+    try {
+      // Use custom restart command to avoid single-instance plugin blocking relaunch
+      await invoke("restart_app");
+    } catch {
+      console.warn("[updater] restart_app failed, falling back to relaunch");
+      try {
+        await relaunch();
+      } catch (e) {
+        console.error("[updater] relaunch also failed:", e);
+        setRestartFailed(true);
+      }
+    }
   }, []);
 
   return {
@@ -96,6 +111,7 @@ export function useUpdater(): UpdaterState {
     downloaded,
     progress,
     error,
+    restartFailed,
     download,
     install,
   };

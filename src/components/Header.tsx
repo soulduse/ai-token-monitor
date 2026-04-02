@@ -341,7 +341,7 @@ const indicatorWrapStyle: React.CSSProperties = {
 };
 
 function UpdateIndicator({ updater, t }: { updater: UpdaterState; t: ReturnType<typeof useI18n> }) {
-  const { version, downloading, downloaded, progress, error, download, install } = updater;
+  const { version, downloading, downloaded, progress, error, restartFailed, download, install } = updater;
 
   const stopDrag = (e: React.MouseEvent) => e.stopPropagation();
 
@@ -357,7 +357,9 @@ function UpdateIndicator({ updater, t }: { updater: UpdaterState; t: ReturnType<
   if (downloaded) {
     return (
       <div style={indicatorWrapStyle} onMouseDown={stopDrag}>
-        <span style={{ color: "var(--accent-mint, #34d399)" }}>{t("update.restart")}</span>
+        <span style={{ color: restartFailed ? "var(--red, #ef4444)" : "var(--accent-mint, #34d399)" }}>
+          {restartFailed ? t("update.restartManual") : t("update.restart")}
+        </span>
         <button onClick={install} style={indicatorBtnStyle}>{t("update.restartBtn")}</button>
       </div>
     );

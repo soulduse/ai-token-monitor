@@ -192,6 +192,7 @@
   "update.restart": "Ready to update",
   "update.restartBtn": "Restart",
   "update.error": "Update failed",
+  "update.restartManual": "Please restart manually",
 
   "settings.usageAlerts": "Usage Alerts",
   "settings.usageTracking": "Usage Tracking",

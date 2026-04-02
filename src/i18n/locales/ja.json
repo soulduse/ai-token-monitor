@@ -192,6 +192,7 @@
   "update.restart": "更新の準備完了",
   "update.restartBtn": "再起動",
   "update.error": "更新に失敗しました",
+  "update.restartManual": "手動で再起動してください",
 
   "settings.usageAlerts": "使用量アラート",
   "settings.usageTracking": "使用量トラッキング",

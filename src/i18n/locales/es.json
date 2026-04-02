@@ -192,6 +192,7 @@
   "update.restart": "Listo para actualizar",
   "update.restartBtn": "Reiniciar",
   "update.error": "Error de actualización",
+  "update.restartManual": "Reinicie manualmente",
 
   "settings.usageAlerts": "Alertas de uso",
   "settings.usageTracking": "Seguimiento de uso",

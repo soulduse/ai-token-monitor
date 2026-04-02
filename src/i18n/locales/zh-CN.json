@@ -192,6 +192,7 @@
   "update.restart": "更新已就绪",
   "update.restartBtn": "重启",
   "update.error": "更新失败",
+  "update.restartManual": "请手动重启",
 
   "settings.usageAlerts": "用量提醒",
   "settings.usageTracking": "用量追踪",

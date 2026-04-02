@@ -438,6 +438,23 @@ fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+/// Spawn a new instance of this app and then exit the current process.
+/// This avoids the single-instance plugin blocking `relaunch()`.
+#[tauri::command]
+fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
+    eprintln!("[CMD] restart_app called");
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    eprintln!("[CMD] spawning new process: {:?}", exe);
+    std::process::Command::new(&exe)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    eprintln!("[CMD] new process spawned, exiting current");
+    // Small delay to let the new process start before releasing the single-instance lock
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    app.exit(0);
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -479,6 +496,7 @@ pub fn run() {
             show_window,
             get_pending_deep_link,
             quit_app,
+            restart_app,
             commands::capture_window,
             commands::copy_png_to_clipboard,
             commands::get_pricing_table,

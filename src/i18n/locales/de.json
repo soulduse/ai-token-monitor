@@ -192,6 +192,7 @@
   "update.restart": "Update bereit",
   "update.restartBtn": "Neustarten",
   "update.error": "Update fehlgeschlagen",
+  "update.restartManual": "Bitte manuell neu starten",
 
   "settings.usageAlerts": "Nutzungswarnungen",
   "settings.usageTracking": "Nutzungsverfolgung",

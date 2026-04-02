@@ -192,6 +192,7 @@
   "update.restart": "업데이트 준비 완료",
   "update.restartBtn": "재시작",
   "update.error": "업데이트 실패",
+  "update.restartManual": "수동으로 재시작해주세요",
 
   "settings.usageAlerts": "사용량 알림",
   "settings.usageTracking": "사용량 추적",
