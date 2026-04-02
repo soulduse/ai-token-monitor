@@ -3,11 +3,11 @@ import { useAuth } from "../hooks/useAuth";
 import { useSettings } from "../contexts/SettingsContext";
 import { useChat } from "../hooks/useChat";
 import { useTranslate } from "../hooks/useTranslate";
+import { useTypingIndicator } from "../hooks/useTypingIndicator";
 import { ChatMessageRow, DateSeparator, formatDateSeparator, TranslateIcon } from "./ChatMessage";
 import { MentionAutocomplete } from "./MentionAutocomplete";
 import type { MentionAutocompleteRef } from "./MentionAutocomplete";
-import { ImageLightbox } from "./ImageLightbox";
-import { getAllCachedProfiles } from "../lib/profileCache";
+import { getAllCachedProfiles, getCachedProfile } from "../lib/profileCache";
 import { uploadChatImage } from "../lib/chatImageUpload";
 import { useI18n, LANGUAGE_NAMES } from "../i18n/I18nContext";
 import type { ChatMessage } from "../hooks/useChat";
@@ -138,6 +138,8 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
   const { translations, translating, translate, translateReply: invokeTranslateReply } = useTranslate(langName);
   const hasAiKey = !!(prefs.ai_keys?.gemini || prefs.ai_keys?.openai || prefs.ai_keys?.anthropic);
   const hasAiModel = !!prefs.ai_model;
+  const myNickname = useMemo(() => getCachedProfile(userId)?.nickname ?? null, [userId, messages.length]);
+  const { typingUsers, sendTyping, stopTyping } = useTypingIndicator(userId, myNickname, activated);
   const [input, setInput] = useState("");
   const [rateLimited, setRateLimited] = useState(false);
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
@@ -146,7 +148,6 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
   const [pendingImage, setPendingImage] = useState<{ blob: Blob; preview: string } | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const mentionRef = useRef<MentionAutocompleteRef>(null);
@@ -233,12 +234,13 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
       }
       setInput("");
       setReplyingTo(null);
+      stopTyping();
       if (inputRef.current) inputRef.current.style.height = "auto";
       setTimeout(() => {
         scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
       }, 100);
     }
-  }, [input, sending, sendMessage, replyingTo, translatingReply, pendingImage, uploadingImage, userId]);
+  }, [input, sending, sendMessage, replyingTo, translatingReply, pendingImage, uploadingImage, userId, stopTyping]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     // Delegate to mention autocomplete first
@@ -276,11 +278,6 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
         e.preventDefault();
         const blob = item.getAsFile();
         if (!blob) return;
-        if (blob.size > 2 * 1024 * 1024) {
-          setImageError(t("chat.imageTooLarge"));
-          setTimeout(() => setImageError(null), 3000);
-          return;
-        }
         const preview = URL.createObjectURL(blob);
         setPendingImage({ blob, preview });
         return;
@@ -295,9 +292,6 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
     }
   }, [pendingImage]);
 
-  const handleImageClick = useCallback((src: string) => {
-    setLightboxSrc(src);
-  }, []);
 
   const handleReply = useCallback((message: ChatMessage) => {
     setReplyingTo(message);
@@ -400,7 +394,6 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
                 translation={translations[item.message.id] ?? null}
                 translating={translating.has(item.message.id)}
                 knownNicknames={knownNicknames}
-                onImageClick={handleImageClick}
               />
             );
           })
@@ -419,9 +412,33 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
         />
       )}
 
+      {/* Typing indicator */}
+      {typingUsers.length > 0 && (
+        <div style={{
+          padding: "3px 14px",
+          fontSize: 11,
+          fontWeight: 600,
+          color: "var(--text-secondary)",
+          background: "var(--bg-card)",
+          borderTop: "1px solid var(--heat-1, rgba(0,0,0,0.06))",
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+        }}>
+          <TypingDots />
+          <span>
+            {typingUsers.length === 1
+              ? t("chat.typing.one", { name: typingUsers[0].nickname })
+              : typingUsers.length === 2
+                ? t("chat.typing.two", { name1: typingUsers[0].nickname, name2: typingUsers[1].nickname })
+                : t("chat.typing.many", { name: typingUsers[0].nickname, count: String(typingUsers.length - 1) })}
+          </span>
+        </div>
+      )}
+
       {/* Input bar (with optional reply preview integrated) */}
       <div style={{
-        borderTop: "1px solid var(--heat-1, rgba(0,0,0,0.06))",
+        borderTop: typingUsers.length > 0 ? "none" : "1px solid var(--heat-1, rgba(0,0,0,0.06))",
         background: "var(--bg-card)",
         padding: "8px 10px",
       }}>
@@ -540,6 +557,7 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
             onChange={(e) => {
               const val = e.target.value.slice(0, 500);
               setInput(val);
+              sendTyping();
 
               // Mention detection
               const cursor = e.target.selectionStart ?? val.length;
@@ -634,10 +652,6 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
         </div>
       )}
 
-      {/* Image lightbox */}
-      {lightboxSrc && (
-        <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
-      )}
     </div>
   );
 }
@@ -672,4 +686,25 @@ function groupMessages(messages: ChatMessage[], locale: string): GroupedItem[] {
   }
 
   return items;
+}
+
+/** Animated typing dots (CSS keyframes via inline style) */
+function TypingDots() {
+  return (
+    <span style={{ display: "inline-flex", gap: 2, alignItems: "center" }}>
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          style={{
+            width: 4,
+            height: 4,
+            borderRadius: "50%",
+            background: "var(--accent-purple)",
+            opacity: 0.5,
+            animation: `typingDot 1.2s ease-in-out ${i * 0.2}s infinite`,
+          }}
+        />
+      ))}
+    </span>
+  );
 }
