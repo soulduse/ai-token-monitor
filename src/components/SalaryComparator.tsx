@@ -26,6 +26,8 @@ export function SalaryComparator({ stats }: Props) {
     };
   }, [stats.daily]);
 
+  if (!prefs.salary_enabled) return null;
+
   const salary = prefs.monthly_salary;
 
   if (!salary) {

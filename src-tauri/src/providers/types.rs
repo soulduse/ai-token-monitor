@@ -55,6 +55,8 @@ pub struct UserPreferences {
     #[serde(default)]
     pub include_opencode: bool,
     #[serde(default)]
+    pub salary_enabled: bool,
+    #[serde(default)]
     pub monthly_salary: Option<f64>,
     #[serde(default = "default_true")]
     pub usage_alerts_enabled: bool,
@@ -112,6 +114,7 @@ impl Default for UserPreferences {
             include_claude: true,
             include_codex: false,
             include_opencode: false,
+            salary_enabled: false,
             monthly_salary: None,
             usage_alerts_enabled: true,
             usage_tracking_enabled: false,

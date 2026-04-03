@@ -41,6 +41,7 @@ export interface UserPreferences {
   color_mode: "system" | "light" | "dark";
   language: "en" | "ko" | "ja" | "zh-CN" | "zh-TW" | "fr" | "es" | "de";
   config_dirs: string[];
+  salary_enabled: boolean;
   monthly_salary?: number;
   usage_alerts_enabled: boolean;
   usage_tracking_enabled: boolean;

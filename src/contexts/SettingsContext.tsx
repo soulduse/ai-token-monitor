@@ -23,6 +23,7 @@ const defaultPrefs: UserPreferences = {
   color_mode: "system",
   language: "en",
   config_dirs: ["~/.claude"],
+  salary_enabled: false,
   usage_alerts_enabled: true,
   usage_tracking_enabled: false,
 };
