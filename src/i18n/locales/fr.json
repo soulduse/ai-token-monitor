@@ -85,6 +85,7 @@
   "leaderboard.noData": "Aucune donnée pour la source sélectionnée.",
   "leaderboard.today": "Aujourd'hui",
   "leaderboard.thisWeek": "Cette semaine",
+  "leaderboard.thisMonth": "Ce mois",
   "leaderboard.you": "(vous)",
   "leaderboard.msgs": "msgs",
 
@@ -248,5 +249,25 @@
   "settings.aiFeatures": "• Cliquez sur traduire pour lire dans votre langue\n• Traduction automatique des réponses dans la langue de l'autre\n• Ajoutez une clé API d'un fournisseur ci-dessous pour commencer",
   "settings.aiKeySecure": "Les clés API sont chiffrées et stockées en toute sécurité sur votre appareil",
   "settings.aiKeyPlaceholder": "Entrer la clé API",
-  "settings.aiNoKeys": "Ajoutez au moins une clé API pour activer la traduction"
+  "settings.aiNoKeys": "Ajoutez au moins une clé API pour activer la traduction",
+
+  "settings.tab.webhooks": "Webhooks",
+  "settings.webhookTitle": "Notifications Webhook",
+  "settings.webhookDescription": "Recevez des alertes via Discord, Slack ou Telegram lorsque les limites d'utilisation approchent des seuils ou sont réinitialisées.",
+  "settings.webhookSecure": "Les URL et tokens Webhook sont chiffrés et stockés en toute sécurité sur votre appareil",
+  "settings.webhookTest": "Tester",
+  "settings.webhookAlertSettings": "Paramètres d'alerte",
+  "settings.webhookThresholds": "Seuils d'alerte (%)",
+  "settings.webhookWindows": "Fenêtres surveillées",
+  "settings.webhookNotifyReset": "Notifier à la réinitialisation",
+  "settings.webhookGuideDiscord": "Paramètres du serveur > Intégrations > Webhooks > Nouveau Webhook > Copier l'URL",
+  "settings.webhookGuideSlack": "Applications > Incoming Webhooks > Ajouter à Slack > Copier l'URL du Webhook",
+  "settings.webhookGuideTelegram": "Envoyer /newbot à @BotFather > Copier le token, ajouter le bot au groupe puis obtenir le Chat ID via l'API /getUpdates",
+
+  "miniProfile.viewGithub": "Voir le profil GitHub",
+  "miniProfile.noActivity": "Aucune activité récente",
+  "miniProfile.loadError": "Impossible de charger les données d'activité",
+  "miniProfile.streakTooltip": "Jours consécutifs d'activité",
+  "miniProfile.addLink": "Ajouter un lien",
+  "miniProfile.add": "Ajouter"
 }

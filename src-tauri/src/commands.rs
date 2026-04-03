@@ -272,17 +272,17 @@ fn load_ai_keys_from_file() -> Option<AiKeys> {
     let decrypted = decrypt_data(encoded.trim())?;
     let json_str = String::from_utf8(decrypted).ok()?;
     let keys: AiKeys = serde_json::from_str(&json_str).ok()?;
-    if keys.gemini.is_none() && keys.openai.is_none() && keys.anthropic.is_none() {
-        None
-    } else {
+    if keys.has_any_key() {
         Some(keys)
+    } else {
+        None
     }
 }
 
 fn save_ai_keys(keys: &Option<AiKeys>) {
     let path = encrypted_keys_path();
     match keys {
-        Some(k) if k.gemini.is_some() || k.openai.is_some() || k.anthropic.is_some() => {
+        Some(k) if k.has_any_key() => {
             if let Ok(json) = serde_json::to_string(k) {
                 if let Some(encrypted) = encrypt_data(json.as_bytes()) {
                     let _ = fs::write(&path, &encrypted);
@@ -616,4 +616,10 @@ pub async fn enable_usage_tracking(app: tauri::AppHandle) -> Result<(), String> 
         let _ = app.emit("usage-updated", ());
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn test_webhook(platform: String) -> Result<String, String> {
+    let secrets = load_ai_keys().ok_or("No webhook credentials configured")?;
+    crate::webhooks::test_webhook_endpoint(&platform, &secrets).await
 }

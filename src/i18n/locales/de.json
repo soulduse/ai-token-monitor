@@ -85,6 +85,7 @@
   "leaderboard.noData": "Noch keine Daten für die ausgewählte Quelle.",
   "leaderboard.today": "Heute",
   "leaderboard.thisWeek": "Diese Woche",
+  "leaderboard.thisMonth": "Dieser Monat",
   "leaderboard.you": "(Sie)",
   "leaderboard.msgs": "Nachr.",
 
@@ -248,5 +249,25 @@
   "settings.aiFeatures": "• Klicken Sie auf Übersetzen, um in Ihrer Sprache zu lesen\n• Antworten automatisch in die Sprache des anderen übersetzen\n• Fügen Sie einen API-Schlüssel eines Anbieters hinzu, um loszulegen",
   "settings.aiKeySecure": "API-Schlüssel werden verschlüsselt und sicher auf Ihrem Gerät gespeichert",
   "settings.aiKeyPlaceholder": "API-Schlüssel eingeben",
-  "settings.aiNoKeys": "Fügen Sie mindestens einen API-Schlüssel hinzu, um die Übersetzung zu aktivieren"
+  "settings.aiNoKeys": "Fügen Sie mindestens einen API-Schlüssel hinzu, um die Übersetzung zu aktivieren",
+
+  "settings.tab.webhooks": "Webhooks",
+  "settings.webhookTitle": "Webhook-Benachrichtigungen",
+  "settings.webhookDescription": "Erhalten Sie Benachrichtigungen über Discord, Slack oder Telegram, wenn die Nutzungslimits sich Schwellenwerten nähern oder zurückgesetzt werden.",
+  "settings.webhookSecure": "Webhook-URLs und Token werden verschlüsselt und sicher auf Ihrem Gerät gespeichert",
+  "settings.webhookTest": "Testen",
+  "settings.webhookAlertSettings": "Alarmeinstellungen",
+  "settings.webhookThresholds": "Alarmschwellen (%)",
+  "settings.webhookWindows": "Überwachte Fenster",
+  "settings.webhookNotifyReset": "Bei Zurücksetzen benachrichtigen",
+  "settings.webhookGuideDiscord": "Servereinstellungen > Integrationen > Webhooks > Neuer Webhook > URL kopieren",
+  "settings.webhookGuideSlack": "Apps > Incoming Webhooks > Zu Slack hinzufügen > Webhook-URL kopieren",
+  "settings.webhookGuideTelegram": "/newbot an @BotFather senden > Token kopieren, Bot zur Gruppe hinzufügen und Chat ID über die /getUpdates API abrufen",
+
+  "miniProfile.viewGithub": "GitHub-Profil anzeigen",
+  "miniProfile.noActivity": "Keine aktuelle Aktivität",
+  "miniProfile.loadError": "Aktivitätsdaten konnten nicht geladen werden",
+  "miniProfile.streakTooltip": "Aufeinanderfolgende Tage mit Aktivität",
+  "miniProfile.addLink": "Link hinzufügen",
+  "miniProfile.add": "Hinzufügen"
 }

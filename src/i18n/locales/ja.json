@@ -85,6 +85,7 @@
   "leaderboard.noData": "選択したソースのデータがまだありません。",
   "leaderboard.today": "今日",
   "leaderboard.thisWeek": "今週",
+  "leaderboard.thisMonth": "今月",
   "leaderboard.you": "(あなた)",
   "leaderboard.msgs": "メッセージ",
 
@@ -248,5 +249,25 @@
   "settings.aiFeatures": "• 翻訳ボタンをクリックして自分の言語で確認\n• 返信時に相手の言語に自動翻訳して送信\n• 以下のプロバイダーのAPIキーを追加して始めましょう",
   "settings.aiKeySecure": "APIキーはローカルに暗号化して安全に保存されます",
   "settings.aiKeyPlaceholder": "APIキーを入力",
-  "settings.aiNoKeys": "翻訳を有効にするにはAPIキーを1つ以上追加してください"
+  "settings.aiNoKeys": "翻訳を有効にするにはAPIキーを1つ以上追加してください",
+
+  "settings.tab.webhooks": "Webhooks",
+  "settings.webhookTitle": "Webhook通知",
+  "settings.webhookDescription": "使用量が閾値に近づいたりリセットされた時に、Discord、Slack、Telegramでアラートを受け取れます。",
+  "settings.webhookSecure": "Webhook URLとトークンはローカルに暗号化されて安全に保存されます",
+  "settings.webhookTest": "テスト",
+  "settings.webhookAlertSettings": "アラート設定",
+  "settings.webhookThresholds": "アラート閾値 (%)",
+  "settings.webhookWindows": "監視ウィンドウ",
+  "settings.webhookNotifyReset": "リセット時に通知",
+  "settings.webhookGuideDiscord": "サーバー設定 > 連携サービス > Webhooks > 新しいWebhook > URL をコピー",
+  "settings.webhookGuideSlack": "アプリ > Incoming Webhooks > Slackに追加 > Webhook URL をコピー",
+  "settings.webhookGuideTelegram": "@BotFatherに /newbot メッセージ > トークンをコピー、ボットをグループに追加後 /getUpdates API で Chat ID を確認",
+
+  "miniProfile.viewGithub": "GitHubプロフィールを見る",
+  "miniProfile.noActivity": "最近のアクティビティなし",
+  "miniProfile.loadError": "アクティビティデータを読み込めませんでした",
+  "miniProfile.streakTooltip": "連続作業日数",
+  "miniProfile.addLink": "リンクを追加",
+  "miniProfile.add": "追加"
 }

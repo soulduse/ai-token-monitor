@@ -85,6 +85,7 @@
   "leaderboard.noData": "No data yet for the selected source.",
   "leaderboard.today": "Today",
   "leaderboard.thisWeek": "This Week",
+  "leaderboard.thisMonth": "This Month",
   "leaderboard.you": "(you)",
   "leaderboard.msgs": "msgs",
 
@@ -248,5 +249,25 @@
   "settings.aiFeatures": "• Click translate button on any message to read in your language\n• Auto-translate your replies to match the other person's language\n• Add an API key from any provider below to get started",
   "settings.aiKeySecure": "API keys are encrypted and stored securely on your device",
   "settings.aiKeyPlaceholder": "Enter API key",
-  "settings.aiNoKeys": "Add at least one API key to enable translation"
+  "settings.aiNoKeys": "Add at least one API key to enable translation",
+
+  "settings.tab.webhooks": "Webhooks",
+  "settings.webhookTitle": "Webhook Notifications",
+  "settings.webhookDescription": "Receive alerts via Discord, Slack, or Telegram when usage limits approach thresholds or reset.",
+  "settings.webhookSecure": "Webhook URLs and tokens are encrypted and stored securely on your device",
+  "settings.webhookTest": "Test",
+  "settings.webhookAlertSettings": "Alert Settings",
+  "settings.webhookThresholds": "Alert Thresholds (%)",
+  "settings.webhookWindows": "Monitored Windows",
+  "settings.webhookNotifyReset": "Notify on Reset",
+  "settings.webhookGuideDiscord": "Server Settings > Integrations > Webhooks > New Webhook > Copy URL",
+  "settings.webhookGuideSlack": "Apps > Incoming Webhooks > Add to Slack > Copy Webhook URL",
+  "settings.webhookGuideTelegram": "Message @BotFather > /newbot > Copy token, then add bot to group and get Chat ID via /getUpdates API",
+
+  "miniProfile.viewGithub": "View GitHub Profile",
+  "miniProfile.noActivity": "No recent activity",
+  "miniProfile.loadError": "Could not load activity data",
+  "miniProfile.streakTooltip": "Consecutive days of activity",
+  "miniProfile.addLink": "Add link",
+  "miniProfile.add": "Add"
 }

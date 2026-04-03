@@ -237,14 +237,14 @@ function ProviderLeaderboard({
         padding: 2,
         alignSelf: "center",
       }}>
-        {(["today", "week"] as const).map((p) => (
+        {(["today", "week", "month"] as const).map((p) => (
           <button
             key={p}
             onClick={() => setPeriod(p)}
             style={{
               fontSize: 11,
               fontWeight: 600,
-              padding: "4px 14px",
+              padding: "4px 12px",
               borderRadius: 4,
               border: "none",
               cursor: "pointer",
@@ -253,7 +253,7 @@ function ProviderLeaderboard({
               transition: "all 0.15s ease",
             }}
           >
-            {p === "today" ? t("leaderboard.today") : t("leaderboard.thisWeek")}
+            {{ today: t("leaderboard.today"), week: t("leaderboard.thisWeek"), month: t("leaderboard.thisMonth") }[p]}
           </button>
         ))}
       </div>

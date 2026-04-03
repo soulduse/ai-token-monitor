@@ -68,6 +68,8 @@ pub struct UserPreferences {
     pub ai_keys: Option<AiKeys>,
     #[serde(default)]
     pub ai_model: Option<String>,
+    #[serde(default)]
+    pub webhook_config: Option<WebhookConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -78,6 +80,26 @@ pub struct AiKeys {
     pub openai: Option<String>,
     #[serde(default)]
     pub anthropic: Option<String>,
+    #[serde(default)]
+    pub webhook_discord_url: Option<String>,
+    #[serde(default)]
+    pub webhook_slack_url: Option<String>,
+    #[serde(default)]
+    pub webhook_telegram_bot_token: Option<String>,
+    #[serde(default)]
+    pub webhook_telegram_chat_id: Option<String>,
+}
+
+impl AiKeys {
+    pub fn has_any_key(&self) -> bool {
+        self.gemini.is_some()
+            || self.openai.is_some()
+            || self.anthropic.is_some()
+            || self.webhook_discord_url.is_some()
+            || self.webhook_slack_url.is_some()
+            || self.webhook_telegram_bot_token.is_some()
+            || self.webhook_telegram_chat_id.is_some()
+    }
 }
 
 fn default_theme() -> String {
@@ -98,6 +120,65 @@ fn default_config_dirs() -> Vec<String> {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_webhook_thresholds() -> Vec<u32> {
+    vec![50, 80, 90]
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebhookConfig {
+    #[serde(default)]
+    pub discord_enabled: bool,
+    #[serde(default)]
+    pub slack_enabled: bool,
+    #[serde(default)]
+    pub telegram_enabled: bool,
+    #[serde(default = "default_webhook_thresholds")]
+    pub thresholds: Vec<u32>,
+    #[serde(default)]
+    pub notify_on_reset: bool,
+    #[serde(default)]
+    pub monitored_windows: MonitoredWindows,
+}
+
+impl Default for WebhookConfig {
+    fn default() -> Self {
+        Self {
+            discord_enabled: false,
+            slack_enabled: false,
+            telegram_enabled: false,
+            thresholds: default_webhook_thresholds(),
+            notify_on_reset: false,
+            monitored_windows: MonitoredWindows::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MonitoredWindows {
+    #[serde(default = "default_true")]
+    pub five_hour: bool,
+    #[serde(default = "default_true")]
+    pub seven_day: bool,
+    #[serde(default)]
+    pub seven_day_sonnet: bool,
+    #[serde(default)]
+    pub seven_day_opus: bool,
+    #[serde(default)]
+    pub extra_usage: bool,
+}
+
+impl Default for MonitoredWindows {
+    fn default() -> Self {
+        Self {
+            five_hour: true,
+            seven_day: true,
+            seven_day_sonnet: false,
+            seven_day_opus: false,
+            extra_usage: false,
+        }
+    }
 }
 
 impl Default for UserPreferences {
@@ -121,6 +202,7 @@ impl Default for UserPreferences {
             usage_tracking_migrated: false,
             ai_keys: None,
             ai_model: None,
+            webhook_config: None,
         }
     }
 }

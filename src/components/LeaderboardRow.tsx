@@ -1,7 +1,7 @@
-import { openUrl } from "@tauri-apps/plugin-opener";
 import type { LeaderboardEntry } from "../hooks/useLeaderboardSync";
 import { formatTokens, formatCost } from "../lib/format";
 import { useSettings } from "../contexts/SettingsContext";
+import { useMiniProfile } from "../contexts/MiniProfileContext";
 import { useI18n } from "../i18n/I18nContext";
 
 interface Props {
@@ -14,6 +14,7 @@ const MEDALS = ["", "\ud83e\udd47", "\ud83e\udd48", "\ud83e\udd49"];
 
 export function LeaderboardRow({ entry, rank, isMe }: Props) {
   const { prefs } = useSettings();
+  const { open: openMiniProfile } = useMiniProfile();
   const t = useI18n();
 
   return (
@@ -41,7 +42,7 @@ export function LeaderboardRow({ entry, rank, isMe }: Props) {
 
       {/* Avatar + Name (clickable → GitHub profile) */}
       <div
-        onClick={() => openUrl(`https://github.com/${entry.nickname}`)}
+        onClick={() => openMiniProfile({ user_id: entry.user_id, nickname: entry.nickname, avatar_url: entry.avatar_url })}
         style={{
           display: "flex",
           alignItems: "center",
@@ -101,17 +102,6 @@ export function LeaderboardRow({ entry, rank, isMe }: Props) {
                 {t("leaderboard.you")}
               </span>
             )}
-            {/* GitHub link icon */}
-            <svg
-              width="10" height="10" viewBox="0 0 24 24"
-              fill="none" stroke="var(--text-muted)" strokeWidth="2"
-              strokeLinecap="round" strokeLinejoin="round"
-              style={{ marginLeft: 4, verticalAlign: "middle", opacity: 0.5 }}
-            >
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-              <polyline points="15 3 21 3 21 9"/>
-              <line x1="10" y1="14" x2="21" y2="3"/>
-            </svg>
           </div>
           <div style={{
             fontSize: 10,

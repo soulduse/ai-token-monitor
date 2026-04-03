@@ -26,7 +26,7 @@ export function Tooltip({ date, tokens, cost, x, y, visible }: Props) {
       fontWeight: 600,
       whiteSpace: "nowrap",
       pointerEvents: "none",
-      zIndex: 100,
+      zIndex: 1100,
       boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
     }}>
       <div>{formatDate(date)}</div>

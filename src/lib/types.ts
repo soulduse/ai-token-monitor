@@ -49,8 +49,30 @@ export interface UserPreferences {
     gemini?: string;
     openai?: string;
     anthropic?: string;
+    webhook_discord_url?: string;
+    webhook_slack_url?: string;
+    webhook_telegram_bot_token?: string;
+    webhook_telegram_chat_id?: string;
   };
   ai_model?: string;
+  webhook_config?: WebhookConfig;
+}
+
+export interface WebhookConfig {
+  discord_enabled: boolean;
+  slack_enabled: boolean;
+  telegram_enabled: boolean;
+  thresholds: number[];
+  notify_on_reset: boolean;
+  monitored_windows: MonitoredWindows;
+}
+
+export interface MonitoredWindows {
+  five_hour: boolean;
+  seven_day: boolean;
+  seven_day_sonnet: boolean;
+  seven_day_opus: boolean;
+  extra_usage: boolean;
 }
 
 export interface UsageWindow {

@@ -85,6 +85,7 @@
   "leaderboard.noData": "所选来源暂无数据。",
   "leaderboard.today": "今日",
   "leaderboard.thisWeek": "本周",
+  "leaderboard.thisMonth": "本月",
   "leaderboard.you": "(你)",
   "leaderboard.msgs": "条消息",
 
@@ -248,5 +249,25 @@
   "settings.aiFeatures": "• 点击翻译按钮用您的语言查看消息\n• 回复时自动翻译为对方的语言发送\n• 添加以下任一提供商的API密钥即可开始使用",
   "settings.aiKeySecure": "API密钥已加密并安全存储在本地设备上",
   "settings.aiKeyPlaceholder": "输入API密钥",
-  "settings.aiNoKeys": "请至少添加一个API密钥以启用翻译"
+  "settings.aiNoKeys": "请至少添加一个API密钥以启用翻译",
+
+  "settings.tab.webhooks": "Webhooks",
+  "settings.webhookTitle": "Webhook 通知",
+  "settings.webhookDescription": "当用量接近阈值或重置时，通过 Discord、Slack 或 Telegram 接收提醒。",
+  "settings.webhookSecure": "Webhook URL 和令牌已加密并安全存储在本地设备上",
+  "settings.webhookTest": "测试",
+  "settings.webhookAlertSettings": "提醒设置",
+  "settings.webhookThresholds": "提醒阈值 (%)",
+  "settings.webhookWindows": "监控窗口",
+  "settings.webhookNotifyReset": "重置时通知",
+  "settings.webhookGuideDiscord": "服务器设置 > 集成 > Webhooks > 新建 Webhook > 复制 URL",
+  "settings.webhookGuideSlack": "应用 > Incoming Webhooks > 添加到 Slack > 复制 Webhook URL",
+  "settings.webhookGuideTelegram": "向 @BotFather 发送 /newbot > 复制令牌，将机器人添加到群组后通过 /getUpdates API 获取 Chat ID",
+
+  "miniProfile.viewGithub": "查看 GitHub 个人资料",
+  "miniProfile.noActivity": "暂无近期活动",
+  "miniProfile.loadError": "无法加载活动数据",
+  "miniProfile.streakTooltip": "连续活跃天数",
+  "miniProfile.addLink": "添加链接",
+  "miniProfile.add": "添加"
 }

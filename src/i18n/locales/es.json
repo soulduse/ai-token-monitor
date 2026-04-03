@@ -85,6 +85,7 @@
   "leaderboard.noData": "Aún no hay datos para la fuente seleccionada.",
   "leaderboard.today": "Hoy",
   "leaderboard.thisWeek": "Esta semana",
+  "leaderboard.thisMonth": "Este mes",
   "leaderboard.you": "(tú)",
   "leaderboard.msgs": "msgs",
 
@@ -248,5 +249,25 @@
   "settings.aiFeatures": "• Haz clic en traducir para leer en tu idioma\n• Traduce automáticamente tus respuestas al idioma del otro\n• Añade una clave API de cualquier proveedor para empezar",
   "settings.aiKeySecure": "Las claves API se cifran y almacenan de forma segura en su dispositivo",
   "settings.aiKeyPlaceholder": "Introduce la clave API",
-  "settings.aiNoKeys": "Añade al menos una clave API para activar la traducción"
+  "settings.aiNoKeys": "Añade al menos una clave API para activar la traducción",
+
+  "settings.tab.webhooks": "Webhooks",
+  "settings.webhookTitle": "Notificaciones Webhook",
+  "settings.webhookDescription": "Recibe alertas a través de Discord, Slack o Telegram cuando el uso se acerque a los umbrales o se reinicie.",
+  "settings.webhookSecure": "Las URL y tokens de Webhook se cifran y almacenan de forma segura en tu dispositivo",
+  "settings.webhookTest": "Probar",
+  "settings.webhookAlertSettings": "Configuración de alertas",
+  "settings.webhookThresholds": "Umbrales de alerta (%)",
+  "settings.webhookWindows": "Ventanas monitoreadas",
+  "settings.webhookNotifyReset": "Notificar al reiniciar",
+  "settings.webhookGuideDiscord": "Ajustes del servidor > Integraciones > Webhooks > Nuevo Webhook > Copiar URL",
+  "settings.webhookGuideSlack": "Aplicaciones > Incoming Webhooks > Añadir a Slack > Copiar URL del Webhook",
+  "settings.webhookGuideTelegram": "Enviar /newbot a @BotFather > Copiar el token, añadir el bot al grupo y obtener el Chat ID a través de la API /getUpdates",
+
+  "miniProfile.viewGithub": "Ver perfil de GitHub",
+  "miniProfile.noActivity": "Sin actividad reciente",
+  "miniProfile.loadError": "No se pudieron cargar los datos de actividad",
+  "miniProfile.streakTooltip": "Días consecutivos de actividad",
+  "miniProfile.addLink": "Añadir enlace",
+  "miniProfile.add": "Añadir"
 }

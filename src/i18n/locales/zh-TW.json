@@ -85,6 +85,7 @@
   "leaderboard.noData": "所選來源暫無數據。",
   "leaderboard.today": "今日",
   "leaderboard.thisWeek": "本週",
+  "leaderboard.thisMonth": "本月",
   "leaderboard.you": "(你)",
   "leaderboard.msgs": "則訊息",
 
@@ -248,5 +249,25 @@
   "settings.aiFeatures": "• 點擊翻譯按鈕用您的語言查看訊息\n• 回覆時自動翻譯為對方的語言發送\n• 新增以下任一提供商的API金鑰即可開始使用",
   "settings.aiKeySecure": "API金鑰已加密並安全儲存在本機裝置上",
   "settings.aiKeyPlaceholder": "輸入API金鑰",
-  "settings.aiNoKeys": "請至少添加一個API金鑰以啟用翻譯"
+  "settings.aiNoKeys": "請至少添加一個API金鑰以啟用翻譯",
+
+  "settings.tab.webhooks": "Webhooks",
+  "settings.webhookTitle": "Webhook 通知",
+  "settings.webhookDescription": "當用量接近閾值或重置時，透過 Discord、Slack 或 Telegram 接收提醒。",
+  "settings.webhookSecure": "Webhook URL 和令牌已加密並安全儲存在本機裝置上",
+  "settings.webhookTest": "測試",
+  "settings.webhookAlertSettings": "提醒設定",
+  "settings.webhookThresholds": "提醒閾值 (%)",
+  "settings.webhookWindows": "監控視窗",
+  "settings.webhookNotifyReset": "重置時通知",
+  "settings.webhookGuideDiscord": "伺服器設定 > 整合 > Webhooks > 新建 Webhook > 複製 URL",
+  "settings.webhookGuideSlack": "應用程式 > Incoming Webhooks > 新增到 Slack > 複製 Webhook URL",
+  "settings.webhookGuideTelegram": "向 @BotFather 傳送 /newbot > 複製令牌，將機器人加入群組後透過 /getUpdates API 取得 Chat ID",
+
+  "miniProfile.viewGithub": "查看 GitHub 個人資料",
+  "miniProfile.noActivity": "暫無近期活動",
+  "miniProfile.loadError": "無法載入活動資料",
+  "miniProfile.streakTooltip": "連續活躍天數",
+  "miniProfile.addLink": "新增連結",
+  "miniProfile.add": "新增"
 }

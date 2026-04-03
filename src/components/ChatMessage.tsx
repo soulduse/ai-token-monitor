@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { openImagePopup } from "../lib/openImagePopup";
 import type { ChatMessage as ChatMessageData, ReactionMap, ReactionType } from "../hooks/useChat";
+import { useMiniProfile } from "../contexts/MiniProfileContext";
 import { useI18n } from "../i18n/I18nContext";
 import { RichMessageContent } from "./RichMessageContent";
 
@@ -299,9 +299,18 @@ export function ChatMessageRow({
   translating,
   knownNicknames,
 }: Props) {
+  const { open: openMiniProfile } = useMiniProfile();
   const [hovered, setHovered] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
+  const handleProfileClick = useCallback(() => {
+    openMiniProfile({
+      user_id: message.user_id,
+      nickname: message.nickname,
+      avatar_url: message.avatar_url,
+    });
+  }, [openMiniProfile, message.user_id, message.nickname, message.avatar_url]);
 
   const handleContextMenu = (e: React.MouseEvent) => {
     if (onReply) {
@@ -418,11 +427,11 @@ export function ChatMessageRow({
                 src={message.avatar_url}
                 alt=""
                 style={{ width: 32, height: 32, borderRadius: 10, cursor: "pointer" }}
-                onClick={() => openUrl(`https://github.com/${message.nickname}`)}
+                onClick={handleProfileClick}
               />
             ) : (
               <div
-                onClick={() => openUrl(`https://github.com/${message.nickname}`)}
+                onClick={handleProfileClick}
                 style={{
                   width: 32,
                   height: 32,
@@ -447,7 +456,7 @@ export function ChatMessageRow({
         <div style={{ flex: 1, minWidth: 0 }}>
           {showNickname && (
             <div
-              onClick={() => openUrl(`https://github.com/${message.nickname}`)}
+              onClick={handleProfileClick}
               style={{
                 fontSize: 11,
                 fontWeight: 700,

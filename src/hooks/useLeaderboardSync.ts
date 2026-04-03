@@ -28,7 +28,7 @@ const stableDeviceIdCache = new Map<string, string>();
 
 export function useLeaderboardSync({ stats, user, optedIn, provider }: UseLeaderboardSyncProps) {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [period, setPeriod] = useState<"today" | "week">("today");
+  const [period, setPeriod] = useState<"today" | "week" | "month">("today");
   const [loading, setLoading] = useState(false);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -37,7 +37,7 @@ export function useLeaderboardSync({ stats, user, optedIn, provider }: UseLeader
   const cacheRef = useRef<{
     data: LeaderboardEntry[];
     fetchedAt: number;
-    period: "today" | "week";
+    period: "today" | "week" | "month";
     provider: LeaderboardProvider;
   } | null>(null);
 
@@ -65,13 +65,17 @@ export function useLeaderboardSync({ stats, user, optedIn, provider }: UseLeader
 
       if (period === "today") {
         dateFrom = today;
-      } else {
+      } else if (period === "week") {
         const now = new Date();
         const dow = now.getDay();
         const mondayOffset = dow === 0 ? 6 : dow - 1;
         const monday = new Date(now);
         monday.setDate(now.getDate() - mondayOffset);
         dateFrom = toLocalDateStr(monday);
+      } else {
+        const now = new Date();
+        const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        dateFrom = toLocalDateStr(firstOfMonth);
       }
 
       const { data } = await supabase.rpc("get_leaderboard_entries", {
@@ -188,35 +192,38 @@ async function uploadSnapshot(
   const monday = new Date(now);
   monday.setDate(now.getDate() - mondayOffset);
   const weekStart = toLocalDateStr(monday);
+  const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthStart = toLocalDateStr(firstOfMonth);
+  const syncStart = monthStart < weekStart ? monthStart : weekStart;
 
-  // Build full list of dates in the week window
-  const allDatesInWeek: string[] = [];
-  const cursor = new Date(monday);
+  // Build full list of dates in the sync window (month or week, whichever is earlier)
+  const allDatesInWindow: string[] = [];
+  const cursor = new Date(syncStart);
   while (toLocalDateStr(cursor) <= today) {
-    allDatesInWeek.push(toLocalDateStr(cursor));
+    allDatesInWindow.push(toLocalDateStr(cursor));
     cursor.setDate(cursor.getDate() + 1);
   }
 
-  // Dates that have local data within this week
-  const localDatesInWeek = new Set(
+  // Dates that have local data within the sync window
+  const localDatesInWindow = new Set(
     stats.daily
-      .filter((d) => d.date >= weekStart && d.date <= today)
+      .filter((d) => d.date >= syncStart && d.date <= today)
       .map((d) => d.date)
   );
 
-  // Delete stale rows (dates in week window with no local data)
+  // Delete stale rows (dates in sync window with no local data)
   const cleanKey = (date: string) => `${provider}:clean:${date}`;
-  const staleDates = allDatesInWeek.filter((d) => !localDatesInWeek.has(d));
+  const staleDates = allDatesInWindow.filter((d) => !localDatesInWindow.has(d));
   const toClean = staleDates.filter((d) => !syncedPastDates.has(cleanKey(d)));
 
-  if (localDatesInWeek.has(today)) {
+  if (localDatesInWindow.has(today)) {
     syncedPastDates.delete(cleanKey(today));
   }
 
-  // Always upload today; upload past days of this week only once per session
+  // Always upload today; upload past days only once per session
   const syncKey = (date: string) => `${provider}:${date}`;
   const toSync = stats.daily.filter(
-    (d) => d.date >= weekStart && d.date <= today &&
+    (d) => d.date >= syncStart && d.date <= today &&
       (d.date === today || !syncedPastDates.has(syncKey(d.date)))
   );
   if (toSync.length === 0 && toClean.length === 0) return;

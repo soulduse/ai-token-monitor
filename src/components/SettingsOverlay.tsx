@@ -7,7 +7,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useI18n, LANGUAGE_OPTIONS } from "../i18n/I18nContext";
 import type { Locale } from "../i18n/I18nContext";
 
-type SettingsTab = "general" | "account" | "ai";
+type SettingsTab = "general" | "account" | "ai" | "webhooks";
 
 interface Props {
   visible: boolean;
@@ -70,7 +70,7 @@ export function SettingsOverlay({ visible, onClose }: Props) {
           marginBottom: 10,
           borderBottom: "1px solid var(--heat-0)",
         }}>
-          {(["general", "account", "ai"] as SettingsTab[]).map((tab) => (
+          {(["general", "account", "ai", "webhooks"] as SettingsTab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -114,6 +114,12 @@ export function SettingsOverlay({ visible, onClose }: Props) {
               aiModel={prefs.ai_model}
               onKeysChange={(keys) => updatePrefs({ ai_keys: keys })}
               onModelChange={(model) => updatePrefs({ ai_model: model })}
+            />
+          )}
+          {activeTab === "webhooks" && (
+            <WebhooksTab
+              prefs={prefs}
+              updatePrefs={updatePrefs}
             />
           )}
         </div>
@@ -950,6 +956,393 @@ function AiTranslationSection({
       ) : (
         <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500, marginTop: 4 }}>
           {t("settings.aiNoKeys")}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ========== Webhooks Tab ========== */
+
+function WebhooksTab({
+  prefs,
+  updatePrefs,
+}: {
+  prefs: ReturnType<typeof useSettings>["prefs"];
+  updatePrefs: ReturnType<typeof useSettings>["updatePrefs"];
+}) {
+  const t = useI18n();
+  const keys = prefs.ai_keys ?? {};
+  const config = prefs.webhook_config ?? {
+    discord_enabled: false,
+    slack_enabled: false,
+    telegram_enabled: false,
+    thresholds: [50, 80, 90],
+    notify_on_reset: false,
+    monitored_windows: {
+      five_hour: true,
+      seven_day: true,
+      seven_day_sonnet: false,
+      seven_day_opus: false,
+      extra_usage: false,
+    },
+  };
+
+  const [testing, setTesting] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{ platform: string; ok: boolean; msg: string } | null>(null);
+
+  const updateConfig = (partial: Partial<typeof config>) => {
+    updatePrefs({ webhook_config: { ...config, ...partial } });
+  };
+
+  const updateKeys = (partial: Partial<typeof keys>) => {
+    updatePrefs({ ai_keys: { ...keys, ...partial } });
+  };
+
+  const handleTest = async (platform: string) => {
+    setTesting(platform);
+    setTestResult(null);
+    try {
+      const msg = await invoke<string>("test_webhook", { platform });
+      setTestResult({ platform, ok: true, msg });
+    } catch (e) {
+      setTestResult({ platform, ok: false, msg: String(e) });
+    } finally {
+      setTesting(null);
+      setTimeout(() => setTestResult(null), 4000);
+    }
+  };
+
+  const keyInputStyle = {
+    width: "100%",
+    fontSize: 10,
+    fontWeight: 500,
+    padding: "4px 8px",
+    borderRadius: 4,
+    border: "1px solid var(--heat-1)",
+    background: "var(--heat-0)",
+    color: "var(--text-primary)",
+    outline: "none",
+    fontFamily: "monospace",
+  } as const;
+
+  const testBtnStyle = (platform: string) => ({
+    fontSize: 9,
+    fontWeight: 600 as const,
+    padding: "3px 8px",
+    borderRadius: 4,
+    border: "none",
+    cursor: testing === platform ? "wait" as const : "pointer" as const,
+    background: "var(--accent-purple)",
+    color: "#fff",
+    opacity: testing === platform ? 0.6 : 1,
+    flexShrink: 0 as const,
+    transition: "opacity 0.15s ease",
+  });
+
+  return (
+    <div>
+      {/* Description */}
+      <div style={{
+        fontSize: 12,
+        color: "var(--text-secondary)",
+        marginBottom: 12,
+        lineHeight: 1.6,
+        padding: "10px 12px",
+        background: "rgba(124, 92, 252, 0.05)",
+        borderRadius: 8,
+        border: "1px solid rgba(124, 92, 252, 0.1)",
+      }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: "var(--text-primary)" }}>
+          {t("settings.webhookTitle")}
+        </div>
+        <div style={{ fontSize: 12, opacity: 0.85, whiteSpace: "pre-line", lineHeight: 1.6 }}>
+          {t("settings.webhookDescription")}
+        </div>
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+          marginTop: 8,
+          fontSize: 11,
+          opacity: 0.7,
+        }}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+          <span>{t("settings.webhookSecure")}</span>
+        </div>
+      </div>
+
+      {/* Discord */}
+      <WebhookPlatformSection
+        label="Discord"
+        guide={t("settings.webhookGuideDiscord")}
+        enabled={config.discord_enabled}
+        onToggle={(v) => updateConfig({ discord_enabled: v })}
+        urlValue={keys.webhook_discord_url ?? ""}
+        urlPlaceholder="https://discord.com/api/webhooks/..."
+        onUrlChange={(v) => updateKeys({ webhook_discord_url: v || undefined })}
+        onTest={() => handleTest("discord")}
+        testing={testing === "discord"}
+        testResult={testResult?.platform === "discord" ? testResult : null}
+        keyInputStyle={keyInputStyle}
+        testBtnStyle={testBtnStyle("discord")}
+      />
+
+      {/* Slack */}
+      <WebhookPlatformSection
+        label="Slack"
+        guide={t("settings.webhookGuideSlack")}
+        enabled={config.slack_enabled}
+        onToggle={(v) => updateConfig({ slack_enabled: v })}
+        urlValue={keys.webhook_slack_url ?? ""}
+        urlPlaceholder="https://hooks.slack.com/services/..."
+        onUrlChange={(v) => updateKeys({ webhook_slack_url: v || undefined })}
+        onTest={() => handleTest("slack")}
+        testing={testing === "slack"}
+        testResult={testResult?.platform === "slack" ? testResult : null}
+        keyInputStyle={keyInputStyle}
+        testBtnStyle={testBtnStyle("slack")}
+      />
+
+      {/* Telegram */}
+      <div style={{ marginBottom: 10 }}>
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 4,
+        }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-primary)" }}>Telegram</span>
+          <ToggleSwitch
+            checked={config.telegram_enabled}
+            onChange={(v) => updateConfig({ telegram_enabled: v })}
+          />
+        </div>
+        <div style={{ fontSize: 9, color: "var(--text-muted)", marginBottom: 4, lineHeight: 1.4 }}>
+          {t("settings.webhookGuideTelegram")}
+        </div>
+        <div style={{ marginBottom: 3 }}>
+          <div style={{ fontSize: 9, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 1 }}>Bot Token</div>
+          <input
+            type="password"
+            value={keys.webhook_telegram_bot_token ?? ""}
+            onChange={(e) => updateKeys({ webhook_telegram_bot_token: e.target.value.trim() || undefined })}
+            placeholder="123456:ABC-DEF..."
+            style={keyInputStyle}
+          />
+        </div>
+        <div style={{ marginBottom: 3 }}>
+          <div style={{ fontSize: 9, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 1 }}>Chat ID</div>
+          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+            <input
+              type="text"
+              value={keys.webhook_telegram_chat_id ?? ""}
+              onChange={(e) => updateKeys({ webhook_telegram_chat_id: e.target.value.trim() || undefined })}
+              placeholder="-1001234567890"
+              style={keyInputStyle}
+            />
+            <button
+              onClick={() => handleTest("telegram")}
+              disabled={testing === "telegram"}
+              style={testBtnStyle("telegram")}
+            >
+              {testing === "telegram" ? "..." : t("settings.webhookTest")}
+            </button>
+          </div>
+        </div>
+        {testResult?.platform === "telegram" && (
+          <div style={{
+            fontSize: 10,
+            color: testResult.ok ? "#22c55e" : "#ef4444",
+            fontWeight: 500,
+            marginTop: 2,
+          }}>
+            {testResult.msg}
+          </div>
+        )}
+      </div>
+
+      {/* Divider */}
+      <div style={{ height: 1, background: "var(--heat-0)", margin: "10px 0" }} />
+
+      {/* Alert Settings */}
+      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>
+        {t("settings.webhookAlertSettings")}
+      </div>
+
+      {/* Thresholds */}
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 4 }}>
+          {t("settings.webhookThresholds")}
+        </div>
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+          {config.thresholds.map((threshold, i) => (
+            <div key={i} style={{
+              display: "flex",
+              alignItems: "center",
+              background: "var(--heat-0)",
+              borderRadius: 4,
+              padding: "2px 4px",
+              gap: 2,
+            }}>
+              <span style={{ fontSize: 10, fontWeight: 600, color: "var(--text-primary)" }}>{threshold}%</span>
+              <button
+                onClick={() => {
+                  const next = config.thresholds.filter((_, j) => j !== i);
+                  updateConfig({ thresholds: next.length > 0 ? next : [50] });
+                }}
+                style={{
+                  fontSize: 9,
+                  fontWeight: 700,
+                  border: "none",
+                  background: "transparent",
+                  cursor: "pointer",
+                  color: "var(--text-muted)",
+                  padding: "0 2px",
+                }}
+              >
+                x
+              </button>
+            </div>
+          ))}
+          <button
+            onClick={() => {
+              const existing = new Set(config.thresholds);
+              const candidates = [25, 50, 75, 80, 90, 95];
+              const next = candidates.find((c) => !existing.has(c));
+              if (next !== undefined) {
+                updateConfig({ thresholds: [...config.thresholds, next].sort((a, b) => a - b) });
+              }
+            }}
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              padding: "2px 6px",
+              borderRadius: 4,
+              border: "1px dashed var(--heat-1)",
+              background: "transparent",
+              cursor: "pointer",
+              color: "var(--text-muted)",
+            }}
+          >
+            +
+          </button>
+        </div>
+      </div>
+
+      {/* Monitored Windows */}
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 4 }}>
+          {t("settings.webhookWindows")}
+        </div>
+        {([
+          ["five_hour", t("usageAlert.session")] as const,
+          ["seven_day", t("usageAlert.weekly")] as const,
+          ["seven_day_sonnet", "Weekly Sonnet"] as const,
+          ["seven_day_opus", "Weekly Opus"] as const,
+          ["extra_usage", t("usageAlert.extraUsage")] as const,
+        ]).map(([key, label]) => (
+          <div key={key} style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "3px 0",
+          }}>
+            <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-primary)" }}>{label}</span>
+            <ToggleSwitch
+              checked={config.monitored_windows[key]}
+              onChange={(v) =>
+                updateConfig({
+                  monitored_windows: { ...config.monitored_windows, [key]: v },
+                })
+              }
+            />
+          </div>
+        ))}
+      </div>
+
+      {/* Notify on reset */}
+      <SettingRow label={t("settings.webhookNotifyReset")}>
+        <ToggleSwitch
+          checked={config.notify_on_reset}
+          onChange={(v) => updateConfig({ notify_on_reset: v })}
+        />
+      </SettingRow>
+    </div>
+  );
+}
+
+function WebhookPlatformSection({
+  label,
+  guide,
+  enabled,
+  onToggle,
+  urlValue,
+  urlPlaceholder,
+  onUrlChange,
+  onTest,
+  testing,
+  testResult,
+  keyInputStyle,
+  testBtnStyle,
+}: {
+  label: string;
+  guide?: string;
+  enabled: boolean;
+  onToggle: (v: boolean) => void;
+  urlValue: string;
+  urlPlaceholder: string;
+  onUrlChange: (v: string) => void;
+  onTest: () => void;
+  testing: boolean;
+  testResult: { ok: boolean; msg: string } | null;
+  keyInputStyle: React.CSSProperties;
+  testBtnStyle: React.CSSProperties;
+}) {
+  const t = useI18n();
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginBottom: 4,
+      }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-primary)" }}>{label}</span>
+        <ToggleSwitch checked={enabled} onChange={onToggle} />
+      </div>
+      {guide && (
+        <div style={{ fontSize: 9, color: "var(--text-muted)", marginBottom: 4, lineHeight: 1.4 }}>
+          {guide}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+        <input
+          type="password"
+          value={urlValue}
+          onChange={(e) => onUrlChange(e.target.value.trim())}
+          placeholder={urlPlaceholder}
+          style={keyInputStyle}
+        />
+        <button
+          onClick={onTest}
+          disabled={testing}
+          style={testBtnStyle}
+        >
+          {testing ? "..." : t("settings.webhookTest")}
+        </button>
+      </div>
+      {testResult && (
+        <div style={{
+          fontSize: 10,
+          color: testResult.ok ? "#22c55e" : "#ef4444",
+          fontWeight: 500,
+          marginTop: 2,
+        }}>
+          {testResult.msg}
         </div>
       )}
     </div>

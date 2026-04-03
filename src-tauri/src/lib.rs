@@ -2,6 +2,8 @@ mod ai_translate;
 mod commands;
 mod oauth_usage;
 mod providers;
+mod url_metadata;
+mod webhooks;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -30,15 +32,22 @@ use tauri::{Emitter, Manager};
 use providers::traits::TokenProvider;
 use providers::types::UserPreferences;
 
-struct AlertState {
+use std::collections::HashMap;
+
+struct WindowAlertState {
     window_id: String,
     fired_thresholds: Vec<u32>,
+    prev_utilization: f64,
+}
+
+struct AlertState {
+    windows: HashMap<String, WindowAlertState>,
     last_notification_at: Option<Instant>,
 }
 
 static ALERT_STATE: Mutex<Option<AlertState>> = Mutex::new(None);
 
-/// Check OAuth usage thresholds and fire OS notifications for newly crossed thresholds.
+/// Check OAuth usage thresholds and fire OS notifications + webhooks for newly crossed thresholds.
 fn check_and_fire_alerts(app_handle: &tauri::AppHandle) {
     let prefs = commands::get_preferences();
     if !prefs.usage_alerts_enabled {
@@ -50,24 +59,69 @@ fn check_and_fire_alerts(app_handle: &tauri::AppHandle) {
         None => return,
     };
 
-    // Use five_hour utilization for threshold alerts
-    let utilization = match &usage.five_hour {
-        Some(w) => w.utilization,
-        None => return,
-    };
-
-    // Use resets_at as window_id (stable identifier from API)
-    let window_id = usage
-        .five_hour
+    let webhook_config = prefs.webhook_config.clone();
+    let thresholds: Vec<u32> = webhook_config
         .as_ref()
-        .map(|w| w.resets_at.clone())
+        .map(|c| c.thresholds.clone())
+        .unwrap_or_else(|| vec![50, 80, 90]);
+
+    let has_webhooks = webhook_config
+        .as_ref()
+        .map(|c| c.discord_enabled || c.slack_enabled || c.telegram_enabled)
+        .unwrap_or(false);
+
+    // Determine which windows to monitor
+    let monitored = webhook_config
+        .as_ref()
+        .map(|c| &c.monitored_windows)
+        .cloned()
         .unwrap_or_default();
 
-    let thresholds: Vec<u32> = [50, 80, 90]
-        .iter()
-        .filter(|&&t| utilization >= t as f64)
-        .copied()
-        .collect();
+    // Build list of (name, utilization, window_id, resets_at) for each monitored window.
+    // window_id combines the window name with resets_at (truncated to hour) so that:
+    //   - It changes when the usage window resets → clears fired_thresholds
+    //   - It doesn't change on minor timestamp drift within the same window
+    let mut windows_to_check: Vec<(&str, f64, String, Option<String>)> = Vec::new();
+
+    // Truncate resets_at to hour to avoid spurious resets from second-level drift
+    fn stable_window_id(name: &str, resets_at: &str) -> String {
+        // Take first 13 chars of ISO timestamp (e.g. "2026-04-03T11") for hour-level stability
+        let truncated = &resets_at[..resets_at.len().min(13)];
+        format!("{}:{}", name, truncated)
+    }
+
+    if monitored.five_hour {
+        if let Some(w) = &usage.five_hour {
+            windows_to_check.push(("Session (5h)", w.utilization, stable_window_id("5h", &w.resets_at), Some(w.resets_at.clone())));
+        }
+    }
+    if monitored.seven_day {
+        if let Some(w) = &usage.seven_day {
+            windows_to_check.push(("Weekly", w.utilization, stable_window_id("7d", &w.resets_at), Some(w.resets_at.clone())));
+        }
+    }
+    if monitored.seven_day_sonnet {
+        if let Some(w) = &usage.seven_day_sonnet {
+            windows_to_check.push(("Weekly Sonnet", w.utilization, stable_window_id("7d-sonnet", &w.resets_at), Some(w.resets_at.clone())));
+        }
+    }
+    if monitored.seven_day_opus {
+        if let Some(w) = &usage.seven_day_opus {
+            windows_to_check.push(("Weekly Opus", w.utilization, stable_window_id("7d-opus", &w.resets_at), Some(w.resets_at.clone())));
+        }
+    }
+    if monitored.extra_usage {
+        if let Some(w) = &usage.extra_usage {
+            if w.is_enabled {
+                // Extra usage resets monthly; use monthly_limit as part of ID
+                windows_to_check.push(("Extra Usage", w.utilization, format!("extra:{}", w.monthly_limit), None));
+            }
+        }
+    }
+
+    if windows_to_check.is_empty() {
+        return;
+    }
 
     let mut state_guard = match ALERT_STATE.lock() {
         Ok(g) => g,
@@ -75,61 +129,121 @@ fn check_and_fire_alerts(app_handle: &tauri::AppHandle) {
     };
 
     let state = state_guard.get_or_insert_with(|| AlertState {
-        window_id: window_id.clone(),
-        fired_thresholds: Vec::new(),
+        windows: HashMap::new(),
         last_notification_at: None,
     });
 
-    // Reset if window changed
-    if state.window_id != window_id {
-        state.window_id = window_id;
-        state.fired_thresholds.clear();
-    }
-
-    let new_thresholds: Vec<u32> = thresholds
-        .iter()
-        .filter(|t| !state.fired_thresholds.contains(t))
-        .copied()
-        .collect();
-
-    if new_thresholds.is_empty() {
-        return;
-    }
-
     // Cooldown: at least 60 seconds between notifications
-    if let Some(last) = state.last_notification_at {
-        if last.elapsed().as_secs() < 60 {
-            return;
+    let cooldown_ok = state
+        .last_notification_at
+        .map(|last| last.elapsed().as_secs() >= 60)
+        .unwrap_or(true);
+
+    let mut webhook_alerts: Vec<webhooks::WebhookAlertType> = Vec::new();
+    let mut os_notification: Option<(String, String)> = None;
+
+    for (name, utilization, window_id, resets_at) in &windows_to_check {
+        let win_state = state
+            .windows
+            .entry(name.to_string())
+            .or_insert_with(|| WindowAlertState {
+                window_id: window_id.clone(),
+                fired_thresholds: Vec::new(),
+                prev_utilization: 0.0,
+            });
+
+        // Reset detection: if window changed or utilization dropped to ~0
+        if win_state.window_id != *window_id {
+            // Check if this is a reset (prev was > 0)
+            let was_active = win_state.prev_utilization > 5.0;
+            win_state.window_id = window_id.clone();
+            win_state.fired_thresholds.clear();
+
+            if was_active
+                && has_webhooks
+                && webhook_config.as_ref().map(|c| c.notify_on_reset).unwrap_or(false)
+            {
+                webhook_alerts.push(webhooks::WebhookAlertType::ResetCompleted {
+                    window_name: name.to_string(),
+                });
+            }
+        }
+
+        win_state.prev_utilization = *utilization;
+
+        // Find newly crossed thresholds
+        let new_thresholds: Vec<u32> = thresholds
+            .iter()
+            .filter(|&&t| *utilization >= t as f64)
+            .filter(|t| !win_state.fired_thresholds.contains(t))
+            .copied()
+            .collect();
+
+        if new_thresholds.is_empty() {
+            continue;
+        }
+
+        if !cooldown_ok {
+            continue;
+        }
+
+        let highest = new_thresholds.iter().copied().max().unwrap_or(50);
+
+        // Mark ALL crossed thresholds as fired to prevent re-sending lower ones
+        // on subsequent polls while usage remains high. Only the highest is sent.
+        for t in &new_thresholds {
+            if !win_state.fired_thresholds.contains(t) {
+                win_state.fired_thresholds.push(*t);
+            }
+        }
+
+        // OS notification (only for five_hour to avoid spam, or if it's the highest alert)
+        if *name == "Session (5h)" || os_notification.is_none() {
+            let body = if highest >= 90 {
+                format!("{} usage at {:.0}% — may be throttled soon", name, utilization)
+            } else {
+                format!("{} usage at {:.0}%", name, utilization)
+            };
+            os_notification = Some(("AI Token Monitor".to_string(), body));
+        }
+
+        // Webhook alerts for all monitored windows
+        if has_webhooks {
+            webhook_alerts.push(webhooks::WebhookAlertType::ThresholdCrossed {
+                window_name: name.to_string(),
+                utilization: *utilization,
+                threshold: highest,
+                resets_at: resets_at.clone(),
+            });
         }
     }
 
-    // Record thresholds only after cooldown check passes
-    for t in &new_thresholds {
-        if !state.fired_thresholds.contains(t) {
-            state.fired_thresholds.push(*t);
-        }
+    // Fire OS notification
+    if let Some((title, body)) = os_notification {
+        use tauri_plugin_notification::NotificationExt;
+        let _ = app_handle
+            .notification()
+            .builder()
+            .title(&title)
+            .body(&body)
+            .show();
+        state.last_notification_at = Some(Instant::now());
     }
 
-    let highest = new_thresholds.iter().copied().max().unwrap_or(50);
-    let title = "AI Token Monitor";
-    let body = match highest {
-        90 => format!(
-            "Session usage at {:.0}% — may be throttled soon",
-            utilization
-        ),
-        80 => format!("Session usage at {:.0}%", utilization),
-        _ => format!("Session usage at {:.0}%", utilization),
-    };
-
-    use tauri_plugin_notification::NotificationExt;
-    let _ = app_handle
-        .notification()
-        .builder()
-        .title(title)
-        .body(&body)
-        .show();
-
-    state.last_notification_at = Some(Instant::now());
+    // Fire webhook alerts asynchronously
+    if !webhook_alerts.is_empty() {
+        if let Some(config) = webhook_config {
+            tauri::async_runtime::spawn(async move {
+                let secrets = match commands::get_ai_keys() {
+                    Some(s) => s,
+                    None => return,
+                };
+                for alert in webhook_alerts {
+                    webhooks::send_webhook_alerts(&config, &secrets, &alert).await;
+                }
+            });
+        }
+    }
 }
 
 fn get_config_dirs_from_prefs() -> Vec<PathBuf> {
@@ -342,6 +456,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
 /// Bring the app to the foreground so WKWebView renders.
 /// Required on macOS 26 Tahoe where the app runs as Accessory policy
 /// and won't auto-activate — without this the window appears but content is white.
+/// Skipped in fullscreen Spaces to avoid Space-switching.
 #[cfg(target_os = "macos")]
 fn activate_app() {
     #[allow(deprecated)]
@@ -353,6 +468,21 @@ fn activate_app() {
         let ns_app = NSApplication::sharedApplication(nil);
         #[allow(deprecated)]
         ns_app.activateIgnoringOtherApps_(true);
+    }
+}
+
+/// Check if the current Space is a fullscreen Space.
+/// Uses NSApplication's currentSystemPresentationOptions.
+#[cfg(target_os = "macos")]
+fn is_fullscreen_space() -> bool {
+    use objc::{msg_send, sel, sel_impl};
+    unsafe {
+        #[allow(deprecated)]
+        let ns_app: cocoa::base::id =
+            msg_send![objc::class!(NSApplication), sharedApplication];
+        let options: u64 = msg_send![ns_app, currentSystemPresentationOptions];
+        // NSApplicationPresentationFullScreen = 1 << 10
+        (options & (1 << 10)) != 0
     }
 }
 
@@ -394,14 +524,91 @@ fn lower_window_level(window: &tauri::WebviewWindow) {
     }
 }
 
-/// Set NSWindow level and collection behavior so the window appears above all other apps.
-/// Must be called AFTER window.show() — macOS resets the level on show.
+/// Promote NSWindow to a custom NSPanel subclass for fullscreen overlay support.
+/// Must be called once at startup. The NonActivatingPanel style mask bit (1 << 7)
+/// tells the fullscreen compositor to render this panel above fullscreen apps.
+/// The custom subclass overrides canBecomeKeyWindow → YES for WKWebView rendering.
 #[cfg(target_os = "macos")]
-fn configure_window_for_fullscreen(window: &tauri::WebviewWindow) {
+fn promote_to_panel(window: &tauri::WebviewWindow) {
+    use objc::runtime::{Class, Object, Sel, BOOL, YES};
+    use objc::{msg_send, sel, sel_impl};
+    use std::sync::Once;
+
+    extern "C" {
+        fn object_setClass(obj: *mut Object, cls: *const Class) -> *const Class;
+    }
+
+    extern "C" fn yes_method(_: &Object, _: Sel) -> BOOL {
+        YES
+    }
+
+    const NS_NON_ACTIVATING_PANEL_MASK: u64 = 1 << 7;
+
+    static PROMOTED: Once = Once::new();
+
+    PROMOTED.call_once(|| {
+        let panel_class = unsafe {
+            let superclass = objc::class!(NSPanel);
+            objc::declare::ClassDecl::new("TauriFullscreenPanel", superclass)
+                .map(|mut cls| {
+                    cls.add_method(
+                        sel!(canBecomeKeyWindow),
+                        yes_method as extern "C" fn(&Object, Sel) -> BOOL,
+                    );
+                    cls.add_method(
+                        sel!(canBecomeMainWindow),
+                        yes_method as extern "C" fn(&Object, Sel) -> BOOL,
+                    );
+                    cls.register()
+                })
+                .unwrap_or_else(|| objc::class!(TauriFullscreenPanel))
+        };
+
+        if let Ok(ns_win) = window.ns_window() {
+            unsafe {
+                #[allow(deprecated)]
+                let ns_win = ns_win as cocoa::base::id;
+                object_setClass(ns_win as *mut _, panel_class);
+                let mask: u64 = msg_send![ns_win, styleMask];
+                let _: () = msg_send![ns_win, setStyleMask: mask | NS_NON_ACTIVATING_PANEL_MASK];
+                let _: () = msg_send![ns_win, setHidesOnDeactivate: false];
+            }
+        }
+    });
+}
+
+/// Apply collection behavior + hidesOnDeactivate so the window can appear in
+/// fullscreen Spaces and won't auto-hide when another app takes activation.
+#[cfg(target_os = "macos")]
+fn prepare_window_space_behavior(window: &tauri::WebviewWindow) {
     #[allow(deprecated)]
     use cocoa::appkit::NSWindow;
     #[allow(deprecated)]
     use cocoa::appkit::NSWindowCollectionBehavior;
+    use objc::{msg_send, sel, sel_impl};
+
+    if let Ok(ns_win) = window.ns_window() {
+        unsafe {
+            #[allow(deprecated)]
+            let ns_win = ns_win as cocoa::base::id;
+            #[allow(deprecated)]
+            ns_win.setCollectionBehavior_(
+                NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces
+                    | NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenAuxiliary
+                    | NSWindowCollectionBehavior::NSWindowCollectionBehaviorIgnoresCycle,
+            );
+            // Prevent auto-hide when another app activates (important in fullscreen)
+            let _: () = msg_send![ns_win, setHidesOnDeactivate: false];
+        }
+    }
+}
+
+/// Restore window level only — used when focus is regained and the window is
+/// already visible (no ordering needed).
+#[cfg(target_os = "macos")]
+fn restore_window_level(window: &tauri::WebviewWindow) {
+    #[allow(deprecated)]
+    use cocoa::appkit::NSWindow;
 
     if let Ok(ns_win) = window.ns_window() {
         unsafe {
@@ -409,18 +616,51 @@ fn configure_window_for_fullscreen(window: &tauri::WebviewWindow) {
             let ns_win = ns_win as cocoa::base::id;
             #[allow(deprecated)]
             ns_win.setLevel_(NS_STATUS_WINDOW_LEVEL);
-            #[allow(deprecated)]
-            ns_win.setCollectionBehavior_(
-                NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces
-                    | NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenAuxiliary
-                    | NSWindowCollectionBehavior::NSWindowCollectionBehaviorIgnoresCycle,
-            );
-            // Give keyboard focus so Escape key works
-            #[allow(deprecated)]
-            ns_win.makeKeyAndOrderFront_(cocoa::base::nil);
         }
     }
 }
+
+/// Show the window using raw AppKit calls for fullscreen compatibility.
+/// Tauri's window.show() internally calls orderFront: which does nothing
+/// when the app is inactive (Accessory policy). We use orderFrontRegardless
+/// which works regardless of activation state.
+#[cfg(target_os = "macos")]
+fn show_window_native(window: &tauri::WebviewWindow) {
+    #[allow(deprecated)]
+    use cocoa::appkit::NSWindow;
+    #[allow(deprecated)]
+    use cocoa::base::nil;
+    use objc::{msg_send, sel, sel_impl};
+
+    if let Ok(ns_win) = window.ns_window() {
+        unsafe {
+            #[allow(deprecated)]
+            let ns_win = ns_win as cocoa::base::id;
+            #[allow(deprecated)]
+            ns_win.setLevel_(NS_STATUS_WINDOW_LEVEL);
+            // orderFrontRegardless works even when app is not active —
+            // unlike orderFront:/makeKeyAndOrderFront: which are no-ops
+            // for inactive apps
+            let _: () = msg_send![ns_win, orderFrontRegardless];
+
+            let in_fullscreen = is_fullscreen_space();
+            if in_fullscreen {
+                // In fullscreen: skip activateIgnoringOtherApps to avoid
+                // Space-switching. The window is already visible via
+                // orderFrontRegardless + CanJoinAllSpaces + FullScreenAuxiliary.
+                // Try to accept keyboard input without full activation.
+                let _: () = msg_send![ns_win, makeKeyWindow];
+            } else {
+                // Normal desktop: activate app (needed for WKWebView on Tahoe)
+                // and bring to front with keyboard focus
+                activate_app();
+                #[allow(deprecated)]
+                ns_win.makeKeyAndOrderFront_(nil);
+            }
+        }
+    }
+}
+
 
 #[tauri::command]
 fn get_home_dir() -> Option<String> {
@@ -562,8 +802,10 @@ pub fn run() {
             commands::get_oauth_usage,
             commands::enable_usage_tracking,
             commands::get_ai_keys,
+            commands::test_webhook,
             ai_translate::translate_text,
-            ai_translate::translate_reply
+            ai_translate::translate_reply,
+            url_metadata::fetch_url_metadata
         ])
         .setup(|app| {
             // Build tray icon — direct click toggle
@@ -592,14 +834,18 @@ pub fn run() {
                                     .unwrap_or(0);
                                 LAST_SHOWN_MS.store(now_ms, Ordering::SeqCst);
 
-                                let _ = window.show();
-                                // MUST be after show() — macOS resets level on show
                                 #[cfg(target_os = "macos")]
-                                configure_window_for_fullscreen(&window);
-                                #[cfg(target_os = "macos")]
-                                activate_app();
-
-                                let _ = window.set_focus();
+                                {
+                                    // 1. Set collection behavior so window can join fullscreen Spaces
+                                    prepare_window_space_behavior(&window);
+                                    // 2. Show via raw AppKit — handles fullscreen vs desktop differently
+                                    show_window_native(&window);
+                                }
+                                #[cfg(not(target_os = "macos"))]
+                                {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
                             }
                         }
                     }
@@ -628,6 +874,14 @@ pub fn run() {
             }
 
             let main_window = app.get_webview_window("main").unwrap();
+
+            #[cfg(target_os = "macos")]
+            promote_to_panel(&main_window);
+
+            // Set collection behavior early so it persists across hide/show cycles
+            #[cfg(target_os = "macos")]
+            prepare_window_space_behavior(&main_window);
+
             let win_clone = main_window.clone();
             main_window.on_window_event(move |event| {
                 match event {
@@ -651,6 +905,12 @@ pub fn run() {
                                 {
                                     let w = win.clone();
                                     let _ = win.run_on_main_thread(move || {
+                                        // In fullscreen Space: don't hide — the window was
+                                        // shown without activation, so focus state is unreliable
+                                        if is_fullscreen_space() {
+                                            lower_window_level(&w);
+                                            return;
+                                        }
                                         // Don't hide if our app is still active (e.g. emoji picker)
                                         // Instead, lower window level so system panels appear above us
                                         if is_app_active() {
@@ -665,12 +925,14 @@ pub fn run() {
                                 let _ = win.hide();
                             });
                         } else {
-                            // Focus regained — restore high window level on main thread
+                            // Focus regained — restore space behavior and level only
+                            // (no orderFront needed, window already has focus)
                             #[cfg(target_os = "macos")]
                             {
                                 let w = win_clone.clone();
                                 let _ = win_clone.run_on_main_thread(move || {
-                                    configure_window_for_fullscreen(&w);
+                                    prepare_window_space_behavior(&w);
+                                    restore_window_level(&w);
                                 });
                             }
                         }

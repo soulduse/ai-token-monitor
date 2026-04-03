@@ -7,6 +7,7 @@ import { useChatNotification } from "./hooks/useChatNotification";
 import { getTotalTokens } from "./lib/format";
 import { SettingsProvider, useSettings } from "./contexts/SettingsContext";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { MiniProfileProvider } from "./contexts/MiniProfileContext";
 import { I18nProvider, useI18n } from "./i18n/I18nContext";
 import { PopoverShell } from "./components/PopoverShell";
 import { Header } from "./components/Header";
@@ -25,6 +26,7 @@ import { SupportBanner } from "./components/SupportBanner";
 import { SourceSelector } from "./components/SourceSelector";
 import { SalaryComparator } from "./components/SalaryComparator";
 import { UsageAlertBar } from "./components/UsageAlertBar";
+import { MiniProfile } from "./components/MiniProfile";
 import { useUpdater } from "./hooks/useUpdater";
 
 function AppContent() {
@@ -174,6 +176,7 @@ function AppContent() {
       </div>
 
       <SupportBanner />
+      <MiniProfile localDaily={stats.daily} currentUserId={user?.id ?? null} />
     </PopoverShell>
   );
 }
@@ -192,7 +195,9 @@ function App() {
     <SettingsProvider>
       <I18nBridge>
         <AuthProvider>
-          <AppContent />
+          <MiniProfileProvider>
+            <AppContent />
+          </MiniProfileProvider>
         </AuthProvider>
       </I18nBridge>
     </SettingsProvider>
