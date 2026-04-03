@@ -524,6 +524,59 @@ fn lower_window_level(window: &tauri::WebviewWindow) {
     }
 }
 
+/// Promote NSWindow to a custom NSPanel subclass for fullscreen overlay support.
+/// Must be called once at startup. The NonActivatingPanel style mask bit (1 << 7)
+/// tells the fullscreen compositor to render this panel above fullscreen apps.
+/// The custom subclass overrides canBecomeKeyWindow → YES for WKWebView rendering.
+#[cfg(target_os = "macos")]
+fn promote_to_panel(window: &tauri::WebviewWindow) {
+    use objc::runtime::{Class, Object, Sel, BOOL, YES};
+    use objc::{msg_send, sel, sel_impl};
+    use std::sync::Once;
+
+    extern "C" {
+        fn object_setClass(obj: *mut Object, cls: *const Class) -> *const Class;
+    }
+
+    extern "C" fn yes_method(_: &Object, _: Sel) -> BOOL {
+        YES
+    }
+
+    const NS_NON_ACTIVATING_PANEL_MASK: u64 = 1 << 7;
+
+    static PROMOTED: Once = Once::new();
+
+    PROMOTED.call_once(|| {
+        let panel_class = unsafe {
+            let superclass = objc::class!(NSPanel);
+            objc::declare::ClassDecl::new("TauriFullscreenPanel", superclass)
+                .map(|mut cls| {
+                    cls.add_method(
+                        sel!(canBecomeKeyWindow),
+                        yes_method as extern "C" fn(&Object, Sel) -> BOOL,
+                    );
+                    cls.add_method(
+                        sel!(canBecomeMainWindow),
+                        yes_method as extern "C" fn(&Object, Sel) -> BOOL,
+                    );
+                    cls.register()
+                })
+                .unwrap_or_else(|| objc::class!(TauriFullscreenPanel))
+        };
+
+        if let Ok(ns_win) = window.ns_window() {
+            unsafe {
+                #[allow(deprecated)]
+                let ns_win = ns_win as cocoa::base::id;
+                object_setClass(ns_win as *mut _, panel_class);
+                let mask: u64 = msg_send![ns_win, styleMask];
+                let _: () = msg_send![ns_win, setStyleMask: mask | NS_NON_ACTIVATING_PANEL_MASK];
+                let _: () = msg_send![ns_win, setHidesOnDeactivate: false];
+            }
+        }
+    });
+}
+
 /// Apply collection behavior + hidesOnDeactivate so the window can appear in
 /// fullscreen Spaces and won't auto-hide when another app takes activation.
 #[cfg(target_os = "macos")]
@@ -821,6 +874,9 @@ pub fn run() {
             }
 
             let main_window = app.get_webview_window("main").unwrap();
+
+            #[cfg(target_os = "macos")]
+            promote_to_panel(&main_window);
 
             // Set collection behavior early so it persists across hide/show cycles
             #[cfg(target_os = "macos")]
