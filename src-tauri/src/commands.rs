@@ -304,7 +304,15 @@ fn save_ai_keys(keys: &Option<AiKeys>) {
 pub fn get_preferences() -> UserPreferences {
     let path = prefs_path();
     let mut prefs: UserPreferences = if let Ok(content) = fs::read_to_string(&path) {
-        serde_json::from_str(&content).unwrap_or_default()
+        match serde_json::from_str(&content) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("[PREFS] Failed to parse prefs: {e}. Backing up and using defaults.");
+                let backup = path.with_extension("json.bak");
+                let _ = fs::copy(&path, &backup);
+                UserPreferences::default()
+            }
+        }
     } else {
         UserPreferences::default()
     };

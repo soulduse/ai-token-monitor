@@ -412,7 +412,7 @@ fn configure_window_for_fullscreen(window: &tauri::WebviewWindow) {
             #[allow(deprecated)]
             ns_win.setCollectionBehavior_(
                 NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces
-                    | NSWindowCollectionBehavior::NSWindowCollectionBehaviorStationary
+                    | NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenAuxiliary
                     | NSWindowCollectionBehavior::NSWindowCollectionBehaviorIgnoresCycle,
             );
             // Give keyboard focus so Escape key works
