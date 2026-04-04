@@ -114,7 +114,8 @@
   "settings.auto": "自动",
   "settings.light": "浅色",
   "settings.dark": "深色",
-  "settings.configDirs": "配置目录",
+  "settings.configDirs": "Claude Code 目录",
+  "settings.configDirsTooltip": "Claude Code 存储会话数据的目录。添加多个目录以汇总不同配置的使用量。",
   "settings.configDirsPrimary": "主要",
   "settings.configDirsAutoDetect": "自动检测",
   "settings.configDirsAdd": "添加",
@@ -122,6 +123,9 @@
   "settings.configDirsNotFound": "未发现新目录",
   "settings.configDirsFound": "发现 {{count}} 个新目录",
   "settings.configDirsInvalid": "路径无效或缺少 projects 文件夹",
+  "settings.codexConfigDirs": "Codex 目录",
+  "settings.codexConfigDirsTooltip": "Codex 存储会话数据的目录。添加多个目录以汇总不同配置的使用量。",
+  "settings.codexConfigDirsInvalid": "路径无效或缺少 sessions 文件夹",
 
   "support.buyMeCoffee": "请我喝杯咖啡",
 

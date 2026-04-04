@@ -114,7 +114,8 @@
   "settings.auto": "自動",
   "settings.light": "淺色",
   "settings.dark": "深色",
-  "settings.configDirs": "設定目錄",
+  "settings.configDirs": "Claude Code 目錄",
+  "settings.configDirsTooltip": "Claude Code 儲存工作階段資料的目錄。新增多個目錄以彙總不同設定的使用量。",
   "settings.configDirsPrimary": "主要",
   "settings.configDirsAutoDetect": "自動偵測",
   "settings.configDirsAdd": "新增",
@@ -122,6 +123,9 @@
   "settings.configDirsNotFound": "未發現新目錄",
   "settings.configDirsFound": "發現 {{count}} 個新目錄",
   "settings.configDirsInvalid": "路徑無效或缺少 projects 資料夾",
+  "settings.codexConfigDirs": "Codex 目錄",
+  "settings.codexConfigDirsTooltip": "Codex 儲存工作階段資料的目錄。新增多個目錄以彙總不同設定的使用量。",
+  "settings.codexConfigDirsInvalid": "路徑無效或缺少 sessions 資料夾",
 
   "support.buyMeCoffee": "請我喝杯咖啡",
 

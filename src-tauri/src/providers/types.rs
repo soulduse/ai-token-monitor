@@ -54,6 +54,8 @@ pub struct UserPreferences {
     pub include_codex: bool,
     #[serde(default)]
     pub include_opencode: bool,
+    #[serde(default = "default_codex_dirs")]
+    pub codex_dirs: Vec<String>,
     #[serde(default)]
     pub monthly_salary: Option<f64>,
     #[serde(default = "default_true")]
@@ -114,6 +116,10 @@ fn default_language() -> String {
 
 fn default_config_dirs() -> Vec<String> {
     vec!["~/.claude".to_string()]
+}
+
+fn default_codex_dirs() -> Vec<String> {
+    vec!["~/.codex".to_string()]
 }
 
 fn default_true() -> bool {
@@ -193,6 +199,7 @@ impl Default for UserPreferences {
             include_claude: true,
             include_codex: false,
             include_opencode: false,
+            codex_dirs: default_codex_dirs(),
             monthly_salary: None,
             usage_alerts_enabled: true,
             usage_tracking_enabled: false,

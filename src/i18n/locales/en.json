@@ -114,7 +114,8 @@
   "settings.auto": "Auto",
   "settings.light": "Light",
   "settings.dark": "Dark",
-  "settings.configDirs": "Config Directories",
+  "settings.configDirs": "Claude Code Directories",
+  "settings.configDirsTooltip": "Directories where Claude Code stores session data. Add multiple directories to aggregate usage from different configurations.",
   "settings.configDirsPrimary": "primary",
   "settings.configDirsAutoDetect": "Auto Detect",
   "settings.configDirsAdd": "Add",
@@ -122,6 +123,9 @@
   "settings.configDirsNotFound": "No new directories found",
   "settings.configDirsFound": "Found {{count}} new directory(ies)",
   "settings.configDirsInvalid": "Invalid path or no projects folder found",
+  "settings.codexConfigDirs": "Codex Directories",
+  "settings.codexConfigDirsTooltip": "Directories where Codex stores session data. Add multiple directories to aggregate usage from different configurations.",
+  "settings.codexConfigDirsInvalid": "Invalid path or no sessions folder found",
 
   "support.buyMeCoffee": "Buy me a coffee",
 

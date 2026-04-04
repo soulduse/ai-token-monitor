@@ -11,6 +11,14 @@ use serde_json::Value;
 use super::traits::TokenProvider;
 use super::types::{AllStats, DailyUsage, ModelUsage};
 
+fn expand_tilde(path: &str) -> PathBuf {
+    if let Some(rest) = path.strip_prefix("~/") {
+        dirs::home_dir().unwrap_or_default().join(rest)
+    } else {
+        PathBuf::from(path)
+    }
+}
+
 // --- Cache infrastructure (mirrors claude_code.rs patterns) ---
 
 struct IncrementalCache {
@@ -64,22 +72,41 @@ struct CodexEntry {
 // --- Provider ---
 
 pub struct CodexProvider {
-    base_dir: PathBuf,
+    #[allow(dead_code)]
+    primary_dir: PathBuf,
+    all_dirs: Vec<PathBuf>,
 }
 
 impl CodexProvider {
-    pub fn new() -> Self {
+    pub fn new(codex_dirs: Vec<String>) -> Self {
         let home = dirs::home_dir().unwrap_or_default();
-        Self {
-            base_dir: home.join(".codex"),
+        let primary = home.join(".codex");
+        let mut all_dirs: Vec<PathBuf> = Vec::new();
+        let mut seen: HashSet<PathBuf> = HashSet::new();
+
+        for d in &codex_dirs {
+            let expanded = expand_tilde(d);
+            let canonical = expanded.canonicalize().unwrap_or_else(|_| expanded.clone());
+            if seen.insert(canonical) {
+                all_dirs.push(expanded);
+            }
         }
+
+        let primary_canonical = primary.canonicalize().unwrap_or_else(|_| primary.clone());
+        if !seen.contains(&primary_canonical) {
+            all_dirs.insert(0, primary.clone());
+        }
+
+        Self { primary_dir: primary, all_dirs }
     }
 
-    fn session_roots(&self) -> [PathBuf; 2] {
-        [
-            self.base_dir.join("sessions"),
-            self.base_dir.join("archived_sessions"),
-        ]
+    fn session_roots(&self) -> Vec<PathBuf> {
+        let mut roots = Vec::new();
+        for dir in &self.all_dirs {
+            roots.push(dir.join("sessions"));
+            roots.push(dir.join("archived_sessions"));
+        }
+        roots
     }
 
     /// Collect mtime/size metadata for all JSONL files.

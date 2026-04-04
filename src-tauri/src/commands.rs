@@ -47,7 +47,8 @@ pub async fn get_all_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
 #[tauri::command]
 pub async fn get_codex_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
     let result = tauri::async_runtime::spawn_blocking(|| {
-        let provider = CodexProvider::new();
+        let prefs = get_preferences();
+        let provider = CodexProvider::new(prefs.codex_dirs);
         if !provider.is_available() {
             return Err("Codex stats not available".to_string());
         }
@@ -64,7 +65,8 @@ pub async fn get_codex_stats(app: tauri::AppHandle) -> Result<AllStats, String> 
 
 #[tauri::command]
 pub fn is_codex_available() -> bool {
-    CodexProvider::new().is_available()
+    let prefs = get_preferences();
+    CodexProvider::new(prefs.codex_dirs).is_available()
 }
 
 #[tauri::command]
@@ -122,6 +124,59 @@ pub fn detect_claude_dirs() -> Vec<String> {
 
     found.sort();
     found
+}
+
+#[tauri::command]
+pub fn detect_codex_dirs() -> Vec<String> {
+    let home = dirs::home_dir().unwrap_or_default();
+    let mut found: Vec<String> = Vec::new();
+
+    // Scan ~/.codex-* directories
+    if let Ok(entries) = std::fs::read_dir(&home) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with(".codex-") && (entry.path().join("sessions").is_dir() || entry.path().join("archived_sessions").is_dir()) {
+                found.push(format!("~/{}", name));
+            }
+        }
+    }
+
+    // Check CODEX_CONFIG_DIR env var
+    if let Ok(env_dir) = std::env::var("CODEX_CONFIG_DIR") {
+        let path = PathBuf::from(&env_dir);
+        if path.join("sessions").is_dir() || path.join("archived_sessions").is_dir() {
+            let display = if let Ok(stripped) = path.strip_prefix(&home) {
+                format!("~/{}", stripped.display())
+            } else {
+                env_dir
+            };
+            if !found.contains(&display) && display != "~/.codex" {
+                found.push(display);
+            }
+        }
+    }
+
+    found.sort();
+    found
+}
+
+#[tauri::command]
+pub fn validate_codex_dir(path: String) -> bool {
+    let home = dirs::home_dir().unwrap_or_default();
+    let expanded = if path.starts_with("~/") {
+        home.join(path.strip_prefix("~/").unwrap_or(&path))
+    } else {
+        PathBuf::from(&path)
+    };
+    // Guard against path traversal outside home directory
+    let canonical = match expanded.canonicalize() {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    if !canonical.starts_with(&home) {
+        return false;
+    }
+    canonical.join("sessions").is_dir() || canonical.join("archived_sessions").is_dir()
 }
 
 #[tauri::command]
