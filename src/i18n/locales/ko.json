@@ -114,7 +114,8 @@
   "settings.auto": "자동",
   "settings.light": "라이트",
   "settings.dark": "다크",
-  "settings.configDirs": "설정 디렉토리",
+  "settings.configDirs": "Claude Code 디렉토리",
+  "settings.configDirsTooltip": "Claude Code가 세션 데이터를 저장하는 디렉토리입니다. 여러 디렉토리를 추가하여 다른 설정의 사용량을 통합할 수 있습니다.",
   "settings.configDirsPrimary": "기본",
   "settings.configDirsAutoDetect": "자동 탐지",
   "settings.configDirsAdd": "추가",
@@ -122,6 +123,9 @@
   "settings.configDirsNotFound": "새 디렉토리를 찾지 못했습니다",
   "settings.configDirsFound": "{{count}}개의 새 디렉토리를 찾았습니다",
   "settings.configDirsInvalid": "잘못된 경로이거나 projects 폴더가 없습니다",
+  "settings.codexConfigDirs": "Codex 디렉토리",
+  "settings.codexConfigDirsTooltip": "Codex가 세션 데이터를 저장하는 디렉토리입니다. 여러 디렉토리를 추가하여 다른 설정의 사용량을 통합할 수 있습니다.",
+  "settings.codexConfigDirsInvalid": "잘못된 경로이거나 sessions 폴더를 찾을 수 없습니다",
 
   "support.buyMeCoffee": "커피 한 잔 사주기",
 

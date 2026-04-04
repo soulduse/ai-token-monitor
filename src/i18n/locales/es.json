@@ -114,7 +114,8 @@
   "settings.auto": "Auto",
   "settings.light": "Claro",
   "settings.dark": "Oscuro",
-  "settings.configDirs": "Directorios de config",
+  "settings.configDirs": "Directorios de Claude Code",
+  "settings.configDirsTooltip": "Directorios donde Claude Code almacena datos de sesión. Agrega múltiples directorios para consolidar el uso de diferentes configuraciones.",
   "settings.configDirsPrimary": "principal",
   "settings.configDirsAutoDetect": "Detectar auto",
   "settings.configDirsAdd": "Añadir",
@@ -122,6 +123,9 @@
   "settings.configDirsNotFound": "No se encontraron nuevos directorios",
   "settings.configDirsFound": "{{count}} directorio(s) nuevo(s) encontrado(s)",
   "settings.configDirsInvalid": "Ruta inválida o carpeta projects no encontrada",
+  "settings.codexConfigDirs": "Directorios de Codex",
+  "settings.codexConfigDirsTooltip": "Directorios donde Codex almacena datos de sesión. Agrega múltiples directorios para consolidar el uso de diferentes configuraciones.",
+  "settings.codexConfigDirsInvalid": "Ruta inválida o carpeta sessions no encontrada",
 
   "support.buyMeCoffee": "Invítame un café",
 

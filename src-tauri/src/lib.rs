@@ -246,28 +246,6 @@ fn check_and_fire_alerts(app_handle: &tauri::AppHandle) {
     }
 }
 
-fn get_config_dirs_from_prefs() -> Vec<PathBuf> {
-    let prefs_path = dirs::home_dir()
-        .unwrap_or_default()
-        .join(".claude")
-        .join("ai-token-monitor-prefs.json");
-    let prefs: UserPreferences = std::fs::read_to_string(&prefs_path)
-        .ok()
-        .and_then(|c| serde_json::from_str(&c).ok())
-        .unwrap_or_default();
-    let home = dirs::home_dir().unwrap_or_default();
-    prefs
-        .config_dirs
-        .iter()
-        .map(|d| {
-            if d.starts_with("~/") {
-                home.join(d.strip_prefix("~/").unwrap_or(d))
-            } else {
-                PathBuf::from(d)
-            }
-        })
-        .collect()
-}
 
 pub fn update_tray_title(app_handle: &tauri::AppHandle) {
     let prefs_path = dirs::home_dir()
@@ -326,15 +304,29 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
 }
 
 fn get_all_watch_dirs() -> Vec<PathBuf> {
-    let config_dirs = get_config_dirs_from_prefs();
+    let prefs = commands::get_preferences();
     let home = dirs::home_dir().unwrap_or_default();
-    let mut dirs: Vec<PathBuf> = config_dirs.iter().map(|d| d.join("projects")).collect();
+    let expand = |d: &str| -> PathBuf {
+        if let Some(rest) = d.strip_prefix("~/") { home.join(rest) } else { PathBuf::from(d) }
+    };
+    let mut dirs: Vec<PathBuf> = prefs.config_dirs.iter().map(|d| expand(d).join("projects")).collect();
 
-    // Add Codex session directories
-    let codex_sessions = home.join(".codex").join("sessions");
-    dirs.push(codex_sessions);
-    let codex_archived = home.join(".codex").join("archived_sessions");
-    dirs.push(codex_archived);
+    // Add Codex session directories from preferences
+    // Always include ~/.codex because CodexProvider::new() unconditionally prepends it
+    let default_codex = home.join(".codex");
+    let mut codex_seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    for codex_dir in &prefs.codex_dirs {
+        let expanded = expand(codex_dir);
+        let canonical = expanded.canonicalize().unwrap_or_else(|_| expanded.clone());
+        codex_seen.insert(canonical);
+        dirs.push(expanded.join("sessions"));
+        dirs.push(expanded.join("archived_sessions"));
+    }
+    let default_canonical = default_codex.canonicalize().unwrap_or_else(|_| default_codex.clone());
+    if !codex_seen.contains(&default_canonical) {
+        dirs.push(default_codex.join("sessions"));
+        dirs.push(default_codex.join("archived_sessions"));
+    }
 
     // Add OpenCode data directory
     let opencode_provider = providers::opencode::OpenCodeProvider::new();
@@ -418,7 +410,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                         let provider = providers::claude_code::ClaudeCodeProvider::new(prefs.config_dirs.clone());
                         let _ = provider.fetch_stats();
                         if prefs.include_codex {
-                            let _ = providers::codex::CodexProvider::new().fetch_stats();
+                            let _ = providers::codex::CodexProvider::new(prefs.codex_dirs.clone()).fetch_stats();
                         }
                         if prefs.include_opencode {
                             let _ = providers::opencode::OpenCodeProvider::new().fetch_stats();
@@ -789,6 +781,8 @@ pub fn run() {
             commands::get_stable_device_id,
             commands::detect_claude_dirs,
             commands::validate_claude_dir,
+            commands::detect_codex_dirs,
+            commands::validate_codex_dir,
             get_home_dir,
             set_dialog_open,
             hide_window,

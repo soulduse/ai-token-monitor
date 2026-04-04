@@ -114,7 +114,8 @@
   "settings.auto": "Auto",
   "settings.light": "Hell",
   "settings.dark": "Dunkel",
-  "settings.configDirs": "Konfigurationsverz.",
+  "settings.configDirs": "Claude Code-Verzeichnisse",
+  "settings.configDirsTooltip": "Verzeichnisse, in denen Claude Code Sitzungsdaten speichert. Fügen Sie mehrere Verzeichnisse hinzu, um die Nutzung verschiedener Konfigurationen zusammenzufassen.",
   "settings.configDirsPrimary": "Primär",
   "settings.configDirsAutoDetect": "Auto-Erkennung",
   "settings.configDirsAdd": "Hinzufügen",
@@ -122,6 +123,9 @@
   "settings.configDirsNotFound": "Keine neuen Verzeichnisse gefunden",
   "settings.configDirsFound": "{{count}} neue(s) Verzeichnis(se) gefunden",
   "settings.configDirsInvalid": "Ungültiger Pfad oder projects-Ordner fehlt",
+  "settings.codexConfigDirs": "Codex-Verzeichnisse",
+  "settings.codexConfigDirsTooltip": "Verzeichnisse, in denen Codex Sitzungsdaten speichert. Fügen Sie mehrere Verzeichnisse hinzu, um die Nutzung verschiedener Konfigurationen zusammenzufassen.",
+  "settings.codexConfigDirsInvalid": "Ungültiger Pfad oder sessions-Ordner fehlt",
 
   "support.buyMeCoffee": "Kaffee spendieren",
 

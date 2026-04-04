@@ -114,7 +114,8 @@
   "settings.auto": "自動",
   "settings.light": "ライト",
   "settings.dark": "ダーク",
-  "settings.configDirs": "設定ディレクトリ",
+  "settings.configDirs": "Claude Code ディレクトリ",
+  "settings.configDirsTooltip": "Claude Codeがセッションデータを保存するディレクトリです。複数のディレクトリを追加して、異なる設定の使用量を集計できます。",
   "settings.configDirsPrimary": "プライマリ",
   "settings.configDirsAutoDetect": "自動検出",
   "settings.configDirsAdd": "追加",
@@ -122,6 +123,9 @@
   "settings.configDirsNotFound": "新しいディレクトリが見つかりません",
   "settings.configDirsFound": "{{count}}個の新しいディレクトリを検出",
   "settings.configDirsInvalid": "無効なパスまたはprojectsフォルダがありません",
+  "settings.codexConfigDirs": "Codex ディレクトリ",
+  "settings.codexConfigDirsTooltip": "Codexがセッションデータを保存するディレクトリです。複数のディレクトリを追加して、異なる設定の使用量を集計できます。",
+  "settings.codexConfigDirsInvalid": "無効なパスまたはsessionsフォルダがありません",
 
   "support.buyMeCoffee": "コーヒーをおごる",
 

@@ -23,6 +23,7 @@ const defaultPrefs: UserPreferences = {
   color_mode: "system",
   language: "en",
   config_dirs: ["~/.claude"],
+  codex_dirs: ["~/.codex"],
   salary_enabled: false,
   usage_alerts_enabled: true,
   usage_tracking_enabled: false,
@@ -46,6 +47,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       // Skip the persist effect triggered by the initial load from disk.
       skipNextPersist.current = true;
       prevConfigDirsRef.current = JSON.stringify(p.config_dirs);
+      prevCodexDirsRef.current = JSON.stringify(p.codex_dirs);
       setReady(true);
     }).catch(() => {
       setReady(true);
@@ -82,19 +84,23 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   // Persist to disk when prefs change
   const prevConfigDirsRef = useRef<string>(JSON.stringify(defaultPrefs.config_dirs));
+  const prevCodexDirsRef = useRef<string>(JSON.stringify(defaultPrefs.codex_dirs));
   useEffect(() => {
     if (skipNextPersist.current) {
       skipNextPersist.current = false;
       prevConfigDirsRef.current = JSON.stringify(prefs.config_dirs);
+      prevCodexDirsRef.current = JSON.stringify(prefs.codex_dirs);
       return;
     }
     if (!ready) return;
     invoke("set_preferences", { prefs }).catch(() => {});
 
-    // If config_dirs changed, trigger stats refresh
+    // If config_dirs or codex_dirs changed, trigger stats refresh
     const newDirsJson = JSON.stringify(prefs.config_dirs);
-    if (newDirsJson !== prevConfigDirsRef.current) {
+    const newCodexDirsJson = JSON.stringify(prefs.codex_dirs);
+    if (newDirsJson !== prevConfigDirsRef.current || newCodexDirsJson !== prevCodexDirsRef.current) {
       prevConfigDirsRef.current = newDirsJson;
+      prevCodexDirsRef.current = newCodexDirsJson;
       emit("stats-updated").catch(() => {});
     }
   }, [prefs, ready]);
@@ -108,6 +114,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     try {
       const p = await invoke<UserPreferences>("get_preferences");
       skipNextPersist.current = true;
+      prevConfigDirsRef.current = JSON.stringify(p.config_dirs);
+      prevCodexDirsRef.current = JSON.stringify(p.codex_dirs);
       setPrefs(p);
     } catch {
       // ignore

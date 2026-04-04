@@ -114,7 +114,8 @@
   "settings.auto": "Auto",
   "settings.light": "Clair",
   "settings.dark": "Sombre",
-  "settings.configDirs": "Répertoires de config",
+  "settings.configDirs": "Répertoires Claude Code",
+  "settings.configDirsTooltip": "Répertoires où Claude Code stocke les données de session. Ajoutez plusieurs répertoires pour agréger l'utilisation de différentes configurations.",
   "settings.configDirsPrimary": "principal",
   "settings.configDirsAutoDetect": "Détecter auto",
   "settings.configDirsAdd": "Ajouter",
@@ -122,6 +123,9 @@
   "settings.configDirsNotFound": "Aucun nouveau répertoire trouvé",
   "settings.configDirsFound": "{{count}} nouveau(x) répertoire(s) trouvé(s)",
   "settings.configDirsInvalid": "Chemin invalide ou dossier projects manquant",
+  "settings.codexConfigDirs": "Répertoires Codex",
+  "settings.codexConfigDirsTooltip": "Répertoires où Codex stocke les données de session. Ajoutez plusieurs répertoires pour agréger l'utilisation de différentes configurations.",
+  "settings.codexConfigDirsInvalid": "Chemin invalide ou dossier sessions manquant",
 
   "support.buyMeCoffee": "Offrez-moi un café",
 

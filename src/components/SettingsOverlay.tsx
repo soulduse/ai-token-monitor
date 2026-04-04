@@ -5,6 +5,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useSettings } from "../contexts/SettingsContext";
 import { useAuth } from "../hooks/useAuth";
 import { useI18n, LANGUAGE_OPTIONS } from "../i18n/I18nContext";
+import { InfoTooltip } from "./InfoTooltip";
 import type { Locale } from "../i18n/I18nContext";
 
 type SettingsTab = "general" | "account" | "ai" | "webhooks";
@@ -289,9 +290,25 @@ function AccountTab({
   return (
     <div>
       <ConfigDirsSection
+        provider="claude"
         dirs={prefs.config_dirs}
         onChange={(dirs) => updatePrefs({ config_dirs: dirs })}
       />
+
+      {prefs.include_codex && (
+        <>
+          <div style={{
+            height: 1,
+            background: "var(--heat-0)",
+            margin: "8px 0",
+          }} />
+          <ConfigDirsSection
+            provider="codex"
+            dirs={prefs.codex_dirs}
+            onChange={(dirs) => updatePrefs({ codex_dirs: dirs })}
+          />
+        </>
+      )}
 
       {leaderboardAvailable && (
         <>
@@ -608,14 +625,45 @@ function LanguageSelector({
   );
 }
 
+type ConfigDirProvider = "claude" | "codex";
+
+const DIR_CONFIG: Record<ConfigDirProvider, {
+  titleKey: string;
+  tooltipKey: string;
+  detectCmd: string;
+  validateCmd: string;
+  defaultSubdir: string;
+  invalidKey: string;
+}> = {
+  claude: {
+    titleKey: "settings.configDirs",
+    tooltipKey: "settings.configDirsTooltip",
+    detectCmd: "detect_claude_dirs",
+    validateCmd: "validate_claude_dir",
+    defaultSubdir: ".claude",
+    invalidKey: "settings.configDirsInvalid",
+  },
+  codex: {
+    titleKey: "settings.codexConfigDirs",
+    tooltipKey: "settings.codexConfigDirsTooltip",
+    detectCmd: "detect_codex_dirs",
+    validateCmd: "validate_codex_dir",
+    defaultSubdir: ".codex",
+    invalidKey: "settings.codexConfigDirsInvalid",
+  },
+};
+
 function ConfigDirsSection({
+  provider = "claude",
   dirs,
   onChange,
 }: {
+  provider?: ConfigDirProvider;
   dirs: string[];
   onChange: (dirs: string[]) => void;
 }) {
   const t = useI18n();
+  const cfg = DIR_CONFIG[provider];
   const [detecting, setDetecting] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -627,7 +675,7 @@ function ConfigDirsSection({
   const handleAutoDetect = useCallback(async () => {
     setDetecting(true);
     try {
-      const found = await invoke<string[]>("detect_claude_dirs");
+      const found = await invoke<string[]>(cfg.detectCmd);
       const newDirs = found.filter((d) => !dirs.includes(d));
       if (newDirs.length > 0) {
         onChange([...dirs, ...newDirs]);
@@ -640,7 +688,7 @@ function ConfigDirsSection({
     } finally {
       setDetecting(false);
     }
-  }, [dirs, onChange, showMessage, t]);
+  }, [dirs, onChange, showMessage, t, cfg.detectCmd]);
 
   const handleAddFolder = useCallback(async () => {
     try {
@@ -649,21 +697,21 @@ function ConfigDirsSection({
       const selected = await open({
         directory: true,
         multiple: false,
-        defaultPath: home ? `${home}/.claude` : undefined,
+        defaultPath: home ? `${home}/${cfg.defaultSubdir}` : undefined,
       });
       if (!selected) return;
       const homePath = selected.replace(/^\/Users\/[^/]+/, "~");
       if (dirs.includes(homePath) || dirs.includes(selected)) return;
-      const valid = await invoke<boolean>("validate_claude_dir", { path: homePath });
+      const valid = await invoke<boolean>(cfg.validateCmd, { path: homePath });
       if (valid) {
         onChange([...dirs, homePath]);
       } else {
-        showMessage(t("settings.configDirsInvalid"));
+        showMessage(t(cfg.invalidKey));
       }
     } finally {
       await invoke("set_dialog_open", { open: false });
     }
-  }, [dirs, onChange, showMessage, t]);
+  }, [dirs, onChange, showMessage, t, cfg.validateCmd, cfg.defaultSubdir, cfg.invalidKey]);
 
   const handleRemove = useCallback((dir: string) => {
     onChange(dirs.filter((d) => d !== dir));
@@ -672,6 +720,9 @@ function ConfigDirsSection({
   return (
     <div>
       <div style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 4,
         fontSize: 11,
         fontWeight: 700,
         color: "var(--text-secondary)",
@@ -679,7 +730,8 @@ function ConfigDirsSection({
         letterSpacing: "0.5px",
         marginBottom: 8,
       }}>
-        {t("settings.configDirs")}
+        {t(cfg.titleKey)}
+        <InfoTooltip>{t(cfg.tooltipKey)}</InfoTooltip>
       </div>
 
       <div style={{
