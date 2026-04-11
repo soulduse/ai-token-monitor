@@ -95,7 +95,10 @@
   "leaderboard.msgs": "則訊息",
 
   "header.menu": "更多",
+  "header.share": "分享此應用",
   "header.github": "查看 GitHub 儲存庫",
+  "share.appMessage": "推薦一款讓你一目了然查看 Claude Code 和 Codex 權杖使用量的免費 macOS/Windows 托盤應用——AI Token Monitor！\nhttps://github.com/soulduse/ai-token-monitor",
+  "share.copied": "分享內容已複製！",
   "header.copySummary": "複製摘要到剪貼簿",
   "header.captureScreenshot": "擷取螢幕截圖到剪貼簿",
   "header.settings": "設定",
@@ -137,7 +140,7 @@
 
   "support.buyMeCoffee": "請我喝杯咖啡",
 
-  "wrapped.title": "AI Wrapped",
+  "wrapped.title": "我的 AI 報告",
   "wrapped.month": "本月",
   "wrapped.year": "今年",
   "wrapped.totalCost": "AI程式設計花費",
@@ -149,7 +152,7 @@
   "wrapped.streakDays": "天連續",
   "wrapped.currentStreak": "目前進行中",
   "wrapped.longestStreak": "歷史最長記錄",
-  "wrapped.summary": "你的AI Wrapped",
+  "wrapped.summary": "你的 AI 報告",
   "wrapped.summaryTokens": "令牌",
   "wrapped.summaryCost": "費用",
   "wrapped.summaryMessages": "訊息",

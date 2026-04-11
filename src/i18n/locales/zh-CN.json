@@ -95,7 +95,10 @@
   "leaderboard.msgs": "条消息",
 
   "header.menu": "更多",
+  "header.share": "分享此应用",
   "header.github": "查看 GitHub 仓库",
+  "share.appMessage": "推荐一款让你一目了然查看 Claude Code 和 Codex 令牌使用量的免费 macOS/Windows 托盘应用——AI Token Monitor！\nhttps://github.com/soulduse/ai-token-monitor",
+  "share.copied": "分享内容已复制！",
   "header.copySummary": "复制摘要到剪贴板",
   "header.captureScreenshot": "截图到剪贴板",
   "header.settings": "设置",
@@ -137,7 +140,7 @@
 
   "support.buyMeCoffee": "请我喝杯咖啡",
 
-  "wrapped.title": "AI Wrapped",
+  "wrapped.title": "我的 AI 报告",
   "wrapped.month": "本月",
   "wrapped.year": "今年",
   "wrapped.totalCost": "AI编程花费",
@@ -149,7 +152,7 @@
   "wrapped.streakDays": "天连续",
   "wrapped.currentStreak": "当前进行中",
   "wrapped.longestStreak": "历史最长记录",
-  "wrapped.summary": "你的AI Wrapped",
+  "wrapped.summary": "你的 AI 报告",
   "wrapped.summaryTokens": "令牌",
   "wrapped.summaryCost": "费用",
   "wrapped.summaryMessages": "消息",

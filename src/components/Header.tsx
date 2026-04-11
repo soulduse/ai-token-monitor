@@ -101,6 +101,12 @@ export function Header({ stats, updater }: Props) {
     });
   }, [stats]);
 
+  const handleShareApp = useCallback(() => {
+    writeText(t("share.appMessage")).then(() => {
+      showToast(t("share.copied"));
+    });
+  }, [t, showToast]);
+
   const menuItems: {
     key: string;
     label: string;
@@ -233,6 +239,32 @@ export function Header({ stats, updater }: Props) {
           )}
         </div>
       </div>
+
+      {/* Share app button */}
+      <button
+        onClick={handleShareApp}
+        title={t("header.share")}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          padding: 4,
+          borderRadius: 6,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "var(--text-secondary)",
+          transition: "color 0.2s ease",
+        }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="18" cy="5" r="3"/>
+          <circle cx="6" cy="12" r="3"/>
+          <circle cx="18" cy="19" r="3"/>
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+        </svg>
+      </button>
 
       {/* Actions menu (collapsed dropdown) */}
       <div ref={menuRef} style={{ position: "relative" }}>

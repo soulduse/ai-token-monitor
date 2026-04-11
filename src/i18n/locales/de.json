@@ -95,7 +95,10 @@
   "leaderboard.msgs": "Nachr.",
 
   "header.menu": "Mehr",
+  "header.share": "App teilen",
   "header.github": "GitHub-Repository anzeigen",
+  "share.appMessage": "Behalte deinen Claude Code- und Codex-Token-Verbrauch mit AI Token Monitor im Blick — einer kostenlosen macOS/Windows-Taskleisten-App!\nhttps://github.com/soulduse/ai-token-monitor",
+  "share.copied": "Teilen-Nachricht kopiert!",
   "header.copySummary": "Zusammenfassung in Zwischenablage kopieren",
   "header.captureScreenshot": "Screenshot in Zwischenablage erfassen",
   "header.settings": "Einstellungen",
@@ -137,7 +140,7 @@
 
   "support.buyMeCoffee": "Kaffee spendieren",
 
-  "wrapped.title": "AI Wrapped",
+  "wrapped.title": "Mein KI-Bericht",
   "wrapped.month": "Diesen Monat",
   "wrapped.year": "Dieses Jahr",
   "wrapped.totalCost": "Ausgaben für AI-Coding",
@@ -149,7 +152,7 @@
   "wrapped.streakDays": "Tage am Stück",
   "wrapped.currentStreak": "Aktuelle Serie",
   "wrapped.longestStreak": "Längste Serie",
-  "wrapped.summary": "Dein AI Wrapped",
+  "wrapped.summary": "Dein KI-Bericht",
   "wrapped.summaryTokens": "Tokens",
   "wrapped.summaryCost": "Kosten",
   "wrapped.summaryMessages": "Nachrichten",

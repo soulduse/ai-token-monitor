@@ -95,7 +95,10 @@
   "leaderboard.msgs": "メッセージ",
 
   "header.menu": "もっと見る",
+  "header.share": "アプリを共有",
   "header.github": "GitHubリポジトリを表示",
+  "share.appMessage": "Claude CodeとCodexのトークン使用量を一目で確認できる無料のmacOS/Windowsトレイアプリ「AI Token Monitor」がおすすめです！\nhttps://github.com/soulduse/ai-token-monitor",
+  "share.copied": "共有メッセージをコピーしました！",
   "header.copySummary": "要約をクリップボードにコピー",
   "header.captureScreenshot": "スクリーンショットをクリップボードにキャプチャ",
   "header.settings": "設定",
@@ -137,7 +140,7 @@
 
   "support.buyMeCoffee": "コーヒーをおごる",
 
-  "wrapped.title": "AI Wrapped",
+  "wrapped.title": "マイAIレポート",
   "wrapped.month": "今月",
   "wrapped.year": "今年",
   "wrapped.totalCost": "AIコーディングに使った費用",
@@ -149,7 +152,7 @@
   "wrapped.streakDays": "日連続",
   "wrapped.currentStreak": "現在進行中",
   "wrapped.longestStreak": "歴代最長記録",
-  "wrapped.summary": "あなたのAI Wrapped",
+  "wrapped.summary": "あなたのAIレポート",
   "wrapped.summaryTokens": "トークン",
   "wrapped.summaryCost": "費用",
   "wrapped.summaryMessages": "メッセージ",

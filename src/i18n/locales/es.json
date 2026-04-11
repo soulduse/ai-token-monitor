@@ -95,7 +95,10 @@
   "leaderboard.msgs": "msgs",
 
   "header.menu": "Más",
+  "header.share": "Compartir esta app",
   "header.github": "Ver repositorio de GitHub",
+  "share.appMessage": "¡Sigue el uso de tokens de Claude Code y Codex de un vistazo con AI Token Monitor, una app gratuita de bandeja para macOS/Windows!\nhttps://github.com/soulduse/ai-token-monitor",
+  "share.copied": "¡Mensaje de compartir copiado!",
   "header.copySummary": "Copiar resumen al portapapeles",
   "header.captureScreenshot": "Capturar pantalla al portapapeles",
   "header.settings": "Configuración",
@@ -137,7 +140,7 @@
 
   "support.buyMeCoffee": "Invítame un café",
 
-  "wrapped.title": "AI Wrapped",
+  "wrapped.title": "Mi informe de IA",
   "wrapped.month": "Este mes",
   "wrapped.year": "Este año",
   "wrapped.totalCost": "Gastaste en codificación IA",
@@ -149,7 +152,7 @@
   "wrapped.streakDays": "días seguidos",
   "wrapped.currentStreak": "Racha actual",
   "wrapped.longestStreak": "Racha más larga",
-  "wrapped.summary": "Tu AI Wrapped",
+  "wrapped.summary": "Tu informe de IA",
   "wrapped.summaryTokens": "Tokens",
   "wrapped.summaryCost": "Costo",
   "wrapped.summaryMessages": "Mensajes",

@@ -95,7 +95,10 @@
   "leaderboard.msgs": "메시지",
 
   "header.menu": "더 보기",
+  "header.share": "앱 공유하기",
   "header.github": "GitHub 저장소 보기",
+  "share.appMessage": "Claude Code와 Codex 토큰 사용량을 한눈에 보여주는 트레이 앱, AI Token Monitor 추천해요!\nhttps://github.com/soulduse/ai-token-monitor",
+  "share.copied": "공유 메시지가 복사됐어요!",
   "header.copySummary": "요약을 클립보드에 복사",
   "header.captureScreenshot": "스크린샷을 클립보드에 캡처",
   "header.settings": "설정",
@@ -137,7 +140,7 @@
 
   "support.buyMeCoffee": "커피 한 잔 사주기",
 
-  "wrapped.title": "AI Wrapped",
+  "wrapped.title": "나의 AI 리포트",
   "wrapped.month": "이번 달",
   "wrapped.year": "올해",
   "wrapped.totalCost": "AI 코딩에 사용한 비용",
@@ -149,7 +152,7 @@
   "wrapped.streakDays": "일 연속",
   "wrapped.currentStreak": "현재 진행 중",
   "wrapped.longestStreak": "역대 최장 기록",
-  "wrapped.summary": "나의 AI Wrapped",
+  "wrapped.summary": "나의 AI 리포트",
   "wrapped.summaryTokens": "토큰",
   "wrapped.summaryCost": "비용",
   "wrapped.summaryMessages": "메시지",
