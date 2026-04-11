@@ -385,6 +385,9 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
 
   const handleReply = useCallback((message: ChatMessage) => {
     setReplyingTo(message);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
   }, []);
 
   const handleTranslate = useCallback((message: ChatMessage) => {
