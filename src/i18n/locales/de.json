@@ -94,6 +94,8 @@
   "leaderboard.you": "(Sie)",
   "leaderboard.msgs": "Nachr.",
 
+  "header.menu": "Mehr",
+  "header.github": "GitHub-Repository anzeigen",
   "header.copySummary": "Zusammenfassung in Zwischenablage kopieren",
   "header.captureScreenshot": "Screenshot in Zwischenablage erfassen",
   "header.settings": "Einstellungen",

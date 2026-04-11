@@ -94,6 +94,8 @@
   "leaderboard.you": "(あなた)",
   "leaderboard.msgs": "メッセージ",
 
+  "header.menu": "もっと見る",
+  "header.github": "GitHubリポジトリを表示",
   "header.copySummary": "要約をクリップボードにコピー",
   "header.captureScreenshot": "スクリーンショットをクリップボードにキャプチャ",
   "header.settings": "設定",

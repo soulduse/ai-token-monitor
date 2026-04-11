@@ -94,6 +94,8 @@
   "leaderboard.you": "(你)",
   "leaderboard.msgs": "則訊息",
 
+  "header.menu": "更多",
+  "header.github": "查看 GitHub 儲存庫",
   "header.copySummary": "複製摘要到剪貼簿",
   "header.captureScreenshot": "擷取螢幕截圖到剪貼簿",
   "header.settings": "設定",

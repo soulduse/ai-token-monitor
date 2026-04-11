@@ -94,6 +94,8 @@
   "leaderboard.you": "(나)",
   "leaderboard.msgs": "메시지",
 
+  "header.menu": "더 보기",
+  "header.github": "GitHub 저장소 보기",
   "header.copySummary": "요약을 클립보드에 복사",
   "header.captureScreenshot": "스크린샷을 클립보드에 캡처",
   "header.settings": "설정",

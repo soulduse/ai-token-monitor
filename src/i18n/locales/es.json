@@ -94,6 +94,8 @@
   "leaderboard.you": "(tú)",
   "leaderboard.msgs": "msgs",
 
+  "header.menu": "Más",
+  "header.github": "Ver repositorio de GitHub",
   "header.copySummary": "Copiar resumen al portapapeles",
   "header.captureScreenshot": "Capturar pantalla al portapapeles",
   "header.settings": "Configuración",
