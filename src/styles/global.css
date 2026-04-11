@@ -209,3 +209,42 @@ body {
 @keyframes miniProfileSpin {
   to { transform: rotate(360deg); }
 }
+
+/* Header actions dropdown */
+@keyframes headerMenuPop {
+  from { opacity: 0; transform: scale(0.94) translateY(-6px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes headerMenuItemIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.header-action-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+  animation: headerMenuItemIn 0.26s cubic-bezier(.2,.9,.2,1) both;
+}
+.header-action-menu-item + .header-action-menu-item {
+  margin-top: 2px;
+}
+.header-action-menu-item:hover {
+  background: rgba(128, 128, 128, 0.14);
+}
+.header-action-menu-item:hover > span:first-child {
+  color: var(--accent-purple) !important;
+}

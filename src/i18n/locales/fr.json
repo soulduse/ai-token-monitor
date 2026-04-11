@@ -94,6 +94,8 @@
   "leaderboard.you": "(vous)",
   "leaderboard.msgs": "msgs",
 
+  "header.menu": "Plus",
+  "header.github": "Voir le dépôt GitHub",
   "header.copySummary": "Copier le résumé dans le presse-papiers",
   "header.captureScreenshot": "Capturer la capture d'écran dans le presse-papiers",
   "header.settings": "Paramètres",

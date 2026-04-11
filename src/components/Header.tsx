@@ -1,6 +1,7 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { SettingsOverlay } from "./SettingsOverlay";
 import { WrappedOverlay } from "./wrapped/WrappedOverlay";
@@ -19,10 +20,34 @@ export function Header({ stats, updater }: Props) {
   const [showSettings, setShowSettings] = useState(false);
   const [showWrapped, setShowWrapped] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [captured, setCaptured] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const t = useI18n();
+
+  // Outside click + ESC to close the actions menu
+  useEffect(() => {
+    if (!showMenu) return;
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        // Capture phase + stopPropagation prevents AppContent from hiding the window
+        e.preventDefault();
+        e.stopPropagation();
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [showMenu]);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -32,8 +57,6 @@ export function Header({ stats, updater }: Props) {
   const handleCapture = useCallback(async () => {
     try {
       await invoke("capture_window");
-      setCaptured(true);
-      setTimeout(() => setCaptured(false), 2000);
       showToast(t("header.copied"));
     } catch (e) {
       console.error("Capture failed:", e);
@@ -74,11 +97,73 @@ export function Header({ stats, updater }: Props) {
     ];
 
     writeText(lines.join("\n")).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
       showToast(t("header.summaryCopied"));
     });
   }, [stats]);
+
+  const menuItems: {
+    key: string;
+    label: string;
+    icon: React.ReactNode;
+    onClick: () => void;
+  }[] = [
+    {
+      key: "github",
+      label: t("header.github"),
+      onClick: () => openUrl("https://github.com/soulduse/ai-token-monitor"),
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M12 .5C5.73.5.5 5.73.5 12a11.5 11.5 0 0 0 7.86 10.92c.58.11.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.47.11-3.06 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.77.11 3.06.74.81 1.19 1.84 1.19 3.1 0 4.43-2.69 5.41-5.26 5.69.41.36.78 1.06.78 2.13 0 1.54-.01 2.78-.01 3.16 0 .31.21.68.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.73 18.27.5 12 .5z"/>
+        </svg>
+      ),
+    },
+    {
+      key: "wrapped",
+      label: t("wrapped.title"),
+      onClick: () => setShowWrapped(true),
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 3l1.5 4.5H18l-3.5 2.5L16 14.5 12 11.5 8 14.5l1.5-4.5L6 7.5h4.5z"/>
+          <circle cx="12" cy="12" r="10"/>
+        </svg>
+      ),
+    },
+    {
+      key: "receipt",
+      label: t("receipt.title"),
+      onClick: () => setShowReceipt(true),
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 2v20l3-2 3 2 3-2 3 2 3-2 3 2V2l-3 2-3-2-3 2-3-2-3 2-3-2z"/>
+          <line x1="8" y1="8" x2="16" y2="8"/>
+          <line x1="8" y1="12" x2="16" y2="12"/>
+          <line x1="8" y1="16" x2="12" y2="16"/>
+        </svg>
+      ),
+    },
+    {
+      key: "share",
+      label: t("header.copySummary"),
+      onClick: handleExport,
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+        </svg>
+      ),
+    },
+    {
+      key: "capture",
+      label: t("header.captureScreenshot"),
+      onClick: handleCapture,
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+      ),
+    },
+  ];
 
   return (
     <div
@@ -149,111 +234,69 @@ export function Header({ stats, updater }: Props) {
         </div>
       </div>
 
-      {/* Wrapped button */}
-      <button
-        onClick={() => setShowWrapped(true)}
-        title={t("wrapped.title")}
-        style={{
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          padding: 4,
-          borderRadius: 6,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "var(--text-secondary)",
-          transition: "color 0.2s ease",
-        }}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 3l1.5 4.5H18l-3.5 2.5L16 14.5 12 11.5 8 14.5l1.5-4.5L6 7.5h4.5z"/>
-          <circle cx="12" cy="12" r="10"/>
-        </svg>
-      </button>
-
-      {/* Receipt button */}
-      <button
-        onClick={() => setShowReceipt(true)}
-        title={t("receipt.title")}
-        style={{
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          padding: 4,
-          borderRadius: 6,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "var(--text-secondary)",
-          transition: "color 0.2s ease",
-        }}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M4 2v20l3-2 3 2 3-2 3 2 3-2 3 2V2l-3 2-3-2-3 2-3-2-3 2-3-2z"/>
-          <line x1="8" y1="8" x2="16" y2="8"/>
-          <line x1="8" y1="12" x2="16" y2="12"/>
-          <line x1="8" y1="16" x2="12" y2="16"/>
-        </svg>
-      </button>
-
-      {/* Share button */}
-      <button
-        onClick={handleExport}
-        title={t("header.copySummary")}
-        style={{
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          padding: 4,
-          borderRadius: 6,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: copied ? "var(--accent-mint)" : "var(--text-secondary)",
-          transition: "color 0.2s ease",
-        }}
-      >
-        {copied ? (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 6 9 17 4 12"/>
+      {/* Actions menu (collapsed dropdown) */}
+      <div ref={menuRef} style={{ position: "relative" }}>
+        <button
+          onClick={() => setShowMenu((v) => !v)}
+          title={t("header.menu")}
+          aria-haspopup="menu"
+          aria-expanded={showMenu}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: 4,
+            borderRadius: 6,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: showMenu ? "var(--accent-purple)" : "var(--text-secondary)",
+            transition: "color 0.2s ease",
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <circle cx="5" cy="12" r="1.7"/>
+            <circle cx="12" cy="12" r="1.7"/>
+            <circle cx="19" cy="12" r="1.7"/>
           </svg>
-        ) : (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-          </svg>
+        </button>
+
+        {showMenu && (
+          <div
+            role="menu"
+            style={{
+              position: "absolute",
+              top: "calc(100% + 8px)",
+              right: 0,
+              minWidth: 220,
+              padding: 6,
+              background: "var(--bg-card)",
+              borderRadius: 12,
+              border: "1px solid rgba(128,128,128,0.15)",
+              boxShadow: "0 12px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.08)",
+              zIndex: 60,
+              transformOrigin: "top right",
+              animation: "headerMenuPop 0.16s cubic-bezier(.2,.9,.2,1) both",
+            }}
+          >
+            {menuItems.map((item, i) => (
+              <button
+                key={item.key}
+                role="menuitem"
+                className="header-action-menu-item"
+                onClick={() => {
+                  setShowMenu(false);
+                  item.onClick();
+                }}
+                style={{ animationDelay: `${40 + 35 * i}ms` }}
+              >
+                <span style={{ display: "flex", color: "var(--text-secondary)" }}>{item.icon}</span>
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
         )}
-      </button>
-
-      {/* Capture button */}
-      <button
-        onClick={handleCapture}
-        title={t("header.captureScreenshot")}
-        style={{
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          padding: 4,
-          borderRadius: 6,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: captured ? "var(--accent-mint)" : "var(--text-secondary)",
-          transition: "color 0.2s ease",
-        }}
-      >
-        {captured ? (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 6 9 17 4 12"/>
-          </svg>
-        ) : (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-            <circle cx="12" cy="13" r="4"/>
-          </svg>
-        )}
-      </button>
+      </div>
 
       {/* Settings button */}
       <button

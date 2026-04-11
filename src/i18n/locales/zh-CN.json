@@ -94,6 +94,8 @@
   "leaderboard.you": "(你)",
   "leaderboard.msgs": "条消息",
 
+  "header.menu": "更多",
+  "header.github": "查看 GitHub 仓库",
   "header.copySummary": "复制摘要到剪贴板",
   "header.captureScreenshot": "截图到剪贴板",
   "header.settings": "设置",
