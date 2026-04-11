@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useLeaderboardSync, type LeaderboardPeriod } from "../hooks/useLeaderboardSync";
 import { useLeaderboardGrid } from "../hooks/useLeaderboardGrid";
-import { useTokenStats } from "../hooks/useTokenStats";
 import type { LeaderboardProvider } from "../lib/types";
 import type { User } from "@supabase/supabase-js";
 import { useSettings } from "../contexts/SettingsContext";
@@ -201,26 +200,19 @@ function ProviderLeaderboard({
   user: User;
 }) {
   const t = useI18n();
-  const { stats } = useTokenStats(provider);
   const [period, setPeriod] = useState<LeaderboardPeriod>("today");
   const {
     gridData,
     loading: gridLoading,
-    refetch: refetchGrid,
   } = useLeaderboardGrid({
     provider,
-    // Only poll while the user is looking at the grid; onAfterUpload below
-    // still fires for this hook but becomes a no-op when disabled, which is
-    // fine because the cache will be repopulated on the next grid tab entry.
+    // Only poll while the user is looking at the grid; the grid hook itself
+    // listens for snapshot upload events and refreshes on its own.
     enabled: period === "grid",
   });
   const { leaderboard, loading, dateRange } = useLeaderboardSync({
-    stats,
-    user,
-    optedIn: true,
     provider,
     period,
-    onAfterUpload: refetchGrid,
   });
 
   const [page, setPage] = useState(0);

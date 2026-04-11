@@ -20,6 +20,7 @@ import { ModelBreakdown } from "./components/ModelBreakdown";
 import { PeriodTotals } from "./components/PeriodTotals";
 import { CacheEfficiency } from "./components/CacheEfficiency";
 import { Leaderboard } from "./components/Leaderboard";
+import { LeaderboardUploader } from "./components/LeaderboardUploader";
 import { ChatRoom } from "./components/ChatRoom";
 import { ActivityGraph } from "./components/ActivityGraph";
 import { SupportBanner } from "./components/SupportBanner";
@@ -177,6 +178,9 @@ function AppContent() {
 
       <SupportBanner />
       <MiniProfile localDaily={stats.daily} currentUserId={user?.id ?? null} />
+      {/* Headless: keeps all enabled providers' snapshot history in sync
+          regardless of whether the Leaderboard tab is open. */}
+      <LeaderboardUploader />
     </PopoverShell>
   );
 }

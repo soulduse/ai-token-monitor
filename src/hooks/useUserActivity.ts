@@ -36,16 +36,12 @@ export function useUserActivity(userId: string | null) {
     setLoading(true);
     setError(false);
 
-    const eightWeeksAgo = new Date();
-    eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56);
-    const dateFrom = eightWeeksAgo.toISOString().slice(0, 10);
-
+    // Use security-definer RPC instead of direct SELECT so the query works
+    // regardless of daily_snapshots RLS state, and stays consistent with
+    // leaderboard_hidden filtering applied elsewhere. Server aggregates across
+    // providers, so no client-side byDate loop is needed.
     supabase
-      .from("daily_snapshots")
-      .select("date, total_tokens, cost_usd, messages, sessions")
-      .eq("user_id", userId)
-      .gte("date", dateFrom)
-      .order("date", { ascending: true })
+      .rpc("get_user_activity", { p_user_id: userId, p_weeks: 8 })
       .then(({ data, error: err }) => {
         if (cancelled) return;
 
@@ -55,23 +51,18 @@ export function useUserActivity(userId: string | null) {
           return;
         }
 
-        // Aggregate across providers per date
-        const byDate = new Map<string, { tokens: number; cost: number; messages: number; sessions: number }>();
-        for (const row of data) {
-          const existing = byDate.get(row.date) ?? { tokens: 0, cost: 0, messages: 0, sessions: 0 };
-          existing.tokens += Number(row.total_tokens);
-          existing.cost += Number(row.cost_usd);
-          existing.messages += row.messages;
-          existing.sessions += row.sessions;
-          byDate.set(row.date, existing);
-        }
-
-        const result: DailyUsage[] = Array.from(byDate.entries()).map(([date, agg]) => ({
-          date,
-          tokens: { total: agg.tokens },
-          cost_usd: agg.cost,
-          messages: agg.messages,
-          sessions: agg.sessions,
+        const result: DailyUsage[] = data.map((row: {
+          date: string;
+          total_tokens: number | string;
+          cost_usd: number | string;
+          messages: number;
+          sessions: number;
+        }) => ({
+          date: row.date,
+          tokens: { total: Number(row.total_tokens) },
+          cost_usd: Number(row.cost_usd),
+          messages: row.messages,
+          sessions: row.sessions,
           tool_calls: 0,
           input_tokens: 0,
           output_tokens: 0,

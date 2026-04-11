@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import type { LeaderboardProvider } from "../lib/types";
 import { toLocalDateStr } from "../lib/format";
+import { SNAPSHOT_UPLOADED_EVENT, type SnapshotUploadedDetail } from "./useSnapshotUploader";
 
 export interface GridCell {
   rank: number;
@@ -164,6 +165,20 @@ export function useLeaderboardGrid({
     cacheRef.current = null;
     return fetchGrid(true);
   }, [fetchGrid]);
+
+  // Refresh when a snapshot upload for this provider completes. The upload
+  // itself runs at the App level via `useSnapshotUploader`; this listener
+  // keeps the grid view in sync when the user is looking at it.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<SnapshotUploadedDetail>).detail;
+      if (detail?.provider !== provider) return;
+      cacheRef.current = null;
+      if (enabled) fetchGrid(true);
+    };
+    window.addEventListener(SNAPSHOT_UPLOADED_EVENT, handler);
+    return () => window.removeEventListener(SNAPSHOT_UPLOADED_EVENT, handler);
+  }, [provider, enabled, fetchGrid]);
 
   return { gridData, loading, refetch };
 }
