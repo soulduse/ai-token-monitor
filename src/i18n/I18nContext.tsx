@@ -9,8 +9,9 @@ import zhTW from "./locales/zh-TW.json";
 import fr from "./locales/fr.json";
 import es from "./locales/es.json";
 import de from "./locales/de.json";
+import tr from "./locales/tr.json";
 
-export type Locale = "en" | "ko" | "ja" | "zh-CN" | "zh-TW" | "fr" | "es" | "de";
+export type Locale = "en" | "ko" | "ja" | "zh-CN" | "zh-TW" | "fr" | "es" | "de" | "tr";
 
 type Translations = Record<string, string>;
 
@@ -18,7 +19,7 @@ const locales: Record<Locale, Translations> = {
   en, ko, ja,
   "zh-CN": zhCN,
   "zh-TW": zhTW,
-  fr, es, de,
+  fr, es, de, tr,
 };
 
 export const LANGUAGE_OPTIONS: { id: Locale; label: string; englishName: string }[] = [
@@ -30,6 +31,7 @@ export const LANGUAGE_OPTIONS: { id: Locale; label: string; englishName: string 
   { id: "fr", label: "Français", englishName: "French" },
   { id: "es", label: "Español", englishName: "Spanish" },
   { id: "de", label: "Deutsch", englishName: "German" },
+  { id: "tr", label: "Türkçe", englishName: "Turkish" },
 ];
 
 export const LANGUAGE_NAMES: Record<string, string> = Object.fromEntries(
