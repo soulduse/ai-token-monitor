@@ -740,3 +740,8 @@ pub async fn test_webhook(platform: String) -> Result<String, String> {
     let secrets = load_ai_keys().ok_or("No webhook credentials configured")?;
     crate::webhooks::test_webhook_endpoint(&platform, &secrets).await
 }
+
+#[tauri::command]
+pub fn detect_cli_tools() -> Vec<crate::cli_translate::CliTool> {
+    crate::cli_translate::detect_available_cli_tools()
+}

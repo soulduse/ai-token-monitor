@@ -285,6 +285,13 @@
   "settings.aiKeySecure": "API 키는 로컬에 암호화되어 안전하게 저장됩니다",
   "settings.aiKeyPlaceholder": "API 키 입력",
   "settings.aiNoKeys": "번역을 활성화하려면 API 키를 하나 이상 추가하세요",
+  "settings.translationProvider": "번역 제공자",
+  "settings.translationProviderApi": "API 키",
+  "settings.translationProviderCli": "CLI (무료)",
+  "settings.translationProviderCliDesc": "로컬 gemini 또는 claude CLI를 사용하여 번역합니다 — API 키가 필요하지 않습니다",
+  "settings.preferredCli": "선호하는 CLI",
+  "settings.cliDetected": "감지됨",
+  "settings.cliNotFound": "찾을 수 없음 — gemini 또는 claude CLI를 설치하세요",
 
   "settings.tab.webhooks": "웹훅",
   "settings.webhookTitle": "웹훅 알림",

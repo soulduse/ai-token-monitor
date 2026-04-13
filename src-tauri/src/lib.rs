@@ -1,4 +1,5 @@
 mod ai_translate;
+mod cli_translate;
 mod commands;
 mod oauth_usage;
 mod providers;
@@ -850,7 +851,8 @@ pub fn run() {
             commands::test_webhook,
             ai_translate::translate_text,
             ai_translate::translate_reply,
-            url_metadata::fetch_url_metadata
+            url_metadata::fetch_url_metadata,
+            commands::detect_cli_tools
         ])
         .setup(|app| {
             // Build tray icon — direct click toggle

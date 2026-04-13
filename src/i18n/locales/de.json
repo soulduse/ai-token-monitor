@@ -279,6 +279,13 @@
   "settings.aiKeySecure": "API-Schlüssel werden verschlüsselt und sicher auf Ihrem Gerät gespeichert",
   "settings.aiKeyPlaceholder": "API-Schlüssel eingeben",
   "settings.aiNoKeys": "Fügen Sie mindestens einen API-Schlüssel hinzu, um die Übersetzung zu aktivieren",
+  "settings.translationProvider": "Übersetzungsanbieter",
+  "settings.translationProviderApi": "API-Schlüssel",
+  "settings.translationProviderCli": "CLI (Kostenlos)",
+  "settings.translationProviderCliDesc": "Verwendet Ihr lokales gemini oder claude CLI für die Übersetzung — kein API-Schlüssel erforderlich",
+  "settings.preferredCli": "Bevorzugtes CLI",
+  "settings.cliDetected": "Erkannt",
+  "settings.cliNotFound": "Nicht gefunden — installieren Sie gemini oder claude CLI",
 
   "settings.tab.webhooks": "Webhooks",
   "settings.webhookTitle": "Webhook-Benachrichtigungen",
