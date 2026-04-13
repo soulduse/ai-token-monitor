@@ -74,6 +74,8 @@ pub struct UserPreferences {
     pub webhook_config: Option<WebhookConfig>,
     #[serde(default)]
     pub autostart_enabled: bool,
+    #[serde(default)]
+    pub quick_action_items: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -213,6 +215,7 @@ impl Default for UserPreferences {
             ai_model: None,
             webhook_config: None,
             autostart_enabled: false,
+            quick_action_items: vec![],
         }
     }
 }

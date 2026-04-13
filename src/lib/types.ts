@@ -58,6 +58,7 @@ export interface UserPreferences {
   ai_model?: string;
   webhook_config?: WebhookConfig;
   autostart_enabled: boolean;
+  quick_action_items: string[];
 }
 
 export interface WebhookConfig {

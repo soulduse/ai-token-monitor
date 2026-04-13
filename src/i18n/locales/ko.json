@@ -105,6 +105,7 @@
   "header.copied": "클립보드에 복사됨!",
   "header.captureFailed": "캡처 실패",
   "header.summaryCopied": "요약이 복사됨!",
+  "header.quickActions": "바로가기 버튼",
 
   "settings.title": "설정",
   "settings.tab.general": "일반",

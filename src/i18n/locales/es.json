@@ -105,6 +105,7 @@
   "header.copied": "¡Copiado al portapapeles!",
   "header.captureFailed": "Error al capturar",
   "header.summaryCopied": "¡Resumen copiado!",
+  "header.quickActions": "Acceso rápido",
 
   "settings.title": "Configuración",
   "settings.tab.general": "General",

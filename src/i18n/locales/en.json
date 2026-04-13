@@ -105,6 +105,7 @@
   "header.copied": "Copied to clipboard!",
   "header.captureFailed": "Capture failed",
   "header.summaryCopied": "Summary copied!",
+  "header.quickActions": "Quick Actions",
 
   "settings.title": "Settings",
   "settings.tab.general": "General",

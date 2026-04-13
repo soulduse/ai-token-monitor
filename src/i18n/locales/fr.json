@@ -105,6 +105,7 @@
   "header.copied": "Copié dans le presse-papiers !",
   "header.captureFailed": "Échec de la capture",
   "header.summaryCopied": "Résumé copié !",
+  "header.quickActions": "Accès rapide",
 
   "settings.title": "Paramètres",
   "settings.tab.general": "Général",

@@ -29,6 +29,7 @@ const defaultPrefs: UserPreferences = {
   usage_alerts_enabled: true,
   usage_tracking_enabled: false,
   autostart_enabled: false,
+  quick_action_items: [],
 };
 
 const SettingsContext = createContext<SettingsContextType>({

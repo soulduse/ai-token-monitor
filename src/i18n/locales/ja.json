@@ -105,6 +105,7 @@
   "header.copied": "クリップボードにコピーしました！",
   "header.captureFailed": "キャプチャ失敗",
   "header.summaryCopied": "要約をコピーしました！",
+  "header.quickActions": "クイックアクション",
 
   "settings.title": "設定",
   "settings.tab.general": "一般",

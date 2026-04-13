@@ -105,6 +105,7 @@
   "header.copied": "In Zwischenablage kopiert!",
   "header.captureFailed": "Erfassung fehlgeschlagen",
   "header.summaryCopied": "Zusammenfassung kopiert!",
+  "header.quickActions": "Schnellzugriff",
 
   "settings.title": "Einstellungen",
   "settings.tab.general": "Allgemein",

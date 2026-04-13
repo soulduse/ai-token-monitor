@@ -10,6 +10,7 @@ import type { AllStats } from "../lib/types";
 import type { UpdaterState } from "../hooks/useUpdater";
 import { formatTokens, formatCost, getTotalTokens, toLocalDateStr } from "../lib/format";
 import { useI18n } from "../i18n/I18nContext";
+import { useSettings } from "../contexts/SettingsContext";
 
 interface Props {
   stats?: AllStats | null;
@@ -24,6 +25,15 @@ export function Header({ stats, updater }: Props) {
   const [toast, setToast] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const t = useI18n();
+  const { prefs, updatePrefs } = useSettings();
+
+  const toggleQuickAction = useCallback((key: string) => {
+    const items = prefs.quick_action_items ?? [];
+    const next = items.includes(key)
+      ? items.filter((k) => k !== key)
+      : [...items, key];
+    updatePrefs({ quick_action_items: next });
+  }, [prefs.quick_action_items, updatePrefs]);
 
   // Outside click + ESC to close the actions menu
   useEffect(() => {
@@ -240,6 +250,31 @@ export function Header({ stats, updater }: Props) {
         </div>
       </div>
 
+      {/* Quick action buttons (pinned items) */}
+      {(prefs.quick_action_items ?? []).length > 0 && menuItems
+        .filter((item) => (prefs.quick_action_items ?? []).includes(item.key))
+        .map((item) => (
+          <button
+            key={item.key}
+            onClick={item.onClick}
+            title={item.label}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: 4,
+              borderRadius: 6,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "var(--text-secondary)",
+              transition: "color 0.2s ease",
+            }}
+          >
+            {item.icon}
+          </button>
+        ))}
+
       {/* Share app button */}
       <button
         onClick={handleShareApp}
@@ -311,21 +346,67 @@ export function Header({ stats, updater }: Props) {
               animation: "headerMenuPop 0.16s cubic-bezier(.2,.9,.2,1) both",
             }}
           >
-            {menuItems.map((item, i) => (
-              <button
-                key={item.key}
-                role="menuitem"
-                className="header-action-menu-item"
-                onClick={() => {
-                  setShowMenu(false);
-                  item.onClick();
-                }}
-                style={{ animationDelay: `${40 + 35 * i}ms` }}
-              >
-                <span style={{ display: "flex", color: "var(--text-secondary)" }}>{item.icon}</span>
-                <span>{item.label}</span>
-              </button>
-            ))}
+            {menuItems.map((item, i) => {
+              const pinned = (prefs.quick_action_items ?? []).includes(item.key);
+              return (
+                <div
+                  key={item.key}
+                  className="header-action-menu-item"
+                  style={{
+                    animationDelay: `${40 + 35 * i}ms`,
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setShowMenu(false);
+                      item.onClick();
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      background: "none",
+                      border: "none",
+                      padding: 0,
+                      cursor: "pointer",
+                      color: "inherit",
+                      font: "inherit",
+                      flex: 1,
+                      minWidth: 0,
+                    }}
+                  >
+                    <span style={{ display: "flex", color: "var(--text-secondary)" }}>{item.icon}</span>
+                    <span>{item.label}</span>
+                  </button>
+                  <button
+                    aria-label={t("header.quickActions")}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleQuickAction(item.key);
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "none",
+                      border: "none",
+                      padding: 2,
+                      cursor: "pointer",
+                      borderRadius: 4,
+                      color: pinned ? "var(--accent-purple)" : "rgba(128,128,128,0.3)",
+                      transition: "color 0.2s ease",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill={pinned ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                    </svg>
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

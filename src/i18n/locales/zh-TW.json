@@ -105,6 +105,7 @@
   "header.copied": "已複製到剪貼簿！",
   "header.captureFailed": "擷取失敗",
   "header.summaryCopied": "摘要已複製！",
+  "header.quickActions": "快捷操作",
 
   "settings.title": "設定",
   "settings.tab.general": "一般",
