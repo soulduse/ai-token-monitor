@@ -39,7 +39,7 @@ export interface UserPreferences {
   include_opencode: boolean;
   theme: "github" | "purple" | "ocean" | "sunset";
   color_mode: "system" | "light" | "dark";
-  language: "en" | "ko" | "ja" | "zh-CN" | "zh-TW" | "fr" | "es" | "de" | "tr";
+  language: "en" | "ko" | "ja" | "zh-CN" | "zh-TW" | "fr" | "es" | "de" | "tr" | "it";
   config_dirs: string[];
   codex_dirs: string[];
   salary_enabled: boolean;
