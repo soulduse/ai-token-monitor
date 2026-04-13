@@ -3,7 +3,7 @@
 [![Release](https://img.shields.io/github/v/release/soulduse/ai-token-monitor)](https://github.com/soulduse/ai-token-monitor/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../LICENSE)
 
-> **[English](../README.md) | [한국어](README.ko.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)**
+> **[English](../README.md) | [한국어](README.ko.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [Türkçe](README.tr.md) | [Italiano](README.it.md)**
 
 macOS と Windows のシステムトレイで **Claude Code**、**Codex**、**OpenCode** のトークン使用量・コスト・アクティビティをリアルタイムに追跡するアプリです。リーダーボード、チャット、Webhook 通知まで 1 画面で確認できます。
 

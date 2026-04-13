@@ -3,7 +3,7 @@
 [![Release](https://img.shields.io/github/v/release/soulduse/ai-token-monitor)](https://github.com/soulduse/ai-token-monitor/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../LICENSE)
 
-> **[English](../README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [简体中文](README.zh-CN.md)**
+> **[English](../README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [简体中文](README.zh-CN.md) | [Türkçe](README.tr.md) | [Italiano](README.it.md)**
 
 一款 macOS 和 Windows 系統托盤應用,可即時追蹤 **Claude Code**、**Codex** 和 **OpenCode** 的權杖使用量、費用與活動,並內建排行榜、聊天與 Webhook 提醒。
 

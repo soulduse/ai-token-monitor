@@ -3,7 +3,7 @@
 [![Release](https://img.shields.io/github/v/release/soulduse/ai-token-monitor)](https://github.com/soulduse/ai-token-monitor/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../LICENSE)
 
-> **[English](../README.md) | [日本語](README.ja.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)**
+> **[English](../README.md) | [日本語](README.ja.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [Türkçe](README.tr.md) | [Italiano](README.it.md)**
 
 macOS / Windows 시스템 트레이에서 **Claude Code**, **Codex**, **OpenCode**의 토큰 사용량·비용·활동을 실시간으로 추적하는 앱입니다. 리더보드, 채팅, 웹훅 알림까지 한 화면에서 확인할 수 있습니다.
 
