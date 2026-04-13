@@ -231,6 +231,7 @@
   "chat.description": "Chat with other developers on the leaderboard. Sign in and enable the leaderboard to participate.",
   "chat.placeholder": "Type a message...",
   "chat.send": "Send",
+  "chat.securityWarning": "Messages are public. Do not share API keys, passwords, or sensitive code.",
   "chat.loading": "Loading messages...",
   "chat.empty": "No messages yet. Start the conversation!",
   "chat.loadMore": "Load older messages",

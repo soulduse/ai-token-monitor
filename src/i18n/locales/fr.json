@@ -231,6 +231,7 @@
   "chat.description": "Discutez avec les autres développeurs du classement. Connectez-vous et activez le classement pour participer.",
   "chat.placeholder": "Tapez un message...",
   "chat.send": "Envoyer",
+  "chat.securityWarning": "Les messages sont publics. Ne partagez pas de clés API, mots de passe ou code sensible.",
   "chat.loading": "Chargement des messages...",
   "chat.empty": "Aucun message pour l'instant. Lancez la conversation !",
   "chat.loadMore": "Charger les anciens messages",
