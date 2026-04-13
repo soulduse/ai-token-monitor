@@ -6,14 +6,16 @@ interface UseCombinedStatsProps {
   includeClaude: boolean;
   includeCodex: boolean;
   includeOpencode: boolean;
+  includeGemini: boolean;
   includeKimi: boolean;
   includeGlm: boolean;
 }
 
-export function useCombinedStats({ includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm }: UseCombinedStatsProps) {
+export function useCombinedStats({ includeClaude, includeCodex, includeOpencode, includeGemini, includeKimi, includeGlm }: UseCombinedStatsProps) {
   const claude = useTokenStats("claude");
   const codex = useTokenStats("codex");
   const opencode = useTokenStats("opencode");
+  const gemini = useTokenStats("gemini");
   const kimi = useTokenStats("kimi");
   const glm = useTokenStats("glm");
 
@@ -22,6 +24,7 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
     if (includeClaude) sources.push(claude.stats);
     if (includeCodex) sources.push(codex.stats);
     if (includeOpencode) sources.push(opencode.stats);
+    if (includeGemini) sources.push(gemini.stats);
     if (includeKimi) sources.push(kimi.stats);
     if (includeGlm) sources.push(glm.stats);
 
@@ -30,6 +33,7 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
       if (includeClaude) return claude.stats;
       if (includeCodex) return codex.stats;
       if (includeOpencode) return opencode.stats;
+      if (includeGemini) return gemini.stats;
       if (includeKimi) return kimi.stats;
       if (includeGlm) return glm.stats;
       return null;
@@ -37,20 +41,21 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
     if (validStats.length === 1) return validStats[0];
 
     return mergeStats(validStats);
-  }, [claude.stats, codex.stats, opencode.stats, kimi.stats, glm.stats, includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm]);
+  }, [claude.stats, codex.stats, opencode.stats, gemini.stats, kimi.stats, glm.stats, includeClaude, includeCodex, includeOpencode, includeGemini, includeKimi, includeGlm]);
 
-  const loading = (includeClaude && claude.loading) || (includeCodex && codex.loading) || (includeOpencode && opencode.loading) || (includeKimi && kimi.loading) || (includeGlm && glm.loading);
+  const loading = (includeClaude && claude.loading) || (includeCodex && codex.loading) || (includeOpencode && opencode.loading) || (includeGemini && gemini.loading) || (includeKimi && kimi.loading) || (includeGlm && glm.loading);
   const error = useMemo(() => {
     if (stats) return null;
 
     if (includeClaude && claude.error) return claude.error;
     if (includeCodex && codex.error) return codex.error;
     if (includeOpencode && opencode.error) return opencode.error;
+    if (includeGemini && gemini.error) return gemini.error;
     if (includeKimi && kimi.error) return kimi.error;
     if (includeGlm && glm.error) return glm.error;
 
     return null;
-  }, [stats, includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, claude.error, codex.error, opencode.error, kimi.error, glm.error]);
+  }, [stats, includeClaude, includeCodex, includeOpencode, includeGemini, includeKimi, includeGlm, claude.error, codex.error, opencode.error, gemini.error, kimi.error, glm.error]);
 
   return { stats, loading, error };
 }

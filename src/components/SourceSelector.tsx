@@ -7,6 +7,7 @@ type SourceKey =
   | "include_claude"
   | "include_codex"
   | "include_opencode"
+  | "include_gemini"
   | "include_kimi"
   | "include_glm";
 
@@ -21,6 +22,7 @@ export function SourceSelector() {
   const t = useI18n();
   const [codexAvailable, setCodexAvailable] = useState(false);
   const [opencodeAvailable, setOpencodeAvailable] = useState(false);
+  const [geminiAvailable, setGeminiAvailable] = useState(false);
   const [kimiAvailable, setKimiAvailable] = useState(false);
   const [glmAvailable, setGlmAvailable] = useState(false);
   const [availabilityLoaded, setAvailabilityLoaded] = useState(false);
@@ -31,11 +33,13 @@ export function SourceSelector() {
     Promise.all([
       invoke<boolean>("is_codex_available").catch(() => false),
       invoke<boolean>("is_opencode_available").catch(() => false),
+      invoke<boolean>("is_gemini_available").catch(() => false),
       invoke<boolean>("is_kimi_available").catch(() => false),
       invoke<boolean>("is_glm_available").catch(() => false),
-    ]).then(([codex, opencode, kimi, glm]) => {
+    ]).then(([codex, opencode, gemini, kimi, glm]) => {
       setCodexAvailable(codex);
       setOpencodeAvailable(opencode);
+      setGeminiAvailable(gemini);
       setKimiAvailable(kimi);
       setGlmAvailable(glm);
       setAvailabilityLoaded(true);
@@ -52,10 +56,11 @@ export function SourceSelector() {
     const patch: Partial<typeof prefs> = {};
     if (prefs.include_codex && !codexAvailable) patch.include_codex = false;
     if (prefs.include_opencode && !opencodeAvailable) patch.include_opencode = false;
+    if (prefs.include_gemini && !geminiAvailable) patch.include_gemini = false;
     if (prefs.include_kimi && !kimiAvailable) patch.include_kimi = false;
     if (prefs.include_glm && !glmAvailable) patch.include_glm = false;
     if (Object.keys(patch).length > 0) updatePrefs(patch);
-  }, [availabilityLoaded, codexAvailable, opencodeAvailable, kimiAvailable, glmAvailable, prefs.include_codex, prefs.include_opencode, prefs.include_kimi, prefs.include_glm, updatePrefs]);
+  }, [availabilityLoaded, codexAvailable, opencodeAvailable, geminiAvailable, kimiAvailable, glmAvailable, prefs.include_codex, prefs.include_opencode, prefs.include_gemini, prefs.include_kimi, prefs.include_glm, updatePrefs]);
 
   useEffect(() => {
     if (!open) return;
@@ -83,9 +88,10 @@ export function SourceSelector() {
     { key: "include_claude", label: t("sources.claude"), available: true },
     { key: "include_codex", label: t("sources.codex"), available: codexAvailable },
     { key: "include_opencode", label: t("sources.opencode"), available: opencodeAvailable },
+    { key: "include_gemini", label: t("sources.gemini"), available: geminiAvailable },
     { key: "include_kimi", label: t("sources.kimi"), available: kimiAvailable },
     { key: "include_glm", label: t("sources.glm"), available: glmAvailable },
-  ], [t, codexAvailable, opencodeAvailable, kimiAvailable, glmAvailable]);
+  ], [t, codexAvailable, opencodeAvailable, geminiAvailable, kimiAvailable, glmAvailable]);
 
   const visibleSources = sources.filter((s) => s.available);
   const totalCount = visibleSources.length;
