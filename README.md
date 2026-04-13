@@ -65,7 +65,7 @@ A system tray app for macOS and Windows that tracks **Claude Code**, **Codex**, 
 
 ### Customization
 - **4 themes** — GitHub (green), Purple, Ocean, Sunset — with Auto/Light/Dark mode
-- **8 languages** — English, 한국어, 日本語, 简体中文, 繁體中文, Français, Español, Deutsch
+- **10 languages** — English, 한국어, 日本語, 简体中文, 繁體中文, Français, Español, Deutsch, Türkçe, Italiano
 - **Compact / full number format** — `377.0K` vs `377,000`
 - **Launch on startup** — optional auto-start on boot
 - **AI translation** — bring your own Gemini / OpenAI / Anthropic API key to translate chat messages (keys are encrypted locally)

@@ -52,7 +52,7 @@ macOS と Windows のシステムトレイで **Claude Code**、**Codex**、**Op
 
 ### カスタマイズ
 - **4 つのテーマ** — GitHub（グリーン）、Purple、Ocean、Sunset + Auto/Light/Dark モード
-- **8 言語対応** — English, 한국어, 日本語, 简体中文, 繁體中文, Français, Español, Deutsch
+- **10 言語対応** — English, 한국어, 日本語, 简体中文, 繁體中文, Français, Español, Deutsch, Türkçe, Italiano
 - **数値フォーマット** — 短縮（`377.0K`）/ 完全（`377,000`）切替
 - **自動起動** — 起動時に自動実行
 - **AI 翻訳** — Gemini / OpenAI / Anthropic の API キーを登録するとチャットメッセージを翻訳（キーはローカルで暗号化保存）

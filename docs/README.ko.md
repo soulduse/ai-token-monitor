@@ -52,7 +52,7 @@ macOS / Windows 시스템 트레이에서 **Claude Code**, **Codex**, **OpenCode
 
 ### 커스터마이즈
 - **4가지 테마** — GitHub (초록), Purple, Ocean, Sunset + Auto/Light/Dark 모드
-- **8개 언어** — English, 한국어, 日本語, 简体中文, 繁體中文, Français, Español, Deutsch
+- **10개 언어** — English, 한국어, 日本語, 简体中文, 繁體中文, Français, Español, Deutsch, Türkçe, Italiano
 - **숫자 포맷** — 약식(`377.0K`) / 전체(`377,000`) 전환
 - **자동 시작** — 부팅 시 자동 실행 옵션
 - **AI 번역** — Gemini / OpenAI / Anthropic API 키를 등록하면 채팅 메시지 번역 (키는 로컬에 암호화 저장)

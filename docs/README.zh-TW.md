@@ -52,7 +52,7 @@
 
 ### 自訂
 - **4 種主題** — GitHub(綠色)、Purple、Ocean、Sunset,並支援自動/淺色/深色模式
-- **8 種語言** — English, 한국어, 日本語, 简体中文, 繁體中文, Français, Español, Deutsch
+- **10 種語言** — English, 한국어, 日本語, 简体中文, 繁體中文, Français, Español, Deutsch, Türkçe, Italiano
 - **數字格式** — 精簡(`377.0K`)/ 完整(`377,000`)切換
 - **開機自動啟動** — 可選開機時自動啟動
 - **AI 翻譯** — 新增 Gemini / OpenAI / Anthropic API 金鑰後可翻譯聊天訊息(金鑰於本機加密儲存)
