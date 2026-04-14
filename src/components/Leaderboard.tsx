@@ -213,6 +213,7 @@ function ProviderLeaderboard({
   const { leaderboard, loading, dateRange } = useLeaderboardSync({
     provider,
     period,
+    userId: user.id,
   });
 
   const [page, setPage] = useState(0);

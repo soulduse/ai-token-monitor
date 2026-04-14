@@ -14,18 +14,51 @@ interface UseSnapshotUploaderProps {
 
 /**
  * Custom event dispatched after a successful snapshot upload. Leaderboard
- * display hooks listen for this to invalidate their caches and refetch.
+ * display hooks listen for this to update their local state — they no longer
+ * force a full refetch, just optimistic-update the current user's row with
+ * the new numbers included in `detail`.
  */
 export const SNAPSHOT_UPLOADED_EVENT = "leaderboard-snapshot-uploaded";
 
 export interface SnapshotUploadedDetail {
   provider: LeaderboardProvider;
+  today: string;
+  total_tokens: number;
+  cost_usd: number;
+  messages: number;
+  sessions: number;
 }
 
 // Shared caches so multiple uploader instances (e.g. one per provider)
 // don't re-derive device IDs or re-upload the same past days.
 const stableDeviceIdCache = new Map<string, string>();
 const syncedPastDatesPerProvider = new Map<LeaderboardProvider, Set<string>>();
+
+// Throttle RPC calls: skip upload when today's values haven't changed AND the
+// last upload was recent. File watcher fires on every Claude/Codex write,
+// which without this gate caused ~37 RPC/min cluster-wide.
+const MIN_UPLOAD_INTERVAL_MS = 15 * 60 * 1000; // 15 min
+const lastUploadPerKey = new Map<string, { sig: string; at: number }>();
+
+type SnapshotPayload = Omit<SnapshotUploadedDetail, "provider">;
+
+function todaySignature(stats: AllStats): { sig: string; payload: SnapshotPayload | null } {
+  const today = toLocalDateStr(new Date());
+  const t = stats.daily.find((d) => d.date === today);
+  if (!t) return { sig: `${today}:empty`, payload: null };
+  const total = getTotalTokens(t.tokens);
+  const sig = `${today}:${total}:${t.cost_usd}:${t.messages}:${t.sessions}`;
+  return {
+    sig,
+    payload: {
+      today,
+      total_tokens: total,
+      cost_usd: t.cost_usd,
+      messages: t.messages,
+      sessions: t.sessions,
+    },
+  };
+}
 
 function getSyncedPastDates(provider: LeaderboardProvider): Set<string> {
   let set = syncedPastDatesPerProvider.get(provider);
@@ -79,17 +112,28 @@ export function useSnapshotUploader({ stats, user, optedIn, provider }: UseSnaps
     return () => { cancelled = true; };
   }, [user?.id]);
 
-  // Debounced upload whenever stats change
+  // Debounced upload whenever stats change — but only if today's signature
+  // actually moved OR MIN_UPLOAD_INTERVAL_MS has passed since the last upload.
   useEffect(() => {
     if (!supabase || !user || !optedIn || !stats || !deviceId) return;
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
+      const key = `${provider}:${deviceId}`;
+      const { sig, payload } = todaySignature(stats);
+      const prev = lastUploadPerKey.get(key);
+      const changed = !prev || prev.sig !== sig;
+      const stale = !prev || Date.now() - prev.at >= MIN_UPLOAD_INTERVAL_MS;
+      if (!changed && !stale) return;
+
       const ok = await uploadSnapshot(stats, provider, deviceId, getSyncedPastDates(provider));
-      if (ok) {
+      if (!ok) return;
+
+      lastUploadPerKey.set(key, { sig, at: Date.now() });
+      if (payload) {
         window.dispatchEvent(
           new CustomEvent<SnapshotUploadedDetail>(SNAPSHOT_UPLOADED_EVENT, {
-            detail: { provider },
+            detail: { ...payload, provider },
           }),
         );
       }
