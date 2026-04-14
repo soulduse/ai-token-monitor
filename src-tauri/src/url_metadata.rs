@@ -1,6 +1,7 @@
 use reqwest::Client;
 use scraper::{Html, Selector};
 use serde::Serialize;
+use std::net::{IpAddr, ToSocketAddrs};
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -40,6 +41,54 @@ fn extract_origin(url: &str) -> Option<String> {
     Some(format!("{}://{}", parsed.scheme(), parsed.host_str()?))
 }
 
+/// Returns true if the URL resolves to a private, loopback, or link-local address.
+/// Used to prevent SSRF attacks.
+fn is_private_or_loopback(url: &str) -> bool {
+    let parsed = match reqwest::Url::parse(url) {
+        Ok(u) => u,
+        Err(_) => return true,
+    };
+    let host = match parsed.host_str() {
+        Some(h) => h,
+        None => return true,
+    };
+    let host_lower = host.to_lowercase();
+    if host_lower == "localhost"
+        || host_lower == "127.0.0.1"
+        || host_lower == "::1"
+        || host_lower == "0.0.0.0"
+        || host_lower.ends_with(".local")
+        || host_lower.ends_with(".internal")
+    {
+        return true;
+    }
+    let port = parsed.port_or_known_default().unwrap_or(80);
+    if let Ok(addrs) = (host, port).to_socket_addrs() {
+        for addr in addrs {
+            let ip = addr.ip();
+            if ip.is_loopback() || ip.is_unspecified() {
+                return true;
+            }
+            if let IpAddr::V4(v4) = ip {
+                let octets = v4.octets();
+                if octets[0] == 10 {
+                    return true;
+                }
+                if octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31 {
+                    return true;
+                }
+                if octets[0] == 192 && octets[1] == 168 {
+                    return true;
+                }
+                if octets[0] == 169 && octets[1] == 254 {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 #[tauri::command]
 pub async fn fetch_url_metadata(url: String) -> Result<UrlMetadata, String> {
     // Validate URL
@@ -47,6 +96,11 @@ pub async fn fetch_url_metadata(url: String) -> Result<UrlMetadata, String> {
     let scheme = parsed.scheme();
     if scheme != "http" && scheme != "https" {
         return Err("Only HTTP/HTTPS URLs are supported".to_string());
+    }
+
+    // SSRF protection: block private/loopback addresses
+    if is_private_or_loopback(&url) {
+        return Err("URL points to a private or local network address".to_string());
     }
 
     let response = client()

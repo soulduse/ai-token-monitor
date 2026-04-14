@@ -564,6 +564,21 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
         </div>
       )}
 
+      {/* Security warning banner */}
+      <div style={{
+        padding: "8px 12px",
+        fontSize: 11,
+        color: "var(--text-secondary)",
+        background: "var(--heat-0)",
+        borderTop: "1px solid var(--heat-1, rgba(0,0,0,0.06))",
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+      }}>
+        <span style={{ fontSize: 14 }}>⚠️</span>
+        <span>{t("chat.securityWarning")}</span>
+      </div>
+
       {/* Input bar (with optional reply preview integrated) */}
       <div style={{
         borderTop: typingUsers.length > 0 ? "none" : "1px solid var(--heat-1, rgba(0,0,0,0.06))",

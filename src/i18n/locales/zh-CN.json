@@ -232,6 +232,7 @@
   "chat.description": "与排行榜上的其他开发者聊天。登录并启用排行榜即可参与。",
   "chat.placeholder": "输入消息...",
   "chat.send": "发送",
+  "chat.securityWarning": "消息是公开的。请勿分享 API 密钥、密码或敏感代码。",
   "chat.loading": "加载消息中...",
   "chat.empty": "还没有消息。开始第一段对话吧！",
   "chat.loadMore": "加载更早的消息",

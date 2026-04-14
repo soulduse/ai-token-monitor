@@ -232,6 +232,7 @@
   "chat.description": "Chatten Sie mit anderen Entwicklern in der Rangliste. Melden Sie sich an und aktivieren Sie die Rangliste, um teilzunehmen.",
   "chat.placeholder": "Nachricht eingeben...",
   "chat.send": "Senden",
+  "chat.securityWarning": "Nachrichten sind öffentlich. Teilen Sie keine API-Schlüssel, Passwörter oder sensiblen Code.",
   "chat.loading": "Nachrichten werden geladen...",
   "chat.empty": "Noch keine Nachrichten. Starten Sie das Gespräch!",
   "chat.loadMore": "Ältere Nachrichten laden",
