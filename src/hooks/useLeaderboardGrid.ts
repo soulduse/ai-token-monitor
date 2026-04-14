@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import type { LeaderboardProvider } from "../lib/types";
 import { toLocalDateStr } from "../lib/format";
-import { SNAPSHOT_UPLOADED_EVENT, type SnapshotUploadedDetail } from "./useSnapshotUploader";
 
 export interface GridCell {
   rank: number;
@@ -33,8 +32,8 @@ interface RpcRow {
   total_tokens: number;
 }
 
-const CACHE_TTL = 180_000; // 3 minutes — matches useLeaderboardSync
-const POLL_INTERVAL = 180_000;
+const CACHE_TTL = 15 * 60_000; // 15 minutes — matches useLeaderboardSync
+const POLL_INTERVAL = 15 * 60_000;
 
 export function useLeaderboardGrid({
   provider,
@@ -166,19 +165,9 @@ export function useLeaderboardGrid({
     return fetchGrid(true);
   }, [fetchGrid]);
 
-  // Refresh when a snapshot upload for this provider completes. The upload
-  // itself runs at the App level via `useSnapshotUploader`; this listener
-  // keeps the grid view in sync when the user is looking at it.
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<SnapshotUploadedDetail>).detail;
-      if (detail?.provider !== provider) return;
-      cacheRef.current = null;
-      if (enabled) fetchGrid(true);
-    };
-    window.addEventListener(SNAPSHOT_UPLOADED_EVENT, handler);
-    return () => window.removeEventListener(SNAPSHOT_UPLOADED_EVENT, handler);
-  }, [provider, enabled, fetchGrid]);
+  // Grid is a 7-day × topN view — a single day's snapshot change rarely
+  // reshuffles the top-N ranking in a way the user notices. Skip the
+  // event-driven refetch and let the 15-minute poll reconcile.
 
   return { gridData, loading, refetch };
 }

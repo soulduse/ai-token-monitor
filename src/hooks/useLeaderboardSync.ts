@@ -17,14 +17,15 @@ export interface LeaderboardEntry {
 interface UseLeaderboardSyncProps {
   provider: LeaderboardProvider;
   period: LeaderboardPeriod;
+  userId?: string;
 }
 
-const LEADERBOARD_CACHE_TTL = 180_000; // 3 minutes
-const LEADERBOARD_POLL_INTERVAL = 180_000; // 3 minutes
+const LEADERBOARD_CACHE_TTL = 15 * 60_000; // 15 minutes
+const LEADERBOARD_POLL_INTERVAL = 15 * 60_000; // 15 minutes
 
 export type LeaderboardPeriod = "today" | "week" | "month" | "grid";
 
-export function useLeaderboardSync({ provider, period }: UseLeaderboardSyncProps) {
+export function useLeaderboardSync({ provider, period, userId }: UseLeaderboardSyncProps) {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const cacheRef = useRef<{
@@ -92,20 +93,40 @@ export function useLeaderboardSync({ provider, period }: UseLeaderboardSyncProps
     }
   }, [period, provider]);
 
-  // Refresh when a snapshot upload for this provider completes. The upload
-  // itself runs at the App level via `useSnapshotUploader`, so this view
-  // just needs to invalidate its cache so the user's own row reflects the
-  // new numbers immediately instead of waiting for the 3-minute poll.
+  // When a snapshot upload completes, optimistically patch only the user's own
+  // row instead of refetching the whole leaderboard. The next scheduled poll
+  // (every 15 min) will reconcile any drift. This avoids ~1 extra RPC per
+  // local Claude/Codex write cluster-wide.
+  //
+  // Scope: only `today` can be updated precisely from a single-day signature.
+  // For `week`/`month` the detail values are *today's totals*, so we apply the
+  // delta between the row's current "today slice" and the new one — but we
+  // don't have per-day breakdown server-side here. The simplest correct
+  // behavior is to no-op for non-today periods and let the poll handle it.
   useEffect(() => {
+    if (!userId) return;
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<SnapshotUploadedDetail>).detail;
-      if (detail?.provider !== provider) return;
-      cacheRef.current = null;
-      fetchLeaderboard(true);
+      if (!detail || detail.provider !== provider) return;
+      if (period !== "today") return;
+      setLeaderboard((prev) => {
+        const idx = prev.findIndex((entry) => entry.user_id === userId);
+        if (idx < 0) return prev;
+        const next = prev.slice();
+        next[idx] = {
+          ...next[idx],
+          total_tokens: detail.total_tokens,
+          cost_usd: detail.cost_usd,
+          messages: detail.messages,
+          sessions: detail.sessions,
+        };
+        next.sort((a, b) => b.total_tokens - a.total_tokens);
+        return next;
+      });
     };
     window.addEventListener(SNAPSHOT_UPLOADED_EVENT, handler);
     return () => window.removeEventListener(SNAPSHOT_UPLOADED_EVENT, handler);
-  }, [provider, fetchLeaderboard]);
+  }, [provider, period, userId]);
 
   // Auto-refresh with visibility-aware polling
   useEffect(() => {
