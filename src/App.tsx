@@ -90,6 +90,7 @@ function AppContent() {
     return (
       <PopoverShell>
         <Header updater={updater} />
+        <SourceSelector />
         <div style={{
           display: "flex",
           alignItems: "center",
@@ -109,6 +110,7 @@ function AppContent() {
     return (
       <PopoverShell>
         <Header updater={updater} />
+        <SourceSelector />
         <div style={{
           display: "flex",
           flexDirection: "column",

@@ -27,7 +27,15 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode 
   }, [claude.stats, codex.stats, opencode.stats, includeClaude, includeCodex, includeOpencode]);
 
   const loading = (includeClaude && claude.loading) || (includeCodex && codex.loading) || (includeOpencode && opencode.loading);
-  const error = includeClaude ? claude.error : includeCodex ? codex.error : opencode.error;
+  const error = useMemo(() => {
+    if (stats) return null;
+
+    if (includeClaude && claude.error) return claude.error;
+    if (includeCodex && codex.error) return codex.error;
+    if (includeOpencode && opencode.error) return opencode.error;
+
+    return null;
+  }, [stats, includeClaude, includeCodex, includeOpencode, claude.error, codex.error, opencode.error]);
 
   return { stats, loading, error };
 }
