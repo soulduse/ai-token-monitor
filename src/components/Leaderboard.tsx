@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useLeaderboardSync, type LeaderboardPeriod } from "../hooks/useLeaderboardSync";
 import { useLeaderboardGrid } from "../hooks/useLeaderboardGrid";
+import { useBackfill } from "../hooks/useBackfill";
 import type { LeaderboardProvider } from "../lib/types";
 import type { User } from "@supabase/supabase-js";
 import { useSettings } from "../contexts/SettingsContext";
@@ -137,6 +138,15 @@ function LeaderboardContent({ user }: { user: User }) {
   const t = useI18n();
   const { prefs } = useSettings();
   const [provider, setProvider] = useState<LeaderboardProvider>("claude");
+  const backfill = useBackfill();
+
+  // Auto-trigger backfill once per (user, provider) on first leaderboard visit.
+  // Replaces the previous behavior where every stats change uploaded 60 days,
+  // which exhausted Supabase's IO Budget.
+  useEffect(() => {
+    if (!backfill.hasRunners) return;
+    backfill.ensureInitialBackfill();
+  }, [backfill.hasRunners, backfill.ensureInitialBackfill]);
 
   // Determine available provider tabs
   const availableProviders: LeaderboardProvider[] = [];
@@ -186,6 +196,77 @@ function LeaderboardContent({ user }: { user: User }) {
         provider={activeProvider}
         user={user}
       />
+
+      <BackfillButton backfill={backfill} t={t} />
+    </div>
+  );
+}
+
+function BackfillButton({
+  backfill,
+  t,
+}: {
+  backfill: ReturnType<typeof useBackfill>;
+  t: ReturnType<typeof useI18n>;
+}) {
+  const [status, setStatus] = useState<null | "success" | "failed">(null);
+  const [cooldownLeft, setCooldownLeft] = useState(() => backfill.cooldownRemainingMs());
+
+  // Refresh cooldown timer every 30s while the panel is mounted.
+  useEffect(() => {
+    const tick = () => setCooldownLeft(backfill.cooldownRemainingMs());
+    tick();
+    const id = setInterval(tick, 30_000);
+    return () => clearInterval(id);
+  }, [backfill]);
+
+  if (!backfill.hasRunners) return null;
+
+  const onCooldown = cooldownLeft > 0;
+  const disabled = backfill.running || onCooldown;
+
+  const handleClick = async () => {
+    if (disabled) return;
+    if (!window.confirm(t("leaderboard.backfill.confirm"))) return;
+    const { ok, failed } = await backfill.runAll(60);
+    setStatus(failed === 0 && ok > 0 ? "success" : "failed");
+    setCooldownLeft(backfill.cooldownRemainingMs());
+    setTimeout(() => setStatus(null), 4000);
+  };
+
+  const label = backfill.running
+    ? t("leaderboard.backfill.running")
+    : onCooldown
+      ? t("leaderboard.backfill.cooldown", { minutes: Math.ceil(cooldownLeft / 60_000) })
+      : t("leaderboard.backfill.button");
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+      <button
+        onClick={handleClick}
+        disabled={disabled}
+        style={{
+          padding: "6px 14px",
+          fontSize: 11,
+          fontWeight: 600,
+          border: "1px solid var(--border, #444)",
+          borderRadius: 6,
+          cursor: disabled ? "not-allowed" : "pointer",
+          background: "transparent",
+          color: "var(--text-secondary)",
+          opacity: disabled ? 0.6 : 1,
+        }}
+      >
+        {label}
+      </button>
+      {status && (
+        <div style={{
+          fontSize: 10,
+          color: status === "success" ? "var(--accent-green, #4ade80)" : "var(--accent-red, #f87171)",
+        }}>
+          {status === "success" ? t("leaderboard.backfill.success") : t("leaderboard.backfill.failed")}
+        </div>
+      )}
     </div>
   );
 }

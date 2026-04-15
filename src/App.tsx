@@ -29,6 +29,7 @@ import { SalaryComparator } from "./components/SalaryComparator";
 import { UsageAlertBar } from "./components/UsageAlertBar";
 import { MiniProfile } from "./components/MiniProfile";
 import { useUpdater } from "./hooks/useUpdater";
+import { setChatChannelUser, activateChatChannel } from "./realtime/chatChannel";
 
 function AppContent() {
   useEffect(() => {
@@ -66,6 +67,18 @@ function AppContent() {
   useEffect(() => {
     if (activeTab === "chat") setChatActivated(true);
   }, [activeTab]);
+
+  // Drive the unified chat realtime channel. Activation is gated only by
+  // login state; RLS on chat_messages/chat_reactions enforces the actual
+  // access policy on the server. This replaces three independent Realtime
+  // channels that each reconnected on every visibilitychange, fixing IO
+  // Budget exhaustion on Supabase Free/Nano.
+  useEffect(() => {
+    setChatChannelUser(user?.id ?? null);
+  }, [user?.id]);
+  useEffect(() => {
+    activateChatChannel(!!user);
+  }, [user]);
 
   const { today, weekAvg } = useMemo(() => {
     if (!stats) return { today: null, weekAvg: 0 };

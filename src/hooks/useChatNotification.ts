@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import { getOrFetchProfile } from "../lib/profileCache";
-import type { RealtimeChannel } from "@supabase/supabase-js";
+import { subscribeChatChannel, type ChatMessageInsertPayload } from "../realtime/chatChannel";
 import type { ProfileData } from "../lib/profileCache";
 
 let notificationModule: typeof import("@tauri-apps/plugin-notification") | null = null;
@@ -42,15 +42,14 @@ interface Params {
 }
 
 /**
- * Listens for new chat messages and fires OS notifications when:
+ * Listens for new chat messages via the unified channel manager and fires
+ * OS notifications when:
  * 1. Someone @mentions the current user
  * 2. Someone replies to the current user's message
  *
  * Only fires when the chat tab is not active.
  */
 export function useChatNotification({ isChatActive, currentNickname, currentUserId }: Params) {
-  const channelRef = useRef<RealtimeChannel | null>(null);
-  const channelCounterRef = useRef(0);
   const isChatActiveRef = useRef(isChatActive);
   isChatActiveRef.current = isChatActive;
   const currentNicknameRef = useRef(currentNickname);
@@ -83,7 +82,6 @@ export function useChatNotification({ isChatActive, currentNickname, currentUser
   const checkMention = useCallback((content: string): boolean => {
     const nick = currentNicknameRef.current;
     if (!nick) return false;
-    // Match @nickname with word boundary
     const re = new RegExp(`@${nick.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![a-zA-Z0-9_-])`, "i");
     return re.test(content);
   }, []);
@@ -102,37 +100,26 @@ export function useChatNotification({ isChatActive, currentNickname, currentUser
     return data?.user_id === uid;
   }, []);
 
-  const setupChannel = useCallback(() => {
-    if (!supabase || !currentUserIdRef.current) return;
+  const fetchProfileRef = useRef(fetchProfile);
+  fetchProfileRef.current = fetchProfile;
 
-    const channel = supabase
-      .channel(`chat_notification_${++channelCounterRef.current}`)
-      .on("postgres_changes", {
-        event: "INSERT",
-        schema: "public",
-        table: "chat_messages",
-      }, async (payload) => {
+  useEffect(() => {
+    if (!supabase || !currentUserId) return;
+
+    return subscribeChatChannel({
+      onMessageInsert: async (row: ChatMessageInsertPayload) => {
         try {
-          const row = payload.new as {
-            id: string;
-            user_id: string;
-            content: string;
-            reply_to?: string | null;
-          };
-
           // Skip own messages
           if (row.user_id === currentUserIdRef.current) return;
-
           // Skip if chat tab is active
           if (isChatActiveRef.current) return;
 
           const isMention = checkMention(row.content);
-          // Short-circuit: skip DB query if already a mention
-          const isReply = !isMention && await checkReplyToMe(row.reply_to ?? null);
+          const isReply = !isMention && (await checkReplyToMe(row.reply_to ?? null));
 
           if (!isMention && !isReply) return;
 
-          const senderProfile = await fetchProfile(row.user_id);
+          const senderProfile = await fetchProfileRef.current(row.user_id);
           const body = row.content.length > 100
             ? row.content.slice(0, 100) + "..."
             : row.content;
@@ -144,46 +131,7 @@ export function useChatNotification({ isChatActive, currentNickname, currentUser
         } catch {
           // Silently ignore notification errors
         }
-      })
-      .subscribe();
-
-    channelRef.current = channel;
-  }, [fetchProfile, checkMention, checkReplyToMe]);
-
-  // Subscribe
-  useEffect(() => {
-    if (!supabase || !currentUserId) return;
-
-    setupChannel();
-
-    return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
-    };
-  }, [currentUserId, setupChannel]);
-
-  // Reconnect on visibility change
-  const setupChannelRef = useRef(setupChannel);
-  setupChannelRef.current = setupChannel;
-
-  useEffect(() => {
-    if (!supabase || !currentUserId) return;
-
-    const handleVisibility = () => {
-      if (document.hidden) return;
-
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
-      setupChannelRef.current();
-    };
-
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibility);
-    };
-  }, [currentUserId]);
+      },
+    });
+  }, [currentUserId, checkMention, checkReplyToMe]);
 }

@@ -1,20 +1,20 @@
+import { useEffect, useMemo } from "react";
 import { useTokenStats } from "../hooks/useTokenStats";
 import { useSnapshotUploader } from "../hooks/useSnapshotUploader";
 import { useAuth } from "../hooks/useAuth";
 import { useSettings } from "../contexts/SettingsContext";
+import {
+  registerBackfillRunner,
+  type BackfillRunner,
+} from "../lib/backfillRegistry";
+import type { LeaderboardProvider } from "../lib/types";
 
 /**
- * Headless component that keeps each enabled provider's 60-day snapshot
- * history in sync with Supabase, regardless of which tab the user is
- * currently viewing.
- *
- * This exists because the per-provider upload used to live inside
- * `useLeaderboardSync`, which only mounts when the user opens the
- * Leaderboard tab *and* selects a particular provider. As a result most
- * users only ever uploaded a handful of days, and the MiniProfile "활동
- * (8주)" heatmap showed up empty for anyone who wasn't an active leaderboard
- * visitor. Moving the uploader to the App level fixes that without forcing
- * the Leaderboard UI to mount.
+ * Headless component that keeps each enabled provider's *today* snapshot
+ * synced with Supabase. Past-day backfill is no longer automatic; instead
+ * each uploader exposes a `manualBackfill` runner via the backfill registry,
+ * which the leaderboard UI calls on first visit (one-time) and via a
+ * "Upload my past data" button.
  *
  * Renders nothing.
  */
@@ -29,24 +29,47 @@ export function LeaderboardUploader() {
   const { stats: codexStats } = useTokenStats("codex");
   const { stats: opencodeStats } = useTokenStats("opencode");
 
-  useSnapshotUploader({
+  const claude = useSnapshotUploader({
     stats: prefs.include_claude ? claudeStats : null,
     user,
     optedIn,
     provider: "claude",
   });
-  useSnapshotUploader({
+  const codex = useSnapshotUploader({
     stats: prefs.include_codex ? codexStats : null,
     user,
     optedIn,
     provider: "codex",
   });
-  useSnapshotUploader({
+  const opencode = useSnapshotUploader({
     stats: prefs.include_opencode ? opencodeStats : null,
     user,
     optedIn,
     provider: "opencode",
   });
+
+  const runners = useMemo<Partial<Record<LeaderboardProvider, BackfillRunner>>>(
+    () => ({
+      claude: prefs.include_claude && claude.ready ? claude.manualBackfill : undefined,
+      codex: prefs.include_codex && codex.ready ? codex.manualBackfill : undefined,
+      opencode: prefs.include_opencode && opencode.ready ? opencode.manualBackfill : undefined,
+    }),
+    [
+      prefs.include_claude,
+      prefs.include_codex,
+      prefs.include_opencode,
+      claude.ready,
+      codex.ready,
+      opencode.ready,
+      claude.manualBackfill,
+      codex.manualBackfill,
+      opencode.manualBackfill,
+    ],
+  );
+
+  useEffect(() => {
+    return registerBackfillRunner(runners);
+  }, [runners]);
 
   return null;
 }

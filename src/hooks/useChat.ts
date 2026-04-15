@@ -2,7 +2,12 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import { getCachedProfile, setCachedProfile, getOrFetchProfile } from "../lib/profileCache";
 import type { ProfileData } from "../lib/profileCache";
-import type { RealtimeChannel } from "@supabase/supabase-js";
+import {
+  subscribeChatChannel,
+  type ChatMessageInsertPayload,
+  type ChatMessageDeletePayload,
+  type ChatReactionPayload,
+} from "../realtime/chatChannel";
 
 export type ReactionType = "like" | "heart" | "dislike";
 
@@ -37,11 +42,9 @@ export function useChat(userId: string | null, enabled: boolean = true, visible:
   const [hasMore, setHasMore] = useState(true);
   const reactionsRef = useRef(reactions);
   reactionsRef.current = reactions;
-  const channelRef = useRef<RealtimeChannel | null>(null);
   const lastSendRef = useRef(0);
   const loadingMoreRef = useRef(false);
   const lastSeenAtRef = useRef<string | null>(null);
-  const channelCounterRef = useRef(0);
 
   // Cache profile from a message (shared module-level cache)
   const cacheProfile = useCallback((msg: ChatMessage) => {
@@ -159,12 +162,6 @@ export function useChat(userId: string | null, enabled: boolean = true, visible:
     });
   }, []);
 
-  // Stable refs for realtime handlers (avoid subscription recreation)
-  const fetchProfileRef = useRef(fetchProfile);
-  fetchProfileRef.current = fetchProfile;
-  const enrichRepliesRef = useRef(enrichReplies);
-  enrichRepliesRef.current = enrichReplies;
-
   // Initial fetch
   useEffect(() => {
     if (!supabase || !userId || !enabled) return;
@@ -181,7 +178,7 @@ export function useChat(userId: string | null, enabled: boolean = true, visible:
       if (cancelled) return;
 
       if (data) {
-        let msgs = (data as typeof data).map(parseRow).reverse();
+        const msgs = (data as typeof data).map(parseRow).reverse();
         msgs.forEach(cacheProfile);
         const ids = msgs.map((m) => m.id);
         const [enriched] = await Promise.all([enrichReplies(msgs), fetchReactions(ids)]);
@@ -198,111 +195,7 @@ export function useChat(userId: string | null, enabled: boolean = true, visible:
     return () => { cancelled = true; };
   }, [userId, enabled, parseRow, cacheProfile, enrichReplies, fetchReactions]);
 
-  // Setup realtime channel (extracted for reuse on reconnect)
-  const setupChannel = useCallback(() => {
-    if (!supabase) return;
-
-    const channel = supabase
-      .channel(`chat_realtime_${++channelCounterRef.current}`)
-      .on("postgres_changes", {
-        event: "INSERT",
-        schema: "public",
-        table: "chat_messages",
-      }, async (payload) => {
-        try {
-          const row = payload.new as { id: string; user_id: string; content: string; created_at: string; reply_to?: string | null; image_url?: string | null };
-          const profile = await fetchProfileRef.current(row.user_id);
-          let msg: ChatMessage = {
-            ...row,
-            reply_to: row.reply_to ?? null,
-            replied_message: null,
-            nickname: profile.nickname,
-            avatar_url: profile.avatar_url,
-            image_url: row.image_url ?? null,
-          };
-          if (msg.reply_to) {
-            const enriched = await enrichRepliesRef.current([msg]);
-            msg = enriched[0];
-          }
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === msg.id)) return prev;
-            return [...prev, msg];
-          });
-          lastSeenAtRef.current = msg.created_at;
-        } catch {
-          // Silently handled — profileCache returns fallback data on failure
-        }
-      })
-      .on("postgres_changes", {
-        event: "DELETE",
-        schema: "public",
-        table: "chat_messages",
-      }, (payload) => {
-        const deletedId = (payload.old as { id: string }).id;
-        setMessages((prev) => prev.filter((m) => m.id !== deletedId));
-        setReactions((prev) => {
-          const next = new Map(prev);
-          next.delete(deletedId);
-          return next;
-        });
-      })
-      // Reactions realtime
-      .on("postgres_changes", {
-        event: "INSERT",
-        schema: "public",
-        table: "chat_reactions",
-      }, (payload) => {
-        const row = payload.new as { message_id: string; user_id: string; reaction_type: string };
-        const type = row.reaction_type as ReactionType;
-        setReactions((prev) => {
-          const next = new Map(prev);
-          const entry = next.get(row.message_id) ?? emptyReactions();
-          if (!entry[type].includes(row.user_id)) {
-            next.set(row.message_id, {
-              ...entry,
-              [type]: [...entry[type], row.user_id],
-            });
-          }
-          return next;
-        });
-      })
-      .on("postgres_changes", {
-        event: "DELETE",
-        schema: "public",
-        table: "chat_reactions",
-      }, (payload) => {
-        const row = payload.old as { message_id: string; user_id: string; reaction_type: string };
-        const type = row.reaction_type as ReactionType;
-        setReactions((prev) => {
-          const next = new Map(prev);
-          const entry = next.get(row.message_id);
-          if (entry) {
-            next.set(row.message_id, {
-              ...entry,
-              [type]: entry[type].filter((uid) => uid !== row.user_id),
-            });
-          }
-          return next;
-        });
-      })
-      .subscribe((status) => {
-        // Auto-reconnect when channel becomes disconnected (network change, server timeout)
-        if (status === "TIMED_OUT" || status === "CHANNEL_ERROR") {
-          setTimeout(() => {
-            if (channelRef.current) {
-              supabase.removeChannel(channelRef.current);
-              channelRef.current = null;
-            }
-            setupChannelRef.current();
-            catchUpMessagesRef.current();
-          }, 1000);
-        }
-      });
-
-    channelRef.current = channel;
-  }, []);
-
-  // Fetch messages missed while window was hidden
+  // Fetch messages missed while window/channel was offline
   const catchUpMessages = useCallback(async () => {
     if (!supabase || !lastSeenAtRef.current) return;
 
@@ -315,7 +208,7 @@ export function useChat(userId: string | null, enabled: boolean = true, visible:
 
     if (!data || data.length === 0) return;
 
-    let msgs = (data as typeof data).map(parseRow);
+    const msgs = (data as typeof data).map(parseRow);
     msgs.forEach(cacheProfile);
     const ids = msgs.map((m) => m.id);
     const [enriched] = await Promise.all([enrichReplies(msgs), fetchReactions(ids)]);
@@ -333,71 +226,99 @@ export function useChat(userId: string | null, enabled: boolean = true, visible:
     }
   }, [parseRow, cacheProfile, enrichReplies, fetchReactions]);
 
-  // Realtime subscription for messages + reactions
+  // Realtime: subscribe to the unified chat channel manager
+  const fetchProfileRef = useRef(fetchProfile);
+  fetchProfileRef.current = fetchProfile;
+  const enrichRepliesRef = useRef(enrichReplies);
+  enrichRepliesRef.current = enrichReplies;
+  const catchUpRef = useRef(catchUpMessages);
+  catchUpRef.current = catchUpMessages;
+
   useEffect(() => {
     if (!supabase || !userId || !enabled) return;
 
-    setupChannel();
+    const unsubscribe = subscribeChatChannel({
+      onMessageInsert: async (row: ChatMessageInsertPayload) => {
+        try {
+          const profile = await fetchProfileRef.current(row.user_id);
+          let msg: ChatMessage = {
+            id: row.id,
+            user_id: row.user_id,
+            content: row.content,
+            created_at: row.created_at,
+            reply_to: row.reply_to ?? null,
+            replied_message: null,
+            nickname: profile.nickname,
+            avatar_url: profile.avatar_url,
+            image_url: row.image_url ?? null,
+          };
+          if (msg.reply_to) {
+            const enriched = await enrichRepliesRef.current([msg]);
+            msg = enriched[0];
+          }
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === msg.id)) return prev;
+            return [...prev, msg];
+          });
+          lastSeenAtRef.current = msg.created_at;
+        } catch {
+          // profileCache returns fallback on failure
+        }
+      },
+      onMessageDelete: (row: ChatMessageDeletePayload) => {
+        const deletedId = row.id;
+        setMessages((prev) => prev.filter((m) => m.id !== deletedId));
+        setReactions((prev) => {
+          const next = new Map(prev);
+          next.delete(deletedId);
+          return next;
+        });
+      },
+      onReactionInsert: (row: ChatReactionPayload) => {
+        const type = row.reaction_type as ReactionType;
+        setReactions((prev) => {
+          const next = new Map(prev);
+          const entry = next.get(row.message_id) ?? emptyReactions();
+          if (!entry[type].includes(row.user_id)) {
+            next.set(row.message_id, {
+              ...entry,
+              [type]: [...entry[type], row.user_id],
+            });
+          }
+          return next;
+        });
+      },
+      onReactionDelete: (row: ChatReactionPayload) => {
+        const type = row.reaction_type as ReactionType;
+        setReactions((prev) => {
+          const next = new Map(prev);
+          const entry = next.get(row.message_id);
+          if (entry) {
+            next.set(row.message_id, {
+              ...entry,
+              [type]: entry[type].filter((uid) => uid !== row.user_id),
+            });
+          }
+          return next;
+        });
+      },
+      onReconnect: () => {
+        catchUpRef.current();
+      },
+    });
 
-    return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
-    };
-  }, [userId, enabled, setupChannel]);
-
-  // Stable refs for visibility handler (avoid effect re-registration)
-  const setupChannelRef = useRef(setupChannel);
-  setupChannelRef.current = setupChannel;
-  const catchUpMessagesRef = useRef(catchUpMessages);
-  catchUpMessagesRef.current = catchUpMessages;
-
-  // Reconnect realtime channel when window becomes visible again
-  // (macOS throttles WebSocket heartbeats in hidden windows, causing disconnection)
-  useEffect(() => {
-    if (!supabase || !userId || !enabled) return;
-
-    const handleVisibility = () => {
-      if (document.hidden) return;
-
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
-
-      // Subscribe first so live events are captured,
-      // then catch up on missed messages (dedup handles overlap)
-      setupChannelRef.current();
-      catchUpMessagesRef.current();
-    };
-
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibility);
-    };
+    return unsubscribe;
   }, [userId, enabled]);
 
   // Catch up missed messages when chat tab becomes visible again
-  // (visibilitychange only fires for window-level hide, not tab switches)
+  // (visibilitychange is handled by the channel manager; this covers tab switches)
   const prevVisibleRef = useRef(visible);
   useEffect(() => {
     if (!supabase || !userId || !enabled) return;
     const wasHidden = !prevVisibleRef.current;
     prevVisibleRef.current = visible;
-
     if (visible && wasHidden) {
-      // Check if channel is still healthy; reconnect if not
-      const ch = channelRef.current;
-      const state = ch?.state;
-      if (!ch || state === "errored" || state === "closed") {
-        if (ch) {
-          supabase.removeChannel(ch);
-          channelRef.current = null;
-        }
-        setupChannelRef.current();
-      }
-      catchUpMessagesRef.current();
+      catchUpRef.current();
     }
   }, [visible, userId, enabled]);
 
@@ -463,7 +384,6 @@ export function useChat(userId: string | null, enabled: boolean = true, visible:
   const deleteMessage = useCallback(async (messageId: string): Promise<{ error?: string }> => {
     if (!supabase) return { error: "Not available" };
 
-    // Find message to check for attached image
     const msg = messages.find((m) => m.id === messageId);
     if (msg?.image_url) {
       const path = msg.image_url.split("/chat-images/").pop();
@@ -492,7 +412,7 @@ export function useChat(userId: string | null, enabled: boolean = true, visible:
         .limit(PAGE_SIZE);
 
       if (data) {
-        let older = (data as typeof data).map(parseRow).reverse();
+        const older = (data as typeof data).map(parseRow).reverse();
         older.forEach(cacheProfile);
         const ids = older.map((m) => m.id);
         const [enriched] = await Promise.all([enrichReplies(older), fetchReactions(ids)]);
