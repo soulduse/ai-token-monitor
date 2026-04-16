@@ -28,8 +28,31 @@ import { SourceSelector } from "./components/SourceSelector";
 import { SalaryComparator } from "./components/SalaryComparator";
 import { UsageAlertBar } from "./components/UsageAlertBar";
 import { MiniProfile } from "./components/MiniProfile";
+import { AnalyticsSubTabs } from "./components/AnalyticsSubTabs";
+import type { AnalyticsSubTab } from "./components/AnalyticsSubTabs";
+import { ProjectBreakdown } from "./components/ProjectBreakdown";
+import { ToolUsage } from "./components/ToolUsage";
+import { ShellCommands } from "./components/ShellCommands";
+import { AnalyticsSummary } from "./components/AnalyticsSummary";
+import { ActivityBreakdown } from "./components/ActivityBreakdown";
 import { useUpdater } from "./hooks/useUpdater";
 import { setChatChannelUser, activateChatChannel } from "./realtime/chatChannel";
+
+function AnalyticsEmptyState({ message }: { message: string }) {
+  return (
+    <div style={{
+      background: "var(--bg-card)",
+      borderRadius: "var(--radius-lg)",
+      padding: "32px 16px",
+      boxShadow: "var(--shadow-card)",
+      textAlign: "center",
+      color: "var(--text-secondary)",
+      fontSize: 12,
+    }}>
+      {message}
+    </div>
+  );
+}
 
 function AppContent() {
   useEffect(() => {
@@ -54,6 +77,7 @@ function AppContent() {
   const { user, profile } = useAuth();
   const updater = useUpdater();
   const [activeTab, setActiveTab] = useState<TabType>("overview");
+  const [analyticsSubTab, setAnalyticsSubTab] = useState<AnalyticsSubTab>("usage");
   const [chatActivated, setChatActivated] = useState(false);
   const todayStr = useToday();
   const { unreadCount } = useUnreadChat(activeTab === "chat", user?.id ?? null);
@@ -169,11 +193,39 @@ function AppContent() {
       </div>
 
       <div style={{ display: activeTab === "analytics" ? "contents" : "none" }}>
-        <ActivityGraph daily={stats.daily} />
-        <DailyChart daily={stats.daily} days={30} />
-        <PeriodTotals daily={stats.daily} />
-        <ModelBreakdown modelUsage={stats.model_usage} />
-        <CacheEfficiency stats={stats} />
+        <AnalyticsSubTabs active={analyticsSubTab} onChange={setAnalyticsSubTab} />
+
+        {analyticsSubTab === "usage" && (
+          <>
+            <AnalyticsSummary stats={stats} />
+            <ActivityGraph daily={stats.daily} />
+            <DailyChart daily={stats.daily} days={30} />
+            <PeriodTotals daily={stats.daily} />
+            {stats.analytics && stats.analytics.activity_breakdown.length > 0 && (
+              <ActivityBreakdown data={stats.analytics.activity_breakdown} />
+            )}
+            <ModelBreakdown modelUsage={stats.model_usage} />
+            <CacheEfficiency stats={stats} />
+          </>
+        )}
+
+        {analyticsSubTab === "projects" && (
+          stats.analytics && stats.analytics.project_usage.length > 0
+            ? <ProjectBreakdown data={stats.analytics.project_usage} />
+            : <AnalyticsEmptyState message={t("analytics.empty.projects")} />
+        )}
+
+        {analyticsSubTab === "tools" && (
+          stats.analytics && stats.analytics.tool_usage.length > 0
+            ? <>
+                <ToolUsage data={stats.analytics.tool_usage} />
+                <ShellCommands
+                  commands={stats.analytics.shell_commands}
+                  mcp={stats.analytics.mcp_usage}
+                />
+              </>
+            : <AnalyticsEmptyState message={t("analytics.empty.tools")} />
+        )}
       </div>
 
       {/* Leaderboard lazy-loads (network requests), keep conditional */}
