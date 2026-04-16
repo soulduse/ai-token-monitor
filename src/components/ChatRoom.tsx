@@ -11,6 +11,7 @@ import { getAllCachedProfiles, getCachedProfile } from "../lib/profileCache";
 import { uploadChatImage } from "../lib/chatImageUpload";
 import { useI18n, LANGUAGE_NAMES } from "../i18n/I18nContext";
 import type { ChatMessage } from "../hooks/useChat";
+import { SettingsOverlay } from "./SettingsOverlay";
 
 export function ChatRoom({ activated = true, visible = true }: { activated?: boolean; visible?: boolean }) {
   const { user, loading: authLoading, signIn, available } = useAuth();
@@ -156,6 +157,8 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
   const isAtBottomRef = useRef(true);
   const prevMessagesLenRef = useRef(0);
   const dragDepthRef = useRef(0);
+  const [showNoAiKeyPopup, setShowNoAiKeyPopup] = useState(false);
+  const [showSettingsToAi, setShowSettingsToAi] = useState(false);
 
   // Build known nicknames set from profile cache for mention highlighting
   const knownNicknames = useMemo(() => {
@@ -197,6 +200,10 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
 
   // Translate reply: replaces input with translated text for user to review before sending
   const handleTranslateReply = useCallback(async () => {
+    if (!hasAiKey || !hasAiModel) {
+      setShowNoAiKeyPopup(true);
+      return;
+    }
     if (!input.trim() || !replyingTo || translatingReply) return;
     setTranslatingReply(true);
     try {
@@ -207,7 +214,7 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
     } finally {
       setTranslatingReply(false);
     }
-  }, [input, replyingTo, translatingReply, invokeTranslateReply]);
+  }, [hasAiKey, hasAiModel, input, replyingTo, translatingReply, invokeTranslateReply]);
 
   const handleSend = useCallback(async () => {
     if ((!input.trim() && !pendingImage) || sending || translatingReply || uploadingImage) return;
@@ -391,7 +398,10 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
   }, []);
 
   const handleTranslate = useCallback((message: ChatMessage) => {
-    if (!hasAiKey || !hasAiModel) return;
+    if (!hasAiKey || !hasAiModel) {
+      setShowNoAiKeyPopup(true);
+      return;
+    }
     translate(message.id, message.content);
   }, [hasAiKey, hasAiModel, translate]);
 
@@ -515,7 +525,7 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
                 showNickname={item.showNickname}
                 onDelete={item.message.user_id === userId ? deleteMessage : undefined}
                 onReply={handleReply}
-                onTranslate={hasAiKey && hasAiModel ? handleTranslate : undefined}
+                onTranslate={handleTranslate}
                 reactions={reactions.get(item.message.id)}
                 userId={userId}
                 onReact={toggleReaction}
@@ -635,31 +645,29 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
                 {replyingTo.content.length > 50 ? replyingTo.content.slice(0, 50) + "…" : replyingTo.content}
               </span>
             </div>
-            {hasAiKey && hasAiModel && (
-              <button
-                onClick={handleTranslateReply}
-                disabled={!input.trim() || translatingReply}
-                style={{
-                  background: translatingReply ? "rgba(124, 92, 252, 0.2)" : "rgba(124, 92, 252, 0.06)",
-                  border: "1px solid rgba(124, 92, 252, 0.15)",
-                  borderRadius: 10,
-                  cursor: !input.trim() || translatingReply ? "default" : "pointer",
-                  padding: "3px 8px",
-                  fontSize: 9,
-                  color: input.trim() ? "var(--accent-purple)" : "var(--text-muted)",
-                  fontWeight: 700,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 3,
-                  flexShrink: 0,
-                  opacity: !input.trim() ? 0.5 : 1,
-                  transition: "all 0.15s ease",
-                }}
-              >
-                <TranslateIcon size={10} />
-                <span>{translatingReply ? t("chat.translating") : t("chat.translateReply")}</span>
-              </button>
-            )}
+            <button
+              onClick={handleTranslateReply}
+              disabled={!input.trim() || translatingReply}
+              style={{
+                background: translatingReply ? "rgba(124, 92, 252, 0.2)" : "rgba(124, 92, 252, 0.06)",
+                border: "1px solid rgba(124, 92, 252, 0.15)",
+                borderRadius: 10,
+                cursor: !input.trim() || translatingReply ? "default" : "pointer",
+                padding: "3px 8px",
+                fontSize: 9,
+                color: input.trim() ? "var(--accent-purple)" : "var(--text-muted)",
+                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                gap: 3,
+                flexShrink: 0,
+                opacity: !input.trim() ? 0.5 : 1,
+                transition: "all 0.15s ease",
+              }}
+            >
+              <TranslateIcon size={10} />
+              <span>{translatingReply ? t("chat.translating") : t("chat.translateReply")}</span>
+            </button>
             <button
               onClick={() => { setReplyingTo(null); }}
               style={{
@@ -813,6 +821,92 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
         </div>
       )}
 
+      {/* No AI Key popup */}
+      {showNoAiKeyPopup && (
+        <NoAiKeyPopup
+          onClose={() => setShowNoAiKeyPopup(false)}
+          onGoToSettings={() => {
+            setShowNoAiKeyPopup(false);
+            setShowSettingsToAi(true);
+          }}
+        />
+      )}
+
+      {/* Settings overlay opened from the no-AI-key popup */}
+      <SettingsOverlay
+        visible={showSettingsToAi}
+        onClose={() => setShowSettingsToAi(false)}
+        initialTab="ai"
+        centered
+      />
+
+    </div>
+  );
+}
+
+function NoAiKeyPopup({ onClose, onGoToSettings }: { onClose: () => void; onGoToSettings: () => void }) {
+  const t = useI18n();
+
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handleEsc, true);
+    return () => document.removeEventListener("keydown", handleEsc, true);
+  }, [onClose]);
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 999,
+        background: "rgba(0, 0, 0, 0.4)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "var(--bg-primary)",
+          borderRadius: 12,
+          padding: "20px 24px",
+          maxWidth: 280,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 12,
+          textAlign: "center",
+        }}
+      >
+        <TranslateIcon size={24} />
+        <p style={{ fontSize: 12, color: "var(--text-primary)", fontWeight: 600, margin: 0, lineHeight: 1.5 }}>
+          {t("chat.noAiKey")}
+        </p>
+        <button
+          onClick={onGoToSettings}
+          style={{
+            background: "linear-gradient(135deg, var(--accent-purple), var(--accent-pink, #c084fc))",
+            color: "#fff",
+            border: "none",
+            borderRadius: 8,
+            padding: "8px 20px",
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: "pointer",
+            transition: "opacity 0.15s ease",
+          }}
+        >
+          {t("chat.noAiKey.goToSettings")}
+        </button>
+      </div>
     </div>
   );
 }
