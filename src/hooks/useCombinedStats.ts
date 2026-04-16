@@ -101,11 +101,15 @@ function mergeStats(statsList: AllStats[]): AllStats {
 
   const daily = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 
+  // Take the first available analytics (currently only Claude provides it)
+  const analytics = statsList.find(s => s.analytics)?.analytics;
+
   return {
     daily,
     model_usage: modelUsage,
     total_sessions: totalSessions,
     total_messages: totalMessages,
     first_session_date: firstDate,
+    analytics,
   };
 }

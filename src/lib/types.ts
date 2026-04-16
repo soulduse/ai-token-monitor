@@ -19,12 +19,45 @@ export interface ModelUsage {
   cost_usd: number;
 }
 
+export interface ProjectUsage {
+  name: string;
+  cost_usd: number;
+  tokens: number;
+  sessions: number;
+  messages: number;
+}
+
+export interface ToolCount {
+  name: string;
+  count: number;
+}
+
+export interface McpServerUsage {
+  server: string;
+  calls: number;
+}
+
+export interface ActivityCategory {
+  category: string;
+  cost_usd: number;
+  messages: number;
+}
+
+export interface AnalyticsData {
+  project_usage: ProjectUsage[];
+  tool_usage: ToolCount[];
+  shell_commands: ToolCount[];
+  mcp_usage: McpServerUsage[];
+  activity_breakdown: ActivityCategory[];
+}
+
 export interface AllStats {
   daily: DailyUsage[];
   model_usage: Record<string, ModelUsage>;
   total_sessions: number;
   total_messages: number;
   first_session_date: string | null;
+  analytics?: AnalyticsData;
 }
 
 export type LeaderboardProvider = "claude" | "codex" | "opencode";
