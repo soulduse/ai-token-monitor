@@ -13,18 +13,33 @@ type SettingsTab = "general" | "account" | "ai" | "webhooks";
 interface Props {
   visible: boolean;
   onClose: () => void;
+  initialTab?: SettingsTab;
+  centered?: boolean;
 }
 
-export function SettingsOverlay({ visible, onClose }: Props) {
+export function SettingsOverlay({ visible, onClose, initialTab, centered }: Props) {
   const { prefs, updatePrefs } = useSettings();
   const { user, profile, signIn, signOut, available: leaderboardAvailable } = useAuth();
   const [appVersion, setAppVersion] = useState("");
-  const [activeTab, setActiveTab] = useState<SettingsTab>("general");
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? "general");
   const t = useI18n();
 
   useEffect(() => {
     getVersion().then(setAppVersion);
   }, []);
+
+  useEffect(() => {
+    if (!visible) return;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handleEsc, true);
+    return () => document.removeEventListener("keydown", handleEsc, true);
+  }, [visible, onClose]);
 
   if (!visible) return null;
 
@@ -35,33 +50,60 @@ export function SettingsOverlay({ visible, onClose }: Props) {
         style={{
           position: "fixed",
           inset: 0,
-          zIndex: 50,
+          zIndex: centered ? 998 : 50,
+          background: centered ? "rgba(0, 0, 0, 0.4)" : "transparent",
+          ...(centered ? { display: "flex", alignItems: "center", justifyContent: "center" } : {}),
         }}
       />
       <div style={{
-        position: "absolute",
-        top: 48,
-        right: 16,
+        position: centered ? "fixed" : "absolute",
+        ...(centered
+          ? { top: "50%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 999 }
+          : { top: 48, right: 16, zIndex: 51 }),
         background: "var(--bg-card)",
         borderRadius: "var(--radius-md)",
-        boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+        boxShadow: centered ? "0 12px 40px rgba(0,0,0,0.3)" : "0 8px 24px rgba(0,0,0,0.15)",
         padding: 12,
-        zIndex: 51,
         width: 280,
-        maxHeight: "calc(100vh - 80px)",
+        maxHeight: centered ? "80vh" : "calc(100vh - 80px)",
         display: "flex",
         flexDirection: "column",
         border: "1px solid rgba(124, 92, 252, 0.1)",
       }}>
         <div style={{
-          fontSize: 11,
-          fontWeight: 700,
-          color: "var(--text-secondary)",
-          textTransform: "uppercase",
-          letterSpacing: "0.5px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
           marginBottom: 8,
         }}>
-          {t("settings.title")}
+          <div style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: "var(--text-secondary)",
+            textTransform: "uppercase",
+            letterSpacing: "0.5px",
+          }}>
+            {t("settings.title")}
+          </div>
+          {centered && (
+            <button
+              onClick={onClose}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: 2,
+                color: "var(--text-muted)",
+                fontSize: 14,
+                lineHeight: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              ✕
+            </button>
+          )}
         </div>
 
         {/* Tab bar */}
@@ -125,7 +167,7 @@ export function SettingsOverlay({ visible, onClose }: Props) {
           )}
         </div>
 
-        {/* Footer: version + quit */}
+        {/* Footer: version + quit/close */}
         <div style={{
           height: 1,
           background: "var(--heat-0)",
@@ -134,37 +176,58 @@ export function SettingsOverlay({ visible, onClose }: Props) {
         <div style={{
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between",
+          justifyContent: centered ? "flex-end" : "space-between",
         }}>
-          <span style={{
-            fontSize: 10,
-            color: "var(--text-muted)",
-            fontWeight: 500,
-          }}>
-            v{appVersion}
-          </span>
-          <button
-            onClick={() => invoke("quit_app")}
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              padding: "4px 12px",
-              borderRadius: 6,
-              border: "none",
-              cursor: "pointer",
-              background: "rgba(239, 68, 68, 0.1)",
-              color: "#ef4444",
-              transition: "background 0.15s ease",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "rgba(239, 68, 68, 0.2)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "rgba(239, 68, 68, 0.1)";
-            }}
-          >
-            {t("settings.quit")}
-          </button>
+          {!centered && (
+            <span style={{
+              fontSize: 10,
+              color: "var(--text-muted)",
+              fontWeight: 500,
+            }}>
+              v{appVersion}
+            </span>
+          )}
+          {centered ? (
+            <button
+              onClick={onClose}
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                padding: "4px 12px",
+                borderRadius: 6,
+                border: "none",
+                cursor: "pointer",
+                background: "rgba(124, 92, 252, 0.1)",
+                color: "var(--accent-purple)",
+                transition: "background 0.15s ease",
+              }}
+            >
+              {t("settings.close")}
+            </button>
+          ) : (
+            <button
+              onClick={() => invoke("quit_app")}
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                padding: "4px 12px",
+                borderRadius: 6,
+                border: "none",
+                cursor: "pointer",
+                background: "rgba(239, 68, 68, 0.1)",
+                color: "#ef4444",
+                transition: "background 0.15s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(239, 68, 68, 0.2)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "rgba(239, 68, 68, 0.1)";
+              }}
+            >
+              {t("settings.quit")}
+            </button>
+          )}
         </div>
       </div>
     </>
