@@ -3,6 +3,7 @@ import type { DailyUsage } from "../lib/types";
 import { formatTokens, formatCost, getTotalTokens, formatDate, toLocalDateStr } from "../lib/format";
 import { useSettings } from "../contexts/SettingsContext";
 import { useI18n } from "../i18n/I18nContext";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 interface Props {
   daily: DailyUsage[];
@@ -13,7 +14,9 @@ export function DailyChart({ daily, days = 7 }: Props) {
   const { prefs } = useSettings();
   const t = useI18n();
   const [mode, setMode] = useState<"tokens" | "cost">("tokens");
+  const [view, setView] = useState<"chart" | "list">("chart");
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const dailyMap = useMemo(() => {
     const map = new Map<string, DailyUsage>();
@@ -76,7 +79,7 @@ export function DailyChart({ daily, days = 7 }: Props) {
         marginBottom: 10,
       }}>
         <div style={{
-          fontSize: 11,
+          fontSize: 12,
           fontWeight: 700,
           color: "var(--text-secondary)",
           textTransform: "uppercase",
@@ -95,7 +98,7 @@ export function DailyChart({ daily, days = 7 }: Props) {
               key={m}
               onClick={() => setMode(m)}
               style={{
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: 600,
                 padding: "2px 8px",
                 borderRadius: 4,
@@ -110,8 +113,35 @@ export function DailyChart({ daily, days = 7 }: Props) {
             </button>
           ))}
         </div>
+        <div style={{
+          display: "flex",
+          background: "var(--heat-0)",
+          borderRadius: 6,
+          padding: 2,
+        }}>
+          {(["chart", "list"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                padding: "2px 8px",
+                borderRadius: 4,
+                border: "none",
+                cursor: "pointer",
+                background: view === v ? "var(--accent-purple)" : "transparent",
+                color: view === v ? "#fff" : "var(--text-secondary)",
+                transition: "all 0.15s ease",
+              }}
+            >
+              {v === "chart" ? t("daily.chart") : t("daily.list")}
+            </button>
+          ))}
+        </div>
       </div>
 
+      {view === "chart" ? (<>
       <div style={{ position: "relative" }}>
         <svg
           viewBox={`0 0 ${W} ${H}`}
@@ -193,7 +223,7 @@ export function DailyChart({ daily, days = 7 }: Props) {
             color: "var(--bg-primary)",
             padding: "4px 8px",
             borderRadius: 6,
-            fontSize: 10,
+            fontSize: 11,
             fontWeight: 600,
             whiteSpace: "nowrap",
             pointerEvents: "none",
@@ -223,7 +253,7 @@ export function DailyChart({ daily, days = 7 }: Props) {
           const dayLabel = new Date(d.date + "T00:00:00").toLocaleDateString("en", { weekday: "short" });
           return (
             <span key={i} style={{
-              fontSize: 8,
+              fontSize: 9,
               color: "var(--text-secondary)",
               fontWeight: 600,
               textAlign: "center",
@@ -233,6 +263,97 @@ export function DailyChart({ daily, days = 7 }: Props) {
             </span>
           );
         })}
+      </div>
+      </>) : (
+      <DailyList
+        chartData={chartData}
+        mode={mode}
+        numberFormat={prefs.number_format}
+        copied={copied}
+        onCopy={async () => {
+          const lines = chartData
+            .filter((d) => d.tokens > 0 || d.cost > 0)
+            .map((d) => `${d.date}: ${mode === "tokens" ? d.tokens.toLocaleString() : formatCost(d.cost)}`)
+            .join("\n");
+          await writeText(lines);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        }}
+        t={t}
+      />
+      )}
+    </div>
+  );
+}
+
+function DailyList({ chartData, mode, numberFormat, copied, onCopy, t }: {
+  chartData: { date: string; tokens: number; cost: number }[];
+  mode: "tokens" | "cost";
+  numberFormat: "compact" | "full";
+  copied: boolean;
+  onCopy: () => void;
+  t: (key: string) => string;
+}) {
+  return (
+    <div>
+      <div style={{
+        maxHeight: 220,
+        overflowY: "auto",
+        display: "flex",
+        flexDirection: "column",
+        gap: 1,
+      }}>
+        {chartData.map((d) => {
+          const hasData = d.tokens > 0 || d.cost > 0;
+          return (
+            <div key={d.date} style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: "4px 8px",
+              borderRadius: 4,
+              background: hasData ? "var(--bg-primary)" : "transparent",
+              opacity: hasData ? 1 : 0.4,
+            }}>
+              <span style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: "var(--text-secondary)",
+                fontVariantNumeric: "tabular-nums",
+              }}>
+                {d.date}
+              </span>
+              <span style={{
+                fontSize: 13,
+                fontWeight: 700,
+                color: hasData ? "var(--accent-purple)" : "var(--text-secondary)",
+                fontVariantNumeric: "tabular-nums",
+              }}>
+                {mode === "tokens"
+                  ? (hasData ? formatTokens(d.tokens, numberFormat) : "—")
+                  : (hasData ? formatCost(d.cost) : "—")}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+        <button
+          onClick={onCopy}
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            padding: "4px 12px",
+            borderRadius: 6,
+            border: "none",
+            cursor: "pointer",
+            background: copied ? "var(--accent-mint)" : "var(--accent-purple)",
+            color: "#fff",
+            transition: "all 0.15s ease",
+          }}
+        >
+          {copied ? t("daily.copied") : t("daily.copy")}
+        </button>
       </div>
     </div>
   );
