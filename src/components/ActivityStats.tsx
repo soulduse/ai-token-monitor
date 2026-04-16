@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { DailyUsage } from "../lib/types";
 import { getTotalTokens, toLocalDateStr, formatTokens } from "../lib/format";
 import { useSettings } from "../contexts/SettingsContext";
@@ -151,7 +151,7 @@ export function ActivityStats({ daily, year }: Props) {
 
       {/* Average */}
       <div style={{
-        fontSize: 10,
+        fontSize: 11,
         color: "var(--text-secondary)",
         fontWeight: 600,
         marginBottom: 10,
@@ -162,7 +162,7 @@ export function ActivityStats({ daily, year }: Props) {
 
       {/* Streaks */}
       <div style={{
-        fontSize: 10,
+        fontSize: 12,
         fontWeight: 700,
         color: "var(--text-secondary)",
         textTransform: "uppercase",
@@ -190,23 +190,55 @@ export function ActivityStats({ daily, year }: Props) {
 }
 
 function StatBox({ value, label, sub }: { value: string; label: string; sub?: string }) {
+  const [hover, setHover] = useState(false);
   return (
-    <div style={{
-      flex: 1,
-      background: "var(--bg-primary)",
-      borderRadius: "var(--radius-sm)",
-      padding: "8px 10px",
-    }}>
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        flex: 1,
+        background: "var(--bg-primary)",
+        borderRadius: "var(--radius-sm)",
+        padding: "8px 10px",
+        minWidth: 0,
+        overflow: "visible",
+        cursor: "default",
+        position: "relative",
+      }}
+    >
+      {hover && (
+        <div style={{
+          position: "absolute",
+          bottom: "100%",
+          left: "50%",
+          transform: "translateX(-50%)",
+          marginBottom: 4,
+          background: "var(--text-primary)",
+          color: "var(--bg-primary)",
+          padding: "4px 8px",
+          borderRadius: 6,
+          fontSize: 12,
+          fontWeight: 700,
+          whiteSpace: "nowrap",
+          pointerEvents: "none",
+          zIndex: 100,
+        }}>
+          {value}
+        </div>
+      )}
       <div style={{
-        fontSize: 16,
+        fontSize: 18,
         fontWeight: 800,
         color: "var(--accent-purple)",
         letterSpacing: "-0.3px",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
       }}>
         {value}
       </div>
       <div style={{
-        fontSize: 9,
+        fontSize: 10,
         fontWeight: 700,
         color: "var(--text-secondary)",
         textTransform: "uppercase",
@@ -215,7 +247,7 @@ function StatBox({ value, label, sub }: { value: string; label: string; sub?: st
       </div>
       {sub && (
         <div style={{
-          fontSize: 8,
+          fontSize: 9,
           color: "var(--text-secondary)",
           marginTop: 2,
         }}>
@@ -237,14 +269,14 @@ function StreakBox({ days, label, start, end }: { days: number; label: string; s
     }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
         <span style={{
-          fontSize: 18,
+          fontSize: 20,
           fontWeight: 800,
           color: "var(--accent-purple)",
         }}>
           {days}
         </span>
         <span style={{
-          fontSize: 10,
+          fontSize: 11,
           fontWeight: 600,
           color: "var(--text-secondary)",
         }}>
@@ -252,7 +284,7 @@ function StreakBox({ days, label, start, end }: { days: number; label: string; s
         </span>
       </div>
       <div style={{
-        fontSize: 9,
+        fontSize: 10,
         fontWeight: 700,
         color: "var(--text-secondary)",
         textTransform: "uppercase",
@@ -261,7 +293,7 @@ function StreakBox({ days, label, start, end }: { days: number; label: string; s
       </div>
       {days > 0 && start && end && (
         <div style={{
-          fontSize: 8,
+          fontSize: 9,
           color: "var(--text-secondary)",
           marginTop: 2,
         }}>

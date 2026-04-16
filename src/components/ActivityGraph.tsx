@@ -147,7 +147,7 @@ export function ActivityGraph({ daily }: Props) {
         marginBottom: 10,
       }}>
         <div style={{
-          fontSize: 11,
+          fontSize: 12,
           fontWeight: 700,
           color: "var(--text-secondary)",
           textTransform: "uppercase",
@@ -168,7 +168,7 @@ export function ActivityGraph({ daily }: Props) {
               key={m}
               onClick={() => setViewMode(m)}
               style={{
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: 600,
                 padding: "2px 8px",
                 borderRadius: 4,
@@ -243,7 +243,7 @@ export function ActivityGraph({ daily }: Props) {
               return (
                 <div key={col} style={{
                   width: cellSize + cellGap,
-                  fontSize: 7,
+                  fontSize: 8,
                   color: "var(--text-secondary)",
                   fontWeight: 600,
                   flexShrink: 0,
@@ -267,7 +267,7 @@ export function ActivityGraph({ daily }: Props) {
               {DAY_LABEL_KEYS.map((key, i) => (
                 <div key={i} style={{
                   height: cellSize,
-                  fontSize: 7,
+                  fontSize: 8,
                   color: "var(--text-secondary)",
                   fontWeight: 600,
                   display: "flex",
@@ -339,7 +339,7 @@ export function ActivityGraph({ daily }: Props) {
         marginTop: 8,
         justifyContent: "flex-end",
       }}>
-        <span style={{ fontSize: 8, color: "var(--text-secondary)", marginRight: 2 }}>{t("activity.less")}</span>
+        <span style={{ fontSize: 9, color: "var(--text-secondary)", marginRight: 2 }}>{t("activity.less")}</span>
         {HEAT_COLORS.map((color, i) => (
           <div key={i} style={{
             width: 8,
@@ -348,7 +348,7 @@ export function ActivityGraph({ daily }: Props) {
             background: color,
           }} />
         ))}
-        <span style={{ fontSize: 8, color: "var(--text-secondary)", marginLeft: 2 }}>{t("activity.more")}</span>
+        <span style={{ fontSize: 9, color: "var(--text-secondary)", marginLeft: 2 }}>{t("activity.more")}</span>
       </div>
 
       {/* Tooltip */}
@@ -362,7 +362,7 @@ export function ActivityGraph({ daily }: Props) {
           color: "var(--bg-primary)",
           padding: "3px 6px",
           borderRadius: 4,
-          fontSize: 9,
+          fontSize: 10,
           fontWeight: 600,
           whiteSpace: "nowrap",
           pointerEvents: "none",

@@ -117,7 +117,7 @@ export function Heatmap({ daily, weeks: WEEKS = DEFAULT_WEEKS }: Props) {
       boxShadow: "var(--shadow-card)",
     }}>
       <div style={{
-        fontSize: 11,
+        fontSize: 12,
         fontWeight: 700,
         color: "var(--text-secondary)",
         textTransform: "uppercase",
@@ -139,7 +139,7 @@ export function Heatmap({ daily, weeks: WEEKS = DEFAULT_WEEKS }: Props) {
           return (
             <div key={col} style={{
               width: 18,
-              fontSize: 9,
+              fontSize: 10,
               color: "var(--text-secondary)",
               fontWeight: 600,
             }}>
@@ -162,7 +162,7 @@ export function Heatmap({ daily, weeks: WEEKS = DEFAULT_WEEKS }: Props) {
           {DAY_LABEL_KEYS.map((key, i) => (
             <div key={i} style={{
               height: 14,
-              fontSize: 9,
+              fontSize: 10,
               color: "var(--text-secondary)",
               fontWeight: 600,
               display: "flex",
@@ -220,7 +220,7 @@ export function Heatmap({ daily, weeks: WEEKS = DEFAULT_WEEKS }: Props) {
         marginTop: 10,
         justifyContent: "flex-end",
       }}>
-        <span style={{ fontSize: 9, color: "var(--text-secondary)", marginRight: 4 }}>{t("activity.less")}</span>
+        <span style={{ fontSize: 10, color: "var(--text-secondary)", marginRight: 4 }}>{t("activity.less")}</span>
         {HEAT_COLORS.map((color, i) => (
           <div key={i} style={{
             width: 10,
@@ -229,7 +229,7 @@ export function Heatmap({ daily, weeks: WEEKS = DEFAULT_WEEKS }: Props) {
             background: color,
           }} />
         ))}
-        <span style={{ fontSize: 9, color: "var(--text-secondary)", marginLeft: 4 }}>{t("activity.more")}</span>
+        <span style={{ fontSize: 10, color: "var(--text-secondary)", marginLeft: 4 }}>{t("activity.more")}</span>
       </div>
 
       {tooltip && (
