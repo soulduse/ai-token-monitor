@@ -25,12 +25,51 @@ pub struct ModelUsage {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectUsage {
+    pub name: String,
+    pub cost_usd: f64,
+    pub tokens: u64,
+    pub sessions: u32,
+    pub messages: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCount {
+    pub name: String,
+    pub count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServerUsage {
+    pub server: String,
+    pub calls: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivityCategory {
+    pub category: String,
+    pub cost_usd: f64,
+    pub messages: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalyticsData {
+    pub project_usage: Vec<ProjectUsage>,
+    pub tool_usage: Vec<ToolCount>,
+    pub shell_commands: Vec<ToolCount>,
+    pub mcp_usage: Vec<McpServerUsage>,
+    pub activity_breakdown: Vec<ActivityCategory>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AllStats {
     pub daily: Vec<DailyUsage>,
     pub model_usage: HashMap<String, ModelUsage>,
     pub total_sessions: u32,
     pub total_messages: u32,
     pub first_session_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub analytics: Option<AnalyticsData>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

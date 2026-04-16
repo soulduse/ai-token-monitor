@@ -363,6 +363,7 @@ impl CodexProvider {
             total_sessions,
             total_messages,
             first_session_date: first_date,
+            analytics: None,
         }
     }
 

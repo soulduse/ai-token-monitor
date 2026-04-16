@@ -11,7 +11,7 @@ use std::time::{Duration, Instant, SystemTime};
 use serde::{Deserialize, Serialize};
 
 use super::traits::TokenProvider;
-use super::types::{AllStats, DailyUsage, ModelUsage};
+use super::types::{ActivityCategory, AllStats, AnalyticsData, DailyUsage, McpServerUsage, ModelUsage, ProjectUsage, ToolCount};
 
 /// Unified incremental cache: stats + per-file metadata for mtime-based change detection.
 struct IncrementalCache {
@@ -63,7 +63,7 @@ fn calculate_cost(
 /// v1 (missing/0): dates stored as UTC strings (bug)
 /// v2: dates stored as local-timezone strings (correct)
 /// v3: total_tokens now includes cache tokens; cache TTL-aware cost calculation
-const CACHE_VERSION: u32 = 3;
+const CACHE_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DiskCache {
@@ -324,12 +324,16 @@ impl ClaudeCodeProvider {
         daily.sort_by(|a, b| a.date.cmp(&b.date));
         let total_sessions = daily.iter().map(|d| d.sessions as u32).sum::<u32>();
 
+        // Build analytics data from entries
+        let analytics = build_analytics(entries);
+
         AllStats {
             daily,
             model_usage: model_usage_map,
             total_sessions,
             total_messages,
             first_session_date: first_date,
+            analytics: Some(analytics),
         }
     }
 
@@ -358,6 +362,44 @@ struct SessionEntry {
     cache_creation_5m_tokens: u64,
     cache_creation_1h_tokens: u64,
     web_search_requests: u32,
+    // Analytics fields
+    cwd: String,
+    tool_names: Vec<String>,
+    bash_commands: Vec<String>,
+}
+
+/// Extract individual command names from a shell command string.
+/// Splits on `&&`, `||`, `;`, `|` and takes the basename of the first token of each segment.
+fn extract_bash_commands(command: &str) -> Vec<String> {
+    let mut commands = Vec::new();
+    // First split on ; then handle && || | within each part.
+    // We split on ';' first, then on '&&', '||', and '|' in that order
+    // to avoid splitting on individual '&' characters (which would break
+    // URL query params like "?a=1&b=2" or background operator "&").
+    for semi_part in command.split(';') {
+        // Split on && and || (greedy 2-char tokens first)
+        for and_part in semi_part.split("&&") {
+            for or_part in and_part.split("||") {
+                for segment in or_part.split('|') {
+                    let trimmed = segment.trim();
+                    if trimmed.is_empty() { continue; }
+                    // Strip leading & (background operator remnant)
+                    let trimmed = trimmed.trim_start_matches('&').trim();
+                    if trimmed.is_empty() { continue; }
+                    // Take first token (the command name)
+                    let first_token = trimmed.split_whitespace().next().unwrap_or("");
+                    if first_token.is_empty() { continue; }
+                    // Extract basename (after last '/')
+                    let basename = first_token.rsplit('/').next().unwrap_or(first_token);
+                    // Skip cd and empty tokens
+                    if !basename.is_empty() && basename != "cd" {
+                        commands.push(basename.to_string());
+                    }
+                }
+            }
+        }
+    }
+    commands
 }
 
 fn parse_session_line(line: &str) -> Option<SessionEntry> {
@@ -428,11 +470,199 @@ fn parse_session_line(line: &str) -> Option<SessionEntry> {
     let web_search_requests = usage.pointer("/server_tool_use/web_search_requests")
         .and_then(|v| v.as_u64()).unwrap_or(0) as u32;
 
+    // Extract cwd (project path)
+    let cwd = value.get("cwd").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+    // Extract tool names and bash commands from content blocks
+    let mut tool_names: Vec<String> = Vec::new();
+    let mut bash_commands: Vec<String> = Vec::new();
+    if let Some(content) = message.get("content").and_then(|c| c.as_array()) {
+        for block in content {
+            if block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
+                if let Some(name) = block.get("name").and_then(|n| n.as_str()) {
+                    tool_names.push(name.to_string());
+                    // Extract individual commands from Bash tool_use
+                    if name == "Bash" {
+                        if let Some(cmd) = block.pointer("/input/command").and_then(|c| c.as_str()) {
+                            for part in extract_bash_commands(cmd) {
+                                bash_commands.push(part);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Some(SessionEntry {
         date, timestamp: timestamp.to_string(), model, session_id, message_id, request_id,
         input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,
         cache_creation_5m_tokens, cache_creation_1h_tokens, web_search_requests,
+        cwd, tool_names, bash_commands,
     })
+}
+
+/// Build analytics data (project/tool/shell/MCP breakdowns) from parsed entries.
+fn build_analytics(entries: &HashMap<String, SessionEntry>) -> AnalyticsData {
+    struct ProjectAcc {
+        cost_usd: f64,
+        tokens: u64,
+        sessions: HashSet<String>,
+        messages: u32,
+    }
+
+    struct ActivityAcc {
+        cost_usd: f64,
+        messages: u32,
+    }
+
+    let mut project_map: HashMap<String, ProjectAcc> = HashMap::new();
+    let mut tool_map: HashMap<String, u32> = HashMap::new();
+    let mut shell_map: HashMap<String, u32> = HashMap::new();
+    let mut mcp_map: HashMap<String, u32> = HashMap::new();
+    let mut activity_map: HashMap<String, ActivityAcc> = HashMap::new();
+
+    for entry in entries.values() {
+        // Project usage — derive project name from cwd
+        if !entry.cwd.is_empty() {
+            let project_name = entry.cwd.rsplit('/').next().unwrap_or(&entry.cwd).to_string();
+            let pricing = pricing::get_claude_pricing(&entry.model);
+            let cost = calculate_cost(
+                &pricing, entry.input_tokens, entry.output_tokens,
+                entry.cache_read_input_tokens,
+                entry.cache_creation_5m_tokens, entry.cache_creation_1h_tokens,
+                entry.web_search_requests,
+            );
+            let total_tokens = entry.input_tokens + entry.output_tokens
+                + entry.cache_read_input_tokens + entry.cache_creation_input_tokens;
+
+            let acc = project_map.entry(project_name).or_insert_with(|| ProjectAcc {
+                cost_usd: 0.0, tokens: 0, sessions: HashSet::new(), messages: 0,
+            });
+            acc.cost_usd += cost;
+            acc.tokens += total_tokens;
+            acc.messages += 1;
+            if !entry.session_id.is_empty() {
+                acc.sessions.insert(entry.session_id.clone());
+            }
+        }
+
+        // Tool usage
+        for tool in &entry.tool_names {
+            if tool.starts_with("mcp__") {
+                // MCP server tracking — extract server name
+                let parts: Vec<&str> = tool.splitn(3, "__").collect();
+                if parts.len() >= 2 {
+                    *mcp_map.entry(parts[1].to_string()).or_insert(0) += 1;
+                }
+            } else {
+                *tool_map.entry(tool.clone()).or_insert(0) += 1;
+            }
+        }
+
+        // Shell commands
+        for cmd in &entry.bash_commands {
+            *shell_map.entry(cmd.clone()).or_insert(0) += 1;
+        }
+
+        // Activity classification (tool-pattern based)
+        let category = classify_activity(&entry.tool_names, &entry.bash_commands);
+        let pricing = pricing::get_claude_pricing(&entry.model);
+        let entry_cost = calculate_cost(
+            &pricing, entry.input_tokens, entry.output_tokens,
+            entry.cache_read_input_tokens,
+            entry.cache_creation_5m_tokens, entry.cache_creation_1h_tokens,
+            entry.web_search_requests,
+        );
+        let acc = activity_map.entry(category).or_insert_with(|| ActivityAcc {
+            cost_usd: 0.0, messages: 0,
+        });
+        acc.cost_usd += entry_cost;
+        acc.messages += 1;
+    }
+
+    // Convert to sorted Vecs
+    let mut project_usage: Vec<ProjectUsage> = project_map.into_iter()
+        .map(|(name, acc)| ProjectUsage {
+            name, cost_usd: acc.cost_usd, tokens: acc.tokens,
+            sessions: acc.sessions.len() as u32, messages: acc.messages,
+        })
+        .collect();
+    project_usage.sort_by(|a, b| b.cost_usd.partial_cmp(&a.cost_usd).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut tool_usage: Vec<ToolCount> = tool_map.into_iter()
+        .map(|(name, count)| ToolCount { name, count })
+        .collect();
+    tool_usage.sort_by(|a, b| b.count.cmp(&a.count));
+
+    let mut shell_commands: Vec<ToolCount> = shell_map.into_iter()
+        .map(|(name, count)| ToolCount { name, count })
+        .collect();
+    shell_commands.sort_by(|a, b| b.count.cmp(&a.count));
+
+    let mut mcp_usage: Vec<McpServerUsage> = mcp_map.into_iter()
+        .map(|(server, calls)| McpServerUsage { server, calls })
+        .collect();
+    mcp_usage.sort_by(|a, b| b.calls.cmp(&a.calls));
+
+    let mut activity_breakdown: Vec<ActivityCategory> = activity_map.into_iter()
+        .map(|(category, acc)| ActivityCategory {
+            category, cost_usd: acc.cost_usd, messages: acc.messages,
+        })
+        .collect();
+    activity_breakdown.sort_by(|a, b| b.cost_usd.partial_cmp(&a.cost_usd).unwrap_or(std::cmp::Ordering::Equal));
+
+    AnalyticsData { project_usage, tool_usage, shell_commands, mcp_usage, activity_breakdown }
+}
+
+/// Classify an assistant message into an activity category based on tool usage patterns.
+fn classify_activity(tool_names: &[String], bash_commands: &[String]) -> String {
+    static EDIT_TOOLS: &[&str] = &["Edit", "Write", "NotebookEdit"];
+    static READ_TOOLS: &[&str] = &["Read", "Grep", "Glob"];
+    static AGENT_TOOLS: &[&str] = &["Agent", "TaskCreate", "TaskUpdate", "TaskGet", "TaskList", "TaskOutput"];
+    static TEST_CMDS: &[&str] = &["pytest", "vitest", "jest", "mocha", "npx"];
+    static GIT_CMDS: &[&str] = &["git"];
+    static BUILD_CMDS: &[&str] = &["docker", "make", "cargo", "npm", "yarn", "pnpm", "pip", "brew"];
+
+    if tool_names.is_empty() {
+        return "Conversation".to_string();
+    }
+
+    let has_edit = tool_names.iter().any(|t| EDIT_TOOLS.contains(&t.as_str()));
+    let has_bash = tool_names.iter().any(|t| t == "Bash");
+    let has_read = tool_names.iter().any(|t| READ_TOOLS.contains(&t.as_str()));
+    let has_agent = tool_names.iter().any(|t| AGENT_TOOLS.contains(&t.as_str()));
+    let has_search = tool_names.iter().any(|t| t == "WebSearch" || t == "WebFetch");
+    let has_plan = tool_names.iter().any(|t| t == "ExitPlanMode");
+
+    // Special cases first
+    if has_plan { return "Planning".to_string(); }
+    if has_agent { return "Delegation".to_string(); }
+
+    // Bash-only patterns (no edits)
+    if has_bash && !has_edit {
+        if bash_commands.iter().any(|c| TEST_CMDS.contains(&c.as_str())) {
+            return "Testing".to_string();
+        }
+        if bash_commands.iter().any(|c| GIT_CMDS.contains(&c.as_str())) {
+            return "Git Ops".to_string();
+        }
+        if bash_commands.iter().any(|c| BUILD_CMDS.contains(&c.as_str())) {
+            return "Build/Deploy".to_string();
+        }
+    }
+
+    // Edit tools → Coding (most common)
+    if has_edit { return "Coding".to_string(); }
+
+    // Read + Bash → Exploration
+    if has_bash && has_read { return "Exploration".to_string(); }
+    if has_bash { return "Exploration".to_string(); }
+
+    // Search/read only
+    if has_search || has_read { return "Exploration".to_string(); }
+
+    "Conversation".to_string()
 }
 
 /// Aggregate session entries into daily and model maps (for disk cache building).
@@ -808,5 +1038,57 @@ mod tests {
         let pricing = pricing::get_claude_pricing("claude-unknown-model");
         assert!((pricing.input - 3.0).abs() < 0.001);
         assert!((pricing.output - 15.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn extract_bash_commands_splits_on_separators() {
+        let cmds = extract_bash_commands("git status && npm run build");
+        assert_eq!(cmds, vec!["git", "npm"]);
+    }
+
+    #[test]
+    fn extract_bash_commands_handles_pipes_and_semicolons() {
+        let cmds = extract_bash_commands("grep -r foo | head -10; echo done");
+        assert_eq!(cmds, vec!["grep", "head", "echo"]);
+    }
+
+    #[test]
+    fn extract_bash_commands_skips_cd() {
+        let cmds = extract_bash_commands("cd /tmp && ls -la");
+        assert_eq!(cmds, vec!["ls"]);
+    }
+
+    #[test]
+    fn extract_bash_commands_handles_paths() {
+        let cmds = extract_bash_commands("/usr/bin/python3 script.py");
+        assert_eq!(cmds, vec!["python3"]);
+    }
+
+    #[test]
+    fn extract_bash_commands_handles_or_operator() {
+        let cmds = extract_bash_commands("cargo build || echo failed");
+        assert_eq!(cmds, vec!["cargo", "echo"]);
+    }
+
+    #[test]
+    fn extract_bash_commands_ignores_url_query_params() {
+        // URL query params should not be split as commands
+        let cmds = extract_bash_commands("curl \"https://example.com/dl?v=1&arch=arm64\"");
+        assert_eq!(cmds, vec!["curl"]);
+    }
+
+    #[test]
+    fn extract_bash_commands_handles_background_operator() {
+        let cmds = extract_bash_commands("npm run build &");
+        assert_eq!(cmds, vec!["npm"]);
+    }
+
+    #[test]
+    fn parse_session_line_extracts_tools() {
+        let line = r#"{"sessionId":"s1","type":"assistant","timestamp":"2026-04-01T10:00:00Z","cwd":"/home/user/project","requestId":"r1","message":{"id":"m1","model":"claude-sonnet-4-6-20260320","content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"/tmp/a.txt"}},{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"git status && npm test"}}],"usage":{"input_tokens":100,"output_tokens":50}}}"#;
+        let entry = parse_session_line(line).expect("should parse");
+        assert_eq!(entry.cwd, "/home/user/project");
+        assert_eq!(entry.tool_names, vec!["Read", "Bash"]);
+        assert_eq!(entry.bash_commands, vec!["git", "npm"]);
     }
 }

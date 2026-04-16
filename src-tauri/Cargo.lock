@@ -54,7 +54,7 @@ dependencies = [
 
 [[package]]
 name = "ai-token-monitor"
-version = "0.18.3"
+version = "0.18.6"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
