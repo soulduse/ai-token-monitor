@@ -1,5 +1,28 @@
 # Project Instructions
 
+## 릴리즈 키워드 명령어
+
+사용자가 아래 키워드를 입력하면 **전체 릴리즈 파이프라인을 자동으로 실행**한다:
+
+| 키워드 | 의미 |
+|--------|------|
+| `패치 출시해줘` / `패치버전 출시해줘` | patch 릴리즈 |
+| `마이너 출시해줘` / `마이너버전 출시해줘` | minor 릴리즈 |
+| `메이저 출시해줘` / `메이저버전 출시해줘` | major 릴리즈 |
+
+### 실행 절차 (자동)
+1. **커밋**: 변경사항을 논리적 단위별로 나눠서 커밋 (conventional commit 형식)
+2. **PR 생성**: 현재 브랜치에서 main으로 PR 생성
+3. **CI 대기**: `gh pr checks --watch`로 CI 통과 대기
+4. **머지**: CI 통과 후 squash merge
+5. **릴리즈**: `gh workflow run Release -f bump={patch|minor|major}`
+6. **결과 보고**: PR URL + Release 워크플로우 상태 보고
+
+### 주의사항
+- CI가 실패하면 머지하지 말고 사용자에게 보고
+- 릴리즈 워크플로우 실행 후 `gh run watch`로 상태 확인
+- 이미 main 브랜치에 있고 변경사항이 없으면 릴리즈만 실행
+
 ## GitHub Actions / CI/CD 규칙
 
 ### PR 생성 후 즉시 머지 금지
