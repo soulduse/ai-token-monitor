@@ -23,23 +23,39 @@ export function SourceSelector() {
   const [opencodeAvailable, setOpencodeAvailable] = useState(false);
   const [kimiAvailable, setKimiAvailable] = useState(false);
   const [glmAvailable, setGlmAvailable] = useState(false);
+  const [availabilityLoaded, setAvailabilityLoaded] = useState(false);
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    invoke<boolean>("is_codex_available")
-      .then(setCodexAvailable)
-      .catch(() => setCodexAvailable(false));
-    invoke<boolean>("is_opencode_available")
-      .then(setOpencodeAvailable)
-      .catch(() => setOpencodeAvailable(false));
-    invoke<boolean>("is_kimi_available")
-      .then(setKimiAvailable)
-      .catch(() => setKimiAvailable(false));
-    invoke<boolean>("is_glm_available")
-      .then(setGlmAvailable)
-      .catch(() => setGlmAvailable(false));
+    Promise.all([
+      invoke<boolean>("is_codex_available").catch(() => false),
+      invoke<boolean>("is_opencode_available").catch(() => false),
+      invoke<boolean>("is_kimi_available").catch(() => false),
+      invoke<boolean>("is_glm_available").catch(() => false),
+    ]).then(([codex, opencode, kimi, glm]) => {
+      setCodexAvailable(codex);
+      setOpencodeAvailable(opencode);
+      setKimiAvailable(kimi);
+      setGlmAvailable(glm);
+      setAvailabilityLoaded(true);
+    });
   }, []);
+
+  // Reconcile persisted prefs with current runtime availability. If a provider
+  // was toggled on before but is_*_available() now returns false (e.g. GLM was
+  // gated off, or a CLI was uninstalled), silently clear that flag so every
+  // downstream consumer (Leaderboard tabs, uploaders, combined stats) sees a
+  // single source of truth via prefs alone.
+  useEffect(() => {
+    if (!availabilityLoaded) return;
+    const patch: Partial<typeof prefs> = {};
+    if (prefs.include_codex && !codexAvailable) patch.include_codex = false;
+    if (prefs.include_opencode && !opencodeAvailable) patch.include_opencode = false;
+    if (prefs.include_kimi && !kimiAvailable) patch.include_kimi = false;
+    if (prefs.include_glm && !glmAvailable) patch.include_glm = false;
+    if (Object.keys(patch).length > 0) updatePrefs(patch);
+  }, [availabilityLoaded, codexAvailable, opencodeAvailable, kimiAvailable, glmAvailable, prefs.include_codex, prefs.include_opencode, prefs.include_kimi, prefs.include_glm, updatePrefs]);
 
   useEffect(() => {
     if (!open) return;
