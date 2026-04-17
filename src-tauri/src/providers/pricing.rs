@@ -14,6 +14,10 @@ struct PricingConfig {
     codex: ProviderConfig,
     #[serde(default)]
     opencode: Option<ProviderConfig>,
+    #[serde(default)]
+    kimi: Option<ProviderConfig>,
+    #[serde(default)]
+    glm: Option<ProviderConfig>,
 }
 
 #[derive(Deserialize)]
@@ -61,6 +65,19 @@ pub struct OpenCodePricing {
     pub output: f64,
     pub cache_read: f64,
     pub cache_write: f64,
+}
+
+pub struct KimiPricing {
+    pub input: f64,
+    pub output: f64,
+    pub cache_read: f64,
+}
+
+#[allow(dead_code)]
+pub struct GlmPricing {
+    pub input: f64,
+    pub output: f64,
+    pub cache_read: f64,
 }
 
 // --- Loading ---
@@ -122,6 +139,35 @@ pub fn get_codex_pricing(model: &str) -> CodexPricing {
     }
 }
 
+pub fn get_kimi_pricing(model: &str) -> KimiPricing {
+    let cfg = config();
+    if let Some(ref kimi) = cfg.kimi {
+        let entry = find_pricing(kimi, model);
+        return KimiPricing {
+            input: entry.input,
+            output: entry.output,
+            cache_read: entry.cache_read,
+        };
+    }
+    // Fallback defaults
+    KimiPricing { input: 0.60, output: 2.00, cache_read: 0.0 }
+}
+
+#[allow(dead_code)]
+pub fn get_glm_pricing(model: &str) -> GlmPricing {
+    let cfg = config();
+    if let Some(ref glm) = cfg.glm {
+        let entry = find_pricing(glm, model);
+        return GlmPricing {
+            input: entry.input,
+            output: entry.output,
+            cache_read: entry.cache_read,
+        };
+    }
+    // Fallback defaults
+    GlmPricing { input: 0.50, output: 1.00, cache_read: 0.0 }
+}
+
 pub fn get_opencode_pricing(model: &str) -> OpenCodePricing {
     let cfg = config();
     // Use dedicated opencode pricing if available, otherwise try to match
@@ -175,6 +221,10 @@ pub struct PricingTable {
     pub codex: Vec<PricingRow>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub opencode: Vec<PricingRow>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub kimi: Vec<PricingRow>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub glm: Vec<PricingRow>,
 }
 
 fn format_price(val: f64) -> String {
@@ -217,6 +267,8 @@ pub fn get_pricing_table() -> PricingTable {
         claude: deduplicated_rows(&cfg.claude, false),
         codex: deduplicated_rows(&cfg.codex, true),
         opencode: cfg.opencode.as_ref().map(|oc| deduplicated_rows(oc, false)).unwrap_or_default(),
+        kimi: cfg.kimi.as_ref().map(|k| deduplicated_rows(k, false)).unwrap_or_default(),
+        glm: cfg.glm.as_ref().map(|g| deduplicated_rows(g, false)).unwrap_or_default(),
     }
 }
 
@@ -231,6 +283,10 @@ mod tests {
         assert!(!cfg.codex.models.is_empty());
         assert!(cfg.opencode.is_some());
         assert!(!cfg.opencode.unwrap().models.is_empty());
+        assert!(cfg.kimi.is_some());
+        assert!(!cfg.kimi.unwrap().models.is_empty());
+        assert!(cfg.glm.is_some());
+        assert!(!cfg.glm.unwrap().models.is_empty());
     }
 
     #[test]

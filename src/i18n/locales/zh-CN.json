@@ -14,6 +14,10 @@
   "sources.claude": "Claude",
   "sources.codex": "Codex",
   "sources.opencode": "OpenCode",
+  "sources.kimi": "Kimi",
+  "sources.glm": "GLM",
+  "sources.summary.count": "{{total}} 个中 {{active}} 个启用",
+  "sources.open": "打开来源菜单",
 
   "today.title": "今日",
   "today.tokens": "令牌",

@@ -9,6 +9,8 @@ use sha2::{Digest, Sha256};
 
 use crate::providers::claude_code::ClaudeCodeProvider;
 use crate::providers::codex::CodexProvider;
+use crate::providers::glm::GlmProvider;
+use crate::providers::kimi::KimiProvider;
 use crate::providers::opencode::OpenCodeProvider;
 use crate::providers::pricing;
 use crate::providers::traits::TokenProvider;
@@ -90,6 +92,52 @@ pub async fn get_opencode_stats(app: tauri::AppHandle) -> Result<AllStats, Strin
 #[tauri::command]
 pub fn is_opencode_available() -> bool {
     OpenCodeProvider::new().is_available()
+}
+
+#[tauri::command]
+pub async fn get_kimi_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
+    let result = tauri::async_runtime::spawn_blocking(|| {
+        let provider = KimiProvider::new();
+        if !provider.is_available() {
+            return Err("Kimi stats not available".to_string());
+        }
+        provider.fetch_stats()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if result.is_ok() {
+        crate::update_tray_title(&app);
+    }
+    result
+}
+
+#[tauri::command]
+pub fn is_kimi_available() -> bool {
+    KimiProvider::new().is_available()
+}
+
+#[tauri::command]
+pub async fn get_glm_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
+    let result = tauri::async_runtime::spawn_blocking(|| {
+        let provider = GlmProvider::new();
+        if !provider.is_available() {
+            return Err("GLM stats not available".to_string());
+        }
+        provider.fetch_stats()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if result.is_ok() {
+        crate::update_tray_title(&app);
+    }
+    result
+}
+
+#[tauri::command]
+pub fn is_glm_available() -> bool {
+    GlmProvider::new().is_available()
 }
 
 #[tauri::command]

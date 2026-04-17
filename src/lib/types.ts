@@ -60,7 +60,7 @@ export interface AllStats {
   analytics?: AnalyticsData;
 }
 
-export type LeaderboardProvider = "claude" | "codex" | "opencode";
+export type LeaderboardProvider = "claude" | "codex" | "opencode" | "kimi" | "glm";
 
 export interface UserPreferences {
   number_format: "compact" | "full";
@@ -70,6 +70,8 @@ export interface UserPreferences {
   include_claude: boolean;
   include_codex: boolean;
   include_opencode: boolean;
+  include_kimi: boolean;
+  include_glm: boolean;
   theme: "github" | "purple" | "ocean" | "sunset";
   color_mode: "system" | "light" | "dark";
   language: "en" | "ko" | "ja" | "zh-CN" | "zh-TW" | "fr" | "es" | "de" | "tr" | "it";

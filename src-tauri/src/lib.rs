@@ -282,7 +282,23 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             0.0
         };
 
-        let today_cost = claude_cost + codex_cost + opencode_cost;
+        let kimi_cost = if prefs.include_kimi {
+            providers::kimi::get_cached_stats()
+                .and_then(|s| s.daily.iter().find(|d| d.date == today).map(|d| d.cost_usd))
+                .unwrap_or(0.0)
+        } else {
+            0.0
+        };
+
+        let glm_cost = if prefs.include_glm {
+            providers::glm::get_cached_stats()
+                .and_then(|s| s.daily.iter().find(|d| d.date == today).map(|d| d.cost_usd))
+                .unwrap_or(0.0)
+        } else {
+            0.0
+        };
+
+        let today_cost = claude_cost + codex_cost + opencode_cost + kimi_cost + glm_cost;
         let cost_str = if today_cost >= 1.0 {
             format!("${:.0}", today_cost)
         } else {
@@ -332,6 +348,22 @@ fn get_all_watch_dirs() -> Vec<PathBuf> {
     let opencode_provider = providers::opencode::OpenCodeProvider::new();
     if opencode_provider.is_available() {
         dirs.push(opencode_provider.data_dir.clone());
+    }
+
+    // Add Kimi session directory
+    let kimi_sessions = home.join(".kimi").join("sessions");
+    if kimi_sessions.exists() {
+        dirs.push(kimi_sessions);
+    }
+
+    // Add GLM session directories (future)
+    let glm_sessions = home.join(".glm").join("sessions");
+    if glm_sessions.exists() {
+        dirs.push(glm_sessions);
+    }
+    let zhipu_sessions = home.join(".zhipu").join("sessions");
+    if zhipu_sessions.exists() {
+        dirs.push(zhipu_sessions);
     }
 
     dirs
@@ -401,6 +433,8 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                     providers::claude_code::invalidate_stats_cache();
                     providers::codex::invalidate_stats_cache();
                     providers::opencode::invalidate_stats_cache();
+                    providers::kimi::invalidate_stats_cache();
+                    providers::glm::invalidate_stats_cache();
                     let _ = app_handle.emit("stats-updated", ());
                     // Re-parse in background so the tray reflects new data even when the
                     // popup is closed (get_all_stats is only called by the frontend).
@@ -414,6 +448,12 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                         }
                         if prefs.include_opencode {
                             let _ = providers::opencode::OpenCodeProvider::new().fetch_stats();
+                        }
+                        if prefs.include_kimi {
+                            let _ = providers::kimi::KimiProvider::new().fetch_stats();
+                        }
+                        if prefs.include_glm {
+                            let _ = providers::glm::GlmProvider::new().fetch_stats();
                         }
                         update_tray_title(&app_for_refresh);
                     });
@@ -435,6 +475,8 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                         providers::claude_code::invalidate_stats_cache();
                         providers::codex::invalidate_stats_cache();
                         providers::opencode::invalidate_stats_cache();
+                        providers::kimi::invalidate_stats_cache();
+                        providers::glm::invalidate_stats_cache();
                         let _ = app_handle.emit("stats-updated", ());
                     }
                     update_tray_title(&app_handle);
@@ -780,6 +822,10 @@ pub fn run() {
             commands::is_codex_available,
             commands::get_opencode_stats,
             commands::is_opencode_available,
+            commands::get_kimi_stats,
+            commands::is_kimi_available,
+            commands::get_glm_stats,
+            commands::is_glm_available,
             commands::get_preferences,
             commands::set_preferences,
             commands::get_stable_device_id,

@@ -14,6 +14,10 @@
   "sources.claude": "Claude",
   "sources.codex": "Codex",
   "sources.opencode": "OpenCode",
+  "sources.kimi": "Kimi",
+  "sources.glm": "GLM",
+  "sources.summary.count": "{{total}}개 중 {{active}}개 사용",
+  "sources.open": "소스 메뉴 열기",
 
   "today.title": "오늘",
   "today.tokens": "토큰",

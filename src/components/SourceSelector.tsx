@@ -1,13 +1,30 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettings } from "../contexts/SettingsContext";
 import { useI18n } from "../i18n/I18nContext";
+
+type SourceKey =
+  | "include_claude"
+  | "include_codex"
+  | "include_opencode"
+  | "include_kimi"
+  | "include_glm";
+
+interface SourceDef {
+  key: SourceKey;
+  label: string;
+  available: boolean;
+}
 
 export function SourceSelector() {
   const { prefs, updatePrefs } = useSettings();
   const t = useI18n();
   const [codexAvailable, setCodexAvailable] = useState(false);
   const [opencodeAvailable, setOpencodeAvailable] = useState(false);
+  const [kimiAvailable, setKimiAvailable] = useState(false);
+  const [glmAvailable, setGlmAvailable] = useState(false);
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     invoke<boolean>("is_codex_available")
@@ -16,18 +33,66 @@ export function SourceSelector() {
     invoke<boolean>("is_opencode_available")
       .then(setOpencodeAvailable)
       .catch(() => setOpencodeAvailable(false));
+    invoke<boolean>("is_kimi_available")
+      .then(setKimiAvailable)
+      .catch(() => setKimiAvailable(false));
+    invoke<boolean>("is_glm_available")
+      .then(setGlmAvailable)
+      .catch(() => setGlmAvailable(false));
   }, []);
 
-  // Hide entirely if no additional sources are available
-  if (!codexAvailable && !opencodeAvailable) return null;
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [open]);
 
-  const toggleSource = (key: "include_claude" | "include_codex" | "include_opencode") => {
+  const sources: SourceDef[] = useMemo(() => [
+    { key: "include_claude", label: t("sources.claude"), available: true },
+    { key: "include_codex", label: t("sources.codex"), available: codexAvailable },
+    { key: "include_opencode", label: t("sources.opencode"), available: opencodeAvailable },
+    { key: "include_kimi", label: t("sources.kimi"), available: kimiAvailable },
+    { key: "include_glm", label: t("sources.glm"), available: glmAvailable },
+  ], [t, codexAvailable, opencodeAvailable, kimiAvailable, glmAvailable]);
+
+  const visibleSources = sources.filter((s) => s.available);
+  const totalCount = visibleSources.length;
+  const activeCount = visibleSources.reduce((n, s) => n + (prefs[s.key] ? 1 : 0), 0);
+
+  // Hide entirely if only Claude is available (no multi-source UX needed)
+  if (totalCount <= 1) return null;
+
+  const toggleSource = (key: SourceKey) => {
     const nextValue = !prefs[key];
-    const activeCount = Number(prefs.include_claude) + Number(prefs.include_codex) + Number(prefs.include_opencode);
-    // Must keep at least one source active
-    if (!nextValue && activeCount === 1) return;
+    // Must keep at least one source active among visible/available ones
+    const currentActiveVisible = visibleSources.reduce(
+      (n, s) => n + (prefs[s.key] ? 1 : 0),
+      0,
+    );
+    if (!nextValue && currentActiveVisible === 1 && prefs[key]) return;
     updatePrefs({ [key]: nextValue });
   };
+
+  const summary = t("sources.summary.count", {
+    active: String(activeCount),
+    total: String(totalCount),
+  });
 
   return (
     <div style={{
@@ -47,86 +112,122 @@ export function SourceSelector() {
         {t("sources.title")}
       </div>
 
-      <div style={{ display: "flex", gap: 8 }}>
-        <SourceToggle
-          label={t("sources.claude")}
-          checked={prefs.include_claude}
-          locked={!prefs.include_codex && !prefs.include_opencode}
-          onClick={() => toggleSource("include_claude")}
-        />
-        {codexAvailable && (
-          <SourceToggle
-            label={t("sources.codex")}
-            checked={prefs.include_codex}
-            locked={!prefs.include_claude && !prefs.include_opencode}
-            onClick={() => toggleSource("include_codex")}
-          />
-        )}
-        {opencodeAvailable && (
-          <SourceToggle
-            label={t("sources.opencode")}
-            checked={prefs.include_opencode}
-            locked={!prefs.include_claude && !prefs.include_codex}
-            onClick={() => toggleSource("include_opencode")}
-          />
+      <div ref={menuRef} style={{ position: "relative" }}>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={t("sources.open")}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "4px 10px",
+            borderRadius: 999,
+            border: open ? "1px solid var(--accent-purple)" : "1px solid var(--heat-2)",
+            background: "var(--bg-card)",
+            color: "var(--text-primary)",
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: "pointer",
+            transition: "border-color 0.15s ease",
+          }}
+        >
+          <span>{summary}</span>
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{
+              transform: open ? "rotate(180deg)" : "none",
+              transition: "transform 0.15s ease",
+            }}
+            aria-hidden="true"
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+
+        {open && (
+          <div
+            role="menu"
+            style={{
+              position: "absolute",
+              top: "calc(100% + 6px)",
+              right: 0,
+              minWidth: 180,
+              padding: 4,
+              background: "var(--bg-card)",
+              borderRadius: 10,
+              border: "1px solid rgba(128,128,128,0.15)",
+              boxShadow: "0 12px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.08)",
+              zIndex: 60,
+              transformOrigin: "top right",
+              animation: "headerMenuPop 0.16s cubic-bezier(.2,.9,.2,1) both",
+            }}
+          >
+            {visibleSources.map((s) => {
+              const checked = !!prefs[s.key];
+              const activeVisible = visibleSources.reduce(
+                (n, v) => n + (prefs[v.key] ? 1 : 0),
+                0,
+              );
+              const locked = checked && activeVisible === 1;
+              return (
+                <button
+                  key={s.key}
+                  role="menuitemcheckbox"
+                  aria-checked={checked}
+                  onClick={() => toggleSource(s.key)}
+                  disabled={locked}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    width: "100%",
+                    padding: "6px 8px",
+                    background: "none",
+                    border: "none",
+                    borderRadius: 6,
+                    cursor: locked ? "default" : "pointer",
+                    color: "var(--text-primary)",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    textAlign: "left",
+                    opacity: locked ? 0.7 : 1,
+                  }}
+                >
+                  <span style={{
+                    width: 14,
+                    height: 14,
+                    borderRadius: 3,
+                    border: checked ? "1px solid var(--accent-purple)" : "1px solid var(--heat-2)",
+                    background: checked ? "var(--accent-purple)" : "transparent",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#fff",
+                    flexShrink: 0,
+                  }}>
+                    {checked ? (
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    ) : null}
+                  </span>
+                  <span>{s.label}</span>
+                </button>
+              );
+            })}
+          </div>
         )}
       </div>
     </div>
-  );
-}
-
-function SourceToggle({
-  label,
-  checked,
-  locked,
-  onClick,
-}: {
-  label: string;
-  checked: boolean;
-  locked: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={checked}
-      onClick={onClick}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "4px 10px",
-        borderRadius: 999,
-        border: checked ? "1px solid var(--heat-2)" : "1px solid transparent",
-        background: checked ? "var(--bg-card)" : "var(--heat-0)",
-        color: checked ? "var(--text-primary)" : "var(--text-secondary)",
-        fontSize: 11,
-        fontWeight: 700,
-        cursor: locked ? "default" : "pointer",
-        opacity: locked && checked ? 0.88 : 1,
-        boxShadow: checked ? "0 1px 4px rgba(0,0,0,0.06)" : "none",
-        transition: "all 0.15s ease",
-      }}
-    >
-      <span style={{
-        width: 12,
-        height: 12,
-        borderRadius: 3,
-        border: checked ? "1px solid var(--accent-purple)" : "1px solid var(--heat-2)",
-        background: checked ? "var(--accent-purple)" : "transparent",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        color: "#fff",
-        flexShrink: 0,
-      }}>
-        {checked ? (
-          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-        ) : null}
-      </span>
-      {label}
-    </button>
   );
 }

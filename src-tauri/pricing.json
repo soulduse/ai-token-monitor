@@ -70,5 +70,24 @@
       { "match": "deepseek-reasoner", "label": "DeepSeek R1",              "input": 0.55,  "output": 2.19,   "cache_read": 0.14,  "cache_write": 0.0    },
       { "match": "deepseek",          "label": "DeepSeek V3",              "input": 0.27,  "output": 1.10,   "cache_read": 0.07,  "cache_write": 0.0    }
     ]
+  },
+  "kimi": {
+    "default": "kimi-k2",
+    "models": [
+      { "match": "kimi-k2-instruct", "label": "Kimi K2 Instruct", "input": 0.60, "output": 2.00, "cache_read": 0.0, "cache_write": 0.0 },
+      { "match": "kimi-k2",          "label": "Kimi K2",          "input": 0.60, "output": 2.00, "cache_read": 0.0, "cache_write": 0.0 },
+      { "match": "kimi-k1.5",        "label": "Kimi K1.5",        "input": 0.40, "output": 1.20, "cache_read": 0.0, "cache_write": 0.0 },
+      { "match": "moonshot",         "label": "Moonshot",         "input": 0.60, "output": 2.00, "cache_read": 0.0, "cache_write": 0.0 },
+      { "match": "kimi",             "label": "Kimi K2",          "input": 0.60, "output": 2.00, "cache_read": 0.0, "cache_write": 0.0 }
+    ]
+  },
+  "glm": {
+    "default": "glm-4",
+    "models": [
+      { "match": "glm-5-turbo", "label": "GLM-5 Turbo", "input": 0.50, "output": 1.00, "cache_read": 0.0, "cache_write": 0.0 },
+      { "match": "glm-5",      "label": "GLM-5",       "input": 1.00, "output": 2.00, "cache_read": 0.0, "cache_write": 0.0 },
+      { "match": "glm-4",      "label": "GLM-4",       "input": 0.50, "output": 1.00, "cache_read": 0.0, "cache_write": 0.0 },
+      { "match": "glm",        "label": "GLM-4",       "input": 0.50, "output": 1.00, "cache_read": 0.0, "cache_write": 0.0 }
+    ]
   }
 }
