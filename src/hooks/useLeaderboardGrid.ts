@@ -32,8 +32,8 @@ interface RpcRow {
   total_tokens: number;
 }
 
-const CACHE_TTL = 15 * 60_000; // 15 minutes — matches useLeaderboardSync
-const POLL_INTERVAL = 15 * 60_000;
+const CACHE_TTL = 30 * 60_000; // 30 minutes — matches useLeaderboardSync
+const POLL_INTERVAL = 30 * 60_000;
 
 export function useLeaderboardGrid({
   provider,

@@ -20,8 +20,8 @@ interface UseLeaderboardSyncProps {
   userId?: string;
 }
 
-const LEADERBOARD_CACHE_TTL = 15 * 60_000; // 15 minutes
-const LEADERBOARD_POLL_INTERVAL = 15 * 60_000; // 15 minutes
+const LEADERBOARD_CACHE_TTL = 30 * 60_000; // 30 minutes
+const LEADERBOARD_POLL_INTERVAL = 30 * 60_000; // 30 minutes
 
 export type LeaderboardPeriod = "today" | "week" | "month" | "grid";
 
