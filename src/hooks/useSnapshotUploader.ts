@@ -31,7 +31,6 @@ export interface SnapshotUploadedDetail {
 // 15 min auto-upload floor. File watcher fires on every Claude/Codex write,
 // which without this gate caused ~37 RPC/min cluster-wide (PR #117).
 const MIN_AUTO_UPLOAD_INTERVAL_MS = 15 * 60 * 1000;
-const STALE_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const BACKFILL_DAYS = 60;
 
 // Shared caches so multiple uploader instances (e.g. one per provider)
@@ -208,16 +207,15 @@ export function useSnapshotUploader({ stats, user, optedIn, provider }: UseSnaps
         return;
       }
 
-      const staleDates =
-        now - state.lastCleanupAt >= STALE_CLEANUP_INTERVAL_MS
-          ? buildStaleDates(liveStats, today)
-          : [];
-
-      const ok = await callSyncRpc(provider, deviceId, [todayRow], staleDates);
+      // Stale-date cleanup is intentionally skipped on the auto-upload path:
+      // a 60-day scan every 24h per (user × provider) was dominating Disk IO
+      // on the Nano instance. The 30-day cutoff inside sync_device_snapshots
+      // already self-prunes unused device entries, and manualBackfill still
+      // runs buildStaleDates when users trigger a full resync.
+      const ok = await callSyncRpc(provider, deviceId, [todayRow], []);
       if (ok) {
         state.lastUploadAt = now;
         state.lastTodayPayload = fingerprint;
-        if (staleDates.length > 0) state.lastCleanupAt = now;
         dispatchUploaded(provider, todayRow);
       }
     };
