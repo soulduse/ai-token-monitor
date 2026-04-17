@@ -38,7 +38,9 @@ pub fn get_cached_stats() -> Option<AllStats> {
 /// Expected future session path: ~/.glm/sessions/ or ~/.zhipu/sessions/
 /// Expected wire format: JSONL with OpenAI-compatible usage fields
 pub struct GlmProvider {
+    #[allow(dead_code)]
     glm_dir: PathBuf,
+    #[allow(dead_code)]
     zhipu_dir: PathBuf,
 }
 
@@ -90,7 +92,10 @@ impl TokenProvider for GlmProvider {
     }
 
     fn is_available(&self) -> bool {
-        // Check both potential paths for a future GLM CLI
-        self.glm_dir.join("sessions").exists() || self.zhipu_dir.join("sessions").exists()
+        // Gated off until parsing is implemented. Detecting ~/.glm or ~/.zhipu
+        // would surface the toggle while fetch_stats() still returns an empty
+        // AllStats — users would see "0 tokens" with no explanation. Flip this
+        // to an actual directory check once wire.jsonl parsing lands.
+        false
     }
 }
