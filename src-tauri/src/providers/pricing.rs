@@ -299,6 +299,23 @@ mod tests {
     }
 
     #[test]
+    fn claude_opus_4_7_pricing_not_shadowed_by_opus_4() {
+        let p = get_claude_pricing("claude-opus-4-7-20260416");
+        assert!((p.input - 5.0).abs() < 0.001, "input was {}", p.input);
+        assert!((p.output - 25.0).abs() < 0.001, "output was {}", p.output);
+        assert!((p.cache_read - 0.50).abs() < 0.001);
+        assert!((p.cache_write_5m - 6.25).abs() < 0.001);
+        assert!((p.cache_write_1h - 10.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn claude_opus_4_1_still_priced_correctly() {
+        let p = get_claude_pricing("claude-opus-4-1-20250805");
+        assert!((p.input - 15.0).abs() < 0.001);
+        assert!((p.output - 75.0).abs() < 0.001);
+    }
+
+    #[test]
     fn claude_sonnet_pricing() {
         let p = get_claude_pricing("claude-sonnet-4-6-20260320");
         assert!((p.input - 3.0).abs() < 0.001);
