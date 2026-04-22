@@ -306,16 +306,21 @@ mod tests {
         let _ = sanitize_for_prompt(&input); // must not panic
     }
 
+    // Both env-var paths are exercised in a single test because cargo runs
+    // tests in parallel by default and the env var is process-global;
+    // splitting them causes flaky races under `cargo test`.
     #[test]
-    fn resolve_claude_model_defaults_to_alias() {
+    fn resolve_claude_model_env_contract() {
         unsafe { std::env::remove_var("AI_TOKEN_MONITOR_CLAUDE_MODEL") };
         assert_eq!(resolve_claude_model(), "claude-haiku-4-5");
-    }
 
-    #[test]
-    fn resolve_claude_model_honors_env_override() {
         unsafe { std::env::set_var("AI_TOKEN_MONITOR_CLAUDE_MODEL", "claude-sonnet-4-6") };
         assert_eq!(resolve_claude_model(), "claude-sonnet-4-6");
+
+        // Blank values are treated as unset.
+        unsafe { std::env::set_var("AI_TOKEN_MONITOR_CLAUDE_MODEL", "   ") };
+        assert_eq!(resolve_claude_model(), "claude-haiku-4-5");
+
         unsafe { std::env::remove_var("AI_TOKEN_MONITOR_CLAUDE_MODEL") };
     }
 
