@@ -279,6 +279,13 @@
   "settings.aiKeySecure": "Le chiavi API sono crittografate e conservate in modo sicuro sul dispositivo",
   "settings.aiKeyPlaceholder": "Inserisci chiave API",
   "settings.aiNoKeys": "Aggiungi almeno una chiave API per attivare la traduzione",
+  "settings.translationProvider": "Provider di Traduzione",
+  "settings.translationProviderApi": "Chiave API",
+  "settings.translationProviderCli": "CLI (Gratuito)",
+  "settings.translationProviderCliDesc": "Usa la tua CLI locale gemini o claude per la traduzione — nessuna chiave API richiesta",
+  "settings.preferredCli": "CLI Preferita",
+  "settings.cliDetected": "Rilevato",
+  "settings.cliNotFound": "Non trovato — installa gemini o claude CLI",
 
   "settings.tab.webhooks": "Webhooks",
   "settings.webhookTitle": "Notifiche Webhook",
