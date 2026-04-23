@@ -11,6 +11,15 @@ on:
           - patch
           - minor
           - major
+      platforms:
+        description: 'Build targets'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - macos-only
+          - windows-only
 
 permissions:
   contents: write
@@ -22,10 +31,13 @@ concurrency:
 jobs:
   bump-version:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       version: ${{ steps.bump.outputs.version }}
       tag: ${{ steps.bump.outputs.tag }}
       changelog: ${{ steps.changelog.outputs.changelog }}
+      build_macos: ${{ steps.matrix.outputs.macos }}
+      build_windows: ${{ steps.matrix.outputs.windows }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,6 +47,24 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      - name: Resolve build matrix
+        id: matrix
+        run: |
+          case "${{ inputs.platforms }}" in
+            all)
+              echo "macos=true" >> $GITHUB_OUTPUT
+              echo "windows=true" >> $GITHUB_OUTPUT
+              ;;
+            macos-only)
+              echo "macos=true" >> $GITHUB_OUTPUT
+              echo "windows=false" >> $GITHUB_OUTPUT
+              ;;
+            windows-only)
+              echo "macos=false" >> $GITHUB_OUTPUT
+              echo "windows=true" >> $GITHUB_OUTPUT
+              ;;
+          esac
 
       - name: Bump version
         id: bump
@@ -108,7 +138,9 @@ jobs:
 
   build-macos:
     needs: bump-version
+    if: needs.bump-version.outputs.build_macos == 'true'
     runs-on: macos-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -120,8 +152,10 @@ jobs:
           node-version: 20
           cache: npm
 
-      - name: Install Rust stable
+      - name: Install Rust stable (aarch64)
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -149,7 +183,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "" $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
 
-      - name: Build Tauri app
+      - name: Build Tauri app (Apple Silicon only)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -165,11 +199,13 @@ jobs:
           releaseBody: ${{ needs.bump-version.outputs.changelog }}
           releaseDraft: false
           prerelease: false
-          updaterJsonKeepUniversal: true
+          args: --target aarch64-apple-darwin
 
   build-windows:
-    needs: [bump-version, build-macos]
+    needs: bump-version
+    if: needs.bump-version.outputs.build_windows == 'true'
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -204,4 +240,3 @@ jobs:
           releaseBody: ${{ needs.bump-version.outputs.changelog }}
           releaseDraft: false
           prerelease: false
-          updaterJsonKeepUniversal: true
