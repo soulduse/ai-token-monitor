@@ -1,5 +1,6 @@
 pub mod claude_code;
 pub mod codex;
+pub mod gemini;
 pub mod glm;
 pub mod kimi;
 pub mod opencode;

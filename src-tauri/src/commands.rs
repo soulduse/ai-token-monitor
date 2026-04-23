@@ -11,6 +11,7 @@ use crate::providers::claude_code::ClaudeCodeProvider;
 use crate::providers::codex::CodexProvider;
 use crate::providers::glm::GlmProvider;
 use crate::providers::kimi::KimiProvider;
+use crate::providers::gemini::GeminiProvider;
 use crate::providers::opencode::OpenCodeProvider;
 use crate::providers::pricing;
 use crate::providers::traits::TokenProvider;
@@ -733,6 +734,51 @@ pub async fn enable_usage_tracking(app: tauri::AppHandle) -> Result<(), String> 
         let _ = app.emit("usage-updated", ());
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn get_gemini_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
+    let result = tauri::async_runtime::spawn_blocking(|| {
+        let prefs = get_preferences();
+        let provider = GeminiProvider::new(prefs.gemini_dirs);
+        if !provider.is_available() {
+            return Err("Gemini CLI stats not available".to_string());
+        }
+        provider.fetch_stats()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    if result.is_ok() {
+        crate::update_tray_title(&app);
+    }
+    result
+}
+
+#[tauri::command]
+pub fn is_gemini_available() -> bool {
+    let prefs = get_preferences();
+    GeminiProvider::new(prefs.gemini_dirs).is_available()
+}
+
+#[tauri::command]
+pub fn detect_gemini_dirs() -> Vec<String> {
+    let home = dirs::home_dir().unwrap_or_default();
+    let mut found = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(&home) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name == ".gemini" || name.starts_with(".gemini-") {
+                let path = entry.path();
+                if path.join("tmp").exists() {
+                    found.push(path.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    found.sort();
+    found
 }
 
 #[tauri::command]

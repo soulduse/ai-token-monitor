@@ -344,6 +344,21 @@ fn get_all_watch_dirs() -> Vec<PathBuf> {
         dirs.push(default_codex.join("archived_sessions"));
     }
 
+    // Add Gemini tmp directories from preferences
+    // Always include ~/.gemini/tmp because GeminiProvider reads from there
+    let default_gemini = home.join(".gemini");
+    let mut gemini_seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    for gemini_dir in &prefs.gemini_dirs {
+        let expanded = expand(gemini_dir);
+        let canonical = expanded.canonicalize().unwrap_or_else(|_| expanded.clone());
+        gemini_seen.insert(canonical);
+        dirs.push(expanded.join("tmp"));
+    }
+    let default_gemini_canonical = default_gemini.canonicalize().unwrap_or_else(|_| default_gemini.clone());
+    if !gemini_seen.contains(&default_gemini_canonical) {
+        dirs.push(default_gemini.join("tmp"));
+    }
+
     // Add OpenCode data directory
     let opencode_provider = providers::opencode::OpenCodeProvider::new();
     if opencode_provider.is_available() {
@@ -833,6 +848,9 @@ pub fn run() {
             commands::validate_claude_dir,
             commands::detect_codex_dirs,
             commands::validate_codex_dir,
+            commands::get_gemini_stats,
+            commands::is_gemini_available,
+            commands::detect_gemini_dirs,
             get_home_dir,
             set_dialog_open,
             hide_window,

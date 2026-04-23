@@ -91,5 +91,15 @@
       { "match": "glm-4",      "label": "GLM-4",       "input": 0.50, "output": 1.00, "cache_read": 0.0, "cache_write": 0.0 },
       { "match": "glm",        "label": "GLM-4",       "input": 0.50, "output": 1.00, "cache_read": 0.0, "cache_write": 0.0 }
     ]
+  },
+  "gemini": {
+    "default": "gemini-2.5-pro",
+    "models": [
+      { "match": "gemini-2.5-pro",    "label": "Gemini 2.5 Pro",   "input": 1.25,  "output": 10.0,  "cache_read": 0.315,   "cache_write": 0.0 },
+      { "match": "gemini-2.5-flash",  "label": "Gemini 2.5 Flash", "input": 0.15,  "output": 0.60,  "cache_read": 0.0375,  "cache_write": 0.0 },
+      { "match": "gemini-2.0-flash",  "label": "Gemini 2.0 Flash", "input": 0.10,  "output": 0.40,  "cache_read": 0.025,   "cache_write": 0.0 },
+      { "match": "gemini-3",          "label": "Gemini 3 Pro",     "input": 1.25,  "output": 10.0,  "cache_read": 0.315,   "cache_write": 0.0 },
+      { "match": "gemini",            "label": "Gemini 2.5 Pro",   "input": 1.25,  "output": 10.0,  "cache_read": 0.315,   "cache_write": 0.0 }
+    ]
   }
 }

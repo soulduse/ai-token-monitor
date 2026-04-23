@@ -16,6 +16,7 @@ export const PROVIDER_COLORS: Record<LeaderboardProvider, string> = {
   opencode: "#d97706",
   kimi: "#1a73e8",
   glm: "#00b96b",
+  gemini: "#4285f4",
 };
 
 export const PROVIDER_LABELS: Record<LeaderboardProvider, string> = {
@@ -24,6 +25,7 @@ export const PROVIDER_LABELS: Record<LeaderboardProvider, string> = {
   opencode: "OpenCode",
   kimi: "Kimi",
   glm: "GLM",
+  gemini: "Gemini",
 };
 
 export const PERIOD_LABELS: Record<string, string> = {

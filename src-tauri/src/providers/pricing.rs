@@ -18,6 +18,7 @@ struct PricingConfig {
     kimi: Option<ProviderConfig>,
     #[serde(default)]
     glm: Option<ProviderConfig>,
+    gemini: Option<ProviderConfig>,
 }
 
 #[derive(Deserialize)]
@@ -75,6 +76,13 @@ pub struct KimiPricing {
 
 #[allow(dead_code)]
 pub struct GlmPricing {
+    pub input: f64,
+    pub output: f64,
+    pub cache_read: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct GeminiPricing {
     pub input: f64,
     pub output: f64,
     pub cache_read: f64,
@@ -202,6 +210,30 @@ pub fn get_opencode_pricing(model: &str) -> OpenCodePricing {
     }
 }
 
+pub fn get_gemini_pricing(model: &str) -> GeminiPricing {
+    let cfg = config();
+    // Use dedicated gemini pricing if available
+    if let Some(ref g) = cfg.gemini {
+        let entry = find_pricing(g, model);
+        return GeminiPricing {
+            input: entry.input,
+            output: entry.output,
+            cache_read: entry.cache_read,
+        };
+    }
+    // Fallback: use opencode pricing for gemini models
+    if let Some(ref oc) = cfg.opencode {
+        let entry = find_pricing(oc, model);
+        return GeminiPricing {
+            input: entry.input,
+            output: entry.output,
+            cache_read: entry.cache_read,
+        };
+    }
+    // Last resort defaults (gemini-2.5-pro pricing)
+    GeminiPricing { input: 1.25, output: 10.0, cache_read: 0.315 }
+}
+
 // --- Frontend API (pricing table for tooltip display) ---
 
 #[derive(Serialize, Clone)]
@@ -225,6 +257,7 @@ pub struct PricingTable {
     pub kimi: Vec<PricingRow>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub glm: Vec<PricingRow>,
+    pub gemini: Vec<PricingRow>,
 }
 
 fn format_price(val: f64) -> String {
@@ -269,6 +302,7 @@ pub fn get_pricing_table() -> PricingTable {
         opencode: cfg.opencode.as_ref().map(|oc| deduplicated_rows(oc, false)).unwrap_or_default(),
         kimi: cfg.kimi.as_ref().map(|k| deduplicated_rows(k, false)).unwrap_or_default(),
         glm: cfg.glm.as_ref().map(|g| deduplicated_rows(g, false)).unwrap_or_default(),
+        gemini: cfg.gemini.as_ref().map(|g| deduplicated_rows(g, false)).unwrap_or_default(),
     }
 }
 
@@ -357,5 +391,20 @@ mod tests {
     fn codex_unknown_defaults_to_gpt54() {
         let p = get_codex_pricing("some-future-model");
         assert!((p.input - 2.50).abs() < 0.001);
+    }
+
+    #[test]
+    fn gemini_25_pro_pricing() {
+        let p = get_gemini_pricing("gemini-2.5-pro-preview");
+        assert!((p.input - 1.25).abs() < 0.001);
+        assert!((p.output - 10.0).abs() < 0.001);
+        assert!((p.cache_read - 0.315).abs() < 0.001);
+    }
+
+    #[test]
+    fn gemini_25_flash_pricing() {
+        let p = get_gemini_pricing("gemini-2.5-flash");
+        assert!((p.input - 0.15).abs() < 0.001);
+        assert!((p.output - 0.60).abs() < 0.001);
     }
 }
