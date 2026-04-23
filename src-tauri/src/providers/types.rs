@@ -119,6 +119,10 @@ pub struct UserPreferences {
     pub autostart_enabled: bool,
     #[serde(default)]
     pub quick_action_items: Vec<String>,
+    #[serde(default)]
+    pub translation_provider: Option<String>,
+    #[serde(default)]
+    pub preferred_cli: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -261,6 +265,8 @@ impl Default for UserPreferences {
             webhook_config: None,
             autostart_enabled: false,
             quick_action_items: vec![],
+            translation_provider: None,
+            preferred_cli: None,
         }
     }
 }

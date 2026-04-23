@@ -155,8 +155,12 @@ export function SettingsOverlay({ visible, onClose, initialTab, centered }: Prop
             <AiTranslationSection
               aiKeys={prefs.ai_keys}
               aiModel={prefs.ai_model}
+              translationProvider={prefs.translation_provider}
+              preferredCli={prefs.preferred_cli}
               onKeysChange={(keys) => updatePrefs({ ai_keys: keys })}
               onModelChange={(model) => updatePrefs({ ai_model: model })}
+              onTranslationProviderChange={(provider) => updatePrefs({ translation_provider: provider })}
+              onPreferredCliChange={(cli) => updatePrefs({ preferred_cli: cli })}
             />
           )}
           {activeTab === "webhooks" && (
@@ -969,14 +973,31 @@ const AI_PROVIDERS: AiProvider[] = [
 function AiTranslationSection({
   aiKeys,
   aiModel,
+  translationProvider,
+  preferredCli,
   onKeysChange,
   onModelChange,
+  onTranslationProviderChange,
+  onPreferredCliChange,
 }: {
   aiKeys?: { gemini?: string; openai?: string; anthropic?: string };
   aiModel?: string;
+  translationProvider?: string;
+  preferredCli?: string;
   onKeysChange: (keys: { gemini?: string; openai?: string; anthropic?: string }) => void;
   onModelChange: (model: string | undefined) => void;
+  onTranslationProviderChange: (provider: string | undefined) => void;
+  onPreferredCliChange: (cli: string | undefined) => void;
 }) {
+  interface CliTool { name: string; available: boolean; }
+  const [cliTools, setCliTools] = useState<CliTool[]>([]);
+
+  useEffect(() => {
+    invoke<CliTool[]>("detect_cli_tools")
+      .then(setCliTools)
+      .catch(() => setCliTools([]));
+  }, []);
+
   const t = useI18n();
   const keys = aiKeys ?? {};
 
@@ -1080,6 +1101,90 @@ function AiTranslationSection({
           {t("settings.aiNoKeys")}
         </div>
       )}
+
+      <div style={{ marginTop: 12, borderTop: "1px solid var(--heat-1)", paddingTop: 12 }}>
+        <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+          {t("settings.translationProvider")}
+        </div>
+        <div style={{ display: "flex", gap: 12, marginBottom: 8 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, cursor: "pointer" }}>
+            <input
+              type="radio"
+              name="translationProvider"
+              value="api"
+              checked={!translationProvider || translationProvider === "api"}
+              onChange={() => onTranslationProviderChange("api")}
+            />
+            {t("settings.translationProviderApi")}
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, cursor: "pointer" }}>
+            <input
+              type="radio"
+              name="translationProvider"
+              value="cli"
+              checked={translationProvider === "cli"}
+              onChange={() => onTranslationProviderChange("cli")}
+            />
+            {t("settings.translationProviderCli")}
+          </label>
+        </div>
+        {translationProvider === "cli" && (
+          <div>
+            <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 8 }}>
+              {t("settings.translationProviderCliDesc")}
+            </div>
+            <div style={{ marginBottom: 8 }}>
+              {cliTools.length === 0 ? (
+                <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                  {t("settings.cliNotFound")}
+                </div>
+              ) : (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {cliTools.map((tool) => (
+                    <div key={tool.name} style={{
+                      fontSize: 10,
+                      padding: "2px 8px",
+                      borderRadius: 4,
+                      background: tool.available ? "rgba(40,167,69,0.1)" : "var(--heat-0)",
+                      border: "1px solid",
+                      borderColor: tool.available ? "rgba(40,167,69,0.3)" : "var(--heat-1)",
+                      color: tool.available ? "#28a745" : "var(--text-muted)",
+                    }}>
+                      {tool.name} {tool.available ? t("settings.cliDetected") : t("settings.cliNotFound")}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {cliTools.some((tool) => tool.available) && (
+              <>
+                <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 4 }}>
+                  {t("settings.preferredCli")}
+                </div>
+                <select
+                  value={preferredCli ?? "gemini"}
+                  onChange={(e) => onPreferredCliChange(e.target.value || undefined)}
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 600,
+                    padding: "3px 6px",
+                    borderRadius: 4,
+                    border: "1px solid var(--heat-1)",
+                    cursor: "pointer",
+                    background: "var(--heat-0)",
+                    color: "var(--text-primary)",
+                    outline: "none",
+                  }}
+                >
+                  {cliTools.filter((tool) => tool.available).map((tool) => (
+                    <option key={tool.name} value={tool.name}>{tool.name}</option>
+                  ))}
+                </select>
+              </>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

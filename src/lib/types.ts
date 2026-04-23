@@ -91,6 +91,8 @@ export interface UserPreferences {
     webhook_telegram_chat_id?: string;
   };
   ai_model?: string;
+  translation_provider?: string;
+  preferred_cli?: string;
   webhook_config?: WebhookConfig;
   autostart_enabled: boolean;
   quick_action_items: string[];

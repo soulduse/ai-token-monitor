@@ -279,6 +279,13 @@
   "settings.aiKeySecure": "API密钥已加密并安全存储在本地设备上",
   "settings.aiKeyPlaceholder": "输入API密钥",
   "settings.aiNoKeys": "请至少添加一个API密钥以启用翻译",
+  "settings.translationProvider": "翻译提供商",
+  "settings.translationProviderApi": "API 密钥",
+  "settings.translationProviderCli": "CLI (免费)",
+  "settings.translationProviderCliDesc": "使用您本地的 gemini 或 claude CLI 进行翻译 — 无需 API 密钥",
+  "settings.preferredCli": "首选 CLI",
+  "settings.cliDetected": "已检测到",
+  "settings.cliNotFound": "未找到 — 请安装 gemini 或 claude CLI",
 
   "settings.tab.webhooks": "Webhooks",
   "settings.webhookTitle": "Webhook 通知",

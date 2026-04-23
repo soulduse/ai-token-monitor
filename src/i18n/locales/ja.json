@@ -279,6 +279,13 @@
   "settings.aiKeySecure": "APIキーはローカルに暗号化して安全に保存されます",
   "settings.aiKeyPlaceholder": "APIキーを入力",
   "settings.aiNoKeys": "翻訳を有効にするにはAPIキーを1つ以上追加してください",
+  "settings.translationProvider": "翻訳プロバイダー",
+  "settings.translationProviderApi": "APIキー",
+  "settings.translationProviderCli": "CLI (無料)",
+  "settings.translationProviderCliDesc": "ローカルのgeminiまたはclaude CLIを使用して翻訳します — APIキーは不要です",
+  "settings.preferredCli": "優先CLI",
+  "settings.cliDetected": "検出済み",
+  "settings.cliNotFound": "見つかりません — geminiまたはclaude CLIをインストールしてください",
 
   "settings.tab.webhooks": "Webhooks",
   "settings.webhookTitle": "Webhook通知",

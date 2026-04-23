@@ -143,6 +143,13 @@ pub async fn translate_reply(
     }
 
     let prefs = get_preferences();
+
+    // Route to CLI if translation_provider is "cli"
+    if prefs.translation_provider.as_deref() == Some("cli") {
+        let preferred = prefs.preferred_cli.as_deref().unwrap_or("gemini");
+        return crate::cli_translate::cli_translate_reply(&text, &original_message, preferred);
+    }
+
     let model = prefs.ai_model.ok_or("No AI model selected")?;
     let keys = crate::commands::get_ai_keys().ok_or("No AI keys configured")?;
 
@@ -167,6 +174,18 @@ pub async fn translate_text(
     }
 
     let prefs = get_preferences();
+
+    // Route to CLI if translation_provider is "cli"
+    if prefs.translation_provider.as_deref() == Some("cli") {
+        let preferred = prefs.preferred_cli.as_deref().unwrap_or("gemini");
+        return crate::cli_translate::cli_translate_text(
+            &text,
+            &target_language,
+            source_language.as_deref(),
+            preferred,
+        );
+    }
+
     let model = prefs.ai_model.ok_or("No AI model selected")?;
     let keys = crate::commands::get_ai_keys().ok_or("No AI keys configured")?;
 
