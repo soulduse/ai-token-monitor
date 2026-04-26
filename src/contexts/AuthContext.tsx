@@ -19,7 +19,7 @@ function isProduction(): boolean {
 
 interface OAuthFallback {
   url: string;
-  reason: "open-failed" | "timeout";
+  reason: "open-failed" | "timeout" | "manual";
 }
 
 interface AuthContextType {
@@ -31,6 +31,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   oauthFallback: OAuthFallback | null;
   dismissOauthFallback: () => void;
+  showOauthFallback: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -42,6 +43,7 @@ const AuthContext = createContext<AuthContextType>({
   signOut: async () => {},
   oauthFallback: null,
   dismissOauthFallback: () => {},
+  showOauthFallback: async () => {},
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -243,6 +245,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, AUTH_TIMEOUT_MS);
   }, []);
 
+  const showOauthFallback = useCallback(async () => {
+    if (!supabase) return;
+    if (!isProduction()) {
+      // Dev mode uses implicit flow with localhost; manual fallback is N/A
+      return;
+    }
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: "github",
+      options: {
+        skipBrowserRedirect: true,
+        redirectTo: DEEP_LINK_CALLBACK,
+      },
+    });
+
+    if (error || !data.url) {
+      console.error("[OAuth] manual fallback URL fetch failed:", error);
+      return;
+    }
+
+    setOauthFallback({ url: data.url, reason: "manual" });
+    // Still arm the timeout so loading state resets if the user completes
+    // sign-in via the manual link.
+    setLoading(true);
+    timeoutRef.current = setTimeout(() => setLoading(false), AUTH_TIMEOUT_MS);
+  }, []);
+
   const signOut = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
@@ -254,7 +284,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, available, signIn, signOut, oauthFallback, dismissOauthFallback }}>
+    <AuthContext.Provider value={{ user, profile, loading, available, signIn, signOut, oauthFallback, dismissOauthFallback, showOauthFallback }}>
       {children}
     </AuthContext.Provider>
   );

@@ -47,13 +47,21 @@ export function OAuthFallbackModal() {
     }
   };
 
-  const titleKey = oauthFallback.reason === "open-failed"
-    ? "oauthFallback.title.openFailed"
-    : "oauthFallback.title.timeout";
+  const titleKey = (() => {
+    switch (oauthFallback.reason) {
+      case "open-failed": return "oauthFallback.title.openFailed";
+      case "timeout":     return "oauthFallback.title.timeout";
+      case "manual":      return "oauthFallback.title.manual";
+    }
+  })();
 
-  const descriptionKey = oauthFallback.reason === "open-failed"
-    ? "oauthFallback.description.openFailed"
-    : "oauthFallback.description.timeout";
+  const descriptionKey = (() => {
+    switch (oauthFallback.reason) {
+      case "open-failed": return "oauthFallback.description.openFailed";
+      case "timeout":     return "oauthFallback.description.timeout";
+      case "manual":      return "oauthFallback.description.manual";
+    }
+  })();
 
   return (
     <>
