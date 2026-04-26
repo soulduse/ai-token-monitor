@@ -19,7 +19,7 @@ interface Props {
 
 export function SettingsOverlay({ visible, onClose, initialTab, centered }: Props) {
   const { prefs, updatePrefs } = useSettings();
-  const { user, profile, signIn, signOut, available: leaderboardAvailable } = useAuth();
+  const { user, profile, signIn, signOut, showOauthFallback, available: leaderboardAvailable } = useAuth();
   const [appVersion, setAppVersion] = useState("");
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? "general");
   const t = useI18n();
@@ -148,6 +148,7 @@ export function SettingsOverlay({ visible, onClose, initialTab, centered }: Prop
               profile={profile}
               signIn={signIn}
               signOut={signOut}
+              showOauthFallback={showOauthFallback}
               leaderboardAvailable={leaderboardAvailable}
             />
           )}
@@ -345,6 +346,7 @@ function AccountTab({
   profile,
   signIn,
   signOut,
+  showOauthFallback,
   leaderboardAvailable,
 }: {
   prefs: ReturnType<typeof useSettings>["prefs"];
@@ -353,6 +355,7 @@ function AccountTab({
   profile: ReturnType<typeof useAuth>["profile"];
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
+  showOauthFallback: () => Promise<void>;
   leaderboardAvailable: boolean;
 }) {
   const t = useI18n();
@@ -446,30 +449,50 @@ function AccountTab({
               </button>
             </div>
           ) : (
-            <button
-              onClick={signIn}
-              style={{
-                width: "100%",
-                padding: "6px 0",
-                fontSize: 11,
-                fontWeight: 600,
-                border: "none",
-                borderRadius: 4,
-                cursor: "pointer",
-                background: "#24292e",
-                color: "#fff",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 6,
-                marginTop: 4,
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
-              </svg>
-              {t("settings.signInGithub")}
-            </button>
+            <>
+              <button
+                onClick={signIn}
+                style={{
+                  width: "100%",
+                  padding: "6px 0",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  border: "none",
+                  borderRadius: 4,
+                  cursor: "pointer",
+                  background: "#24292e",
+                  color: "#fff",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  marginTop: 4,
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+                </svg>
+                {t("settings.signInGithub")}
+              </button>
+              <button
+                type="button"
+                onClick={showOauthFallback}
+                style={{
+                  width: "100%",
+                  marginTop: 6,
+                  padding: 0,
+                  fontSize: 10.5,
+                  background: "transparent",
+                  color: "var(--text-secondary)",
+                  border: "none",
+                  textDecoration: "underline",
+                  textUnderlineOffset: 2,
+                  cursor: "pointer",
+                }}
+              >
+                {t("settings.signInManual")}
+              </button>
+            </>
           )}
         </>
       )}
