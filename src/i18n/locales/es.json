@@ -347,5 +347,14 @@
   "analytics.activity.Git Ops": "Operaciones Git",
   "analytics.activity.Planning": "Planificación",
   "analytics.empty.projects": "No hay datos de proyecto disponibles. Solo las sesiones de Claude Code incluyen el seguimiento de proyectos.",
-  "analytics.empty.tools": "No hay datos de uso de herramientas disponibles. Solo las sesiones de Claude Code incluyen el seguimiento de herramientas."
+  "analytics.empty.tools": "No hay datos de uso de herramientas disponibles. Solo las sesiones de Claude Code incluyen el seguimiento de herramientas.",
+  "oauthFallback.title.openFailed": "No se pudo abrir el navegador",
+  "oauthFallback.title.timeout": "El inicio de sesión tarda demasiado",
+  "oauthFallback.description.openFailed": "No pudimos abrir tu navegador automáticamente. Copia el enlace de abajo y pégalo en cualquier navegador para completar el inicio de sesión.",
+  "oauthFallback.description.timeout": "No recibimos respuesta de GitHub. Si otra instancia de la aplicación gestionó la redirección, copia el enlace y completa el inicio de sesión manualmente.",
+  "oauthFallback.copyLink": "Copiar enlace",
+  "oauthFallback.copied": "¡Copiado!",
+  "oauthFallback.openInBrowser": "Abrir en el navegador",
+  "oauthFallback.close": "Cerrar",
+  "oauthFallback.retryFailed": "No se pudo abrir el navegador. Copia el enlace y pégalo manualmente."
 }

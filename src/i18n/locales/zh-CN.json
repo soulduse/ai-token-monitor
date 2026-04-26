@@ -347,5 +347,14 @@
   "analytics.activity.Git Ops": "Git 操作",
   "analytics.activity.Planning": "规划",
   "analytics.empty.projects": "暂无项目数据。仅 Claude Code 会话支持项目追踪。",
-  "analytics.empty.tools": "暂无工具使用数据。仅 Claude Code 会话支持工具追踪。"
+  "analytics.empty.tools": "暂无工具使用数据。仅 Claude Code 会话支持工具追踪。",
+  "oauthFallback.title.openFailed": "浏览器未能打开",
+  "oauthFallback.title.timeout": "登录响应未收到",
+  "oauthFallback.description.openFailed": "无法自动启动浏览器。请复制下方链接并粘贴到任意浏览器中以完成登录。",
+  "oauthFallback.description.timeout": "未收到 GitHub 的响应。若其他应用实例处理了回调,请复制链接并手动完成登录。",
+  "oauthFallback.copyLink": "复制链接",
+  "oauthFallback.copied": "已复制!",
+  "oauthFallback.openInBrowser": "在浏览器中打开",
+  "oauthFallback.close": "关闭",
+  "oauthFallback.retryFailed": "无法打开浏览器。请复制链接并手动粘贴。"
 }

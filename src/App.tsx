@@ -28,6 +28,7 @@ import { SourceSelector } from "./components/SourceSelector";
 import { SalaryComparator } from "./components/SalaryComparator";
 import { UsageAlertBar } from "./components/UsageAlertBar";
 import { MiniProfile } from "./components/MiniProfile";
+import { OAuthFallbackModal } from "./components/OAuthFallbackModal";
 import { AnalyticsSubTabs } from "./components/AnalyticsSubTabs";
 import type { AnalyticsSubTab } from "./components/AnalyticsSubTabs";
 import { ProjectBreakdown } from "./components/ProjectBreakdown";
@@ -250,6 +251,7 @@ function AppContent() {
       {/* Headless: keeps all enabled providers' snapshot history in sync
           regardless of whether the Leaderboard tab is open. */}
       <LeaderboardUploader />
+      <OAuthFallbackModal />
     </PopoverShell>
   );
 }

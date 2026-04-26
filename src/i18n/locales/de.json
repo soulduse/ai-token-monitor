@@ -347,5 +347,14 @@
   "analytics.activity.Git Ops": "Git-Operationen",
   "analytics.activity.Planning": "Planung",
   "analytics.empty.projects": "Keine Projektdaten verfügbar. Nur Claude Code-Sitzungen unterstützen Projektverfolgung.",
-  "analytics.empty.tools": "Keine Werkzeugnutzungsdaten verfügbar. Nur Claude Code-Sitzungen unterstützen Werkzeugverfolgung."
+  "analytics.empty.tools": "Keine Werkzeugnutzungsdaten verfügbar. Nur Claude Code-Sitzungen unterstützen Werkzeugverfolgung.",
+  "oauthFallback.title.openFailed": "Browser konnte nicht geöffnet werden",
+  "oauthFallback.title.timeout": "Anmeldung dauert zu lange",
+  "oauthFallback.description.openFailed": "Wir konnten Ihren Browser nicht automatisch starten. Kopieren Sie den Link unten und fügen Sie ihn in einen beliebigen Browser ein, um die Anmeldung abzuschließen.",
+  "oauthFallback.description.timeout": "Wir haben keine Antwort von GitHub erhalten. Falls eine andere App-Instanz die Weiterleitung verarbeitet hat, kopieren Sie den Link und melden Sie sich manuell an.",
+  "oauthFallback.copyLink": "Link kopieren",
+  "oauthFallback.copied": "Kopiert!",
+  "oauthFallback.openInBrowser": "Im Browser öffnen",
+  "oauthFallback.close": "Schließen",
+  "oauthFallback.retryFailed": "Browser konnte nicht geöffnet werden. Bitte kopieren Sie den Link manuell."
 }

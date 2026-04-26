@@ -353,5 +353,14 @@
   "analytics.activity.Git Ops": "Git Ops",
   "analytics.activity.Planning": "Planning",
   "analytics.empty.projects": "No project data available. Only Claude Code sessions include project tracking.",
-  "analytics.empty.tools": "No tool usage data available. Only Claude Code sessions include tool tracking."
+  "analytics.empty.tools": "No tool usage data available. Only Claude Code sessions include tool tracking.",
+  "oauthFallback.title.openFailed": "Browser didn't open",
+  "oauthFallback.title.timeout": "Sign-in is taking too long",
+  "oauthFallback.description.openFailed": "We couldn't launch your browser automatically. Copy the link below and paste it into any browser to finish signing in.",
+  "oauthFallback.description.timeout": "We didn't receive a response from GitHub. If another app instance handled the redirect, copy the link below and complete sign-in manually.",
+  "oauthFallback.copyLink": "Copy link",
+  "oauthFallback.copied": "Copied!",
+  "oauthFallback.openInBrowser": "Open in browser",
+  "oauthFallback.close": "Close",
+  "oauthFallback.retryFailed": "Couldn't open the browser. Please copy the link and paste it manually."
 }

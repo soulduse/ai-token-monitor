@@ -346,5 +346,14 @@
   "analytics.activity.Git Ops": "Git İşlemleri",
   "analytics.activity.Planning": "Planlama",
   "analytics.empty.projects": "Proje verisi bulunamadı. Yalnızca Claude Code oturumları proje takibini destekler.",
-  "analytics.empty.tools": "Araç kullanım verisi bulunamadı. Yalnızca Claude Code oturumları araç takibini destekler."
+  "analytics.empty.tools": "Araç kullanım verisi bulunamadı. Yalnızca Claude Code oturumları araç takibini destekler.",
+  "oauthFallback.title.openFailed": "Tarayıcı açılmadı",
+  "oauthFallback.title.timeout": "Oturum açma çok uzun sürüyor",
+  "oauthFallback.description.openFailed": "Tarayıcınızı otomatik olarak başlatamadık. Aşağıdaki bağlantıyı kopyalayıp herhangi bir tarayıcıya yapıştırarak oturum açmayı tamamlayın.",
+  "oauthFallback.description.timeout": "GitHub'dan yanıt alamadık. Başka bir uygulama örneği yönlendirmeyi işlediyse, bağlantıyı kopyalayıp manuel olarak oturum açın.",
+  "oauthFallback.copyLink": "Bağlantıyı kopyala",
+  "oauthFallback.copied": "Kopyalandı!",
+  "oauthFallback.openInBrowser": "Tarayıcıda aç",
+  "oauthFallback.close": "Kapat",
+  "oauthFallback.retryFailed": "Tarayıcı açılamadı. Lütfen bağlantıyı manuel olarak yapıştırın."
 }

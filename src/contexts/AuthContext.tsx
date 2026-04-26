@@ -17,6 +17,11 @@ function isProduction(): boolean {
   return hostname === "tauri.localhost";
 }
 
+interface OAuthFallback {
+  url: string;
+  reason: "open-failed" | "timeout";
+}
+
 interface AuthContextType {
   user: User | null;
   profile: { nickname: string; avatar_url: string | null } | null;
@@ -24,6 +29,8 @@ interface AuthContextType {
   available: boolean;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
+  oauthFallback: OAuthFallback | null;
+  dismissOauthFallback: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -33,14 +40,21 @@ const AuthContext = createContext<AuthContextType>({
   available: false,
   signIn: async () => {},
   signOut: async () => {},
+  oauthFallback: null,
+  dismissOauthFallback: () => {},
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<{ nickname: string; avatar_url: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [oauthFallback, setOauthFallback] = useState<OAuthFallback | null>(null);
   const available = supabase !== null;
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const dismissOauthFallback = useCallback(() => {
+    setOauthFallback(null);
+  }, []);
 
   useEffect(() => {
     if (!supabase) {
@@ -155,6 +169,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Once authenticated, drop any lingering fallback prompt
+  useEffect(() => {
+    if (user) setOauthFallback(null);
+  }, [user]);
+
   const upsertProfile = useCallback(async (u: User) => {
     if (!supabase) return;
 
@@ -176,6 +195,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(async () => {
     if (!supabase) return;
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setOauthFallback(null);
     setLoading(true);
 
     if (!isProduction()) {
@@ -202,10 +222,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    await openUrl(data.url);
+    const authUrl = data.url;
 
-    // Timeout: reset loading if no callback received
-    timeoutRef.current = setTimeout(() => setLoading(false), AUTH_TIMEOUT_MS);
+    try {
+      await openUrl(authUrl);
+    } catch (err) {
+      // Browser failed to open (multi-agent env, missing default handler, etc.)
+      // Surface URL so user can paste it into a browser manually.
+      console.error("[OAuth] openUrl failed, surfacing fallback:", err);
+      setOauthFallback({ url: authUrl, reason: "open-failed" });
+      setLoading(false);
+      return;
+    }
+
+    // Timeout: surface fallback URL if deep-link callback never arrives
+    // (e.g. another app instance hijacked the ai-token-monitor:// scheme).
+    timeoutRef.current = setTimeout(() => {
+      setOauthFallback((prev) => prev ?? { url: authUrl, reason: "timeout" });
+      setLoading(false);
+    }, AUTH_TIMEOUT_MS);
   }, []);
 
   const signOut = useCallback(async () => {
@@ -219,7 +254,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, available, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, profile, loading, available, signIn, signOut, oauthFallback, dismissOauthFallback }}>
       {children}
     </AuthContext.Provider>
   );

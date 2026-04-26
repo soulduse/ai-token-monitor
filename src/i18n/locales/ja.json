@@ -347,5 +347,14 @@
   "analytics.activity.Git Ops": "Git操作",
   "analytics.activity.Planning": "設計",
   "analytics.empty.projects": "プロジェクトデータがありません。Claude Codeセッションのみプロジェクト追跡をサポートしています。",
-  "analytics.empty.tools": "ツール使用データがありません。Claude Codeセッションのみツール追跡をサポートしています。"
+  "analytics.empty.tools": "ツール使用データがありません。Claude Codeセッションのみツール追跡をサポートしています。",
+  "oauthFallback.title.openFailed": "ブラウザを開けませんでした",
+  "oauthFallback.title.timeout": "サインインの応答がありません",
+  "oauthFallback.description.openFailed": "ブラウザを自動で起動できませんでした。下のリンクをコピーして、お使いのブラウザに貼り付けてサインインを完了してください。",
+  "oauthFallback.description.timeout": "GitHubからの応答が届きませんでした。別のアプリインスタンスがリダイレクトを受け取った可能性があるため、リンクをコピーして手動でサインインしてください。",
+  "oauthFallback.copyLink": "リンクをコピー",
+  "oauthFallback.copied": "コピーしました!",
+  "oauthFallback.openInBrowser": "ブラウザで開く",
+  "oauthFallback.close": "閉じる",
+  "oauthFallback.retryFailed": "ブラウザを開けませんでした。リンクをコピーして手動で貼り付けてください。"
 }
