@@ -358,4 +358,37 @@ mod tests {
         let p = get_codex_pricing("some-future-model");
         assert!((p.input - 2.50).abs() < 0.001);
     }
+
+    // Regression guard: "gpt-5.5" must match its own entry, not fall through
+    // to the default ("gpt-5.4") and get billed at GPT-5.4 rates ($2.50/$15).
+    #[test]
+    fn codex_gpt55_not_billed_as_gpt54() {
+        let p = get_codex_pricing("gpt-5.5");
+        assert!((p.input - 5.00).abs() < 0.001, "GPT-5.5 input must be $5/MTok, got ${}", p.input);
+        assert!((p.output - 30.00).abs() < 0.001, "GPT-5.5 output must be $30/MTok, got ${}", p.output);
+        assert!((p.cached_input - 0.50).abs() < 0.001);
+    }
+
+    #[test]
+    fn codex_gpt55_pro_not_billed_as_gpt54() {
+        let p = get_codex_pricing("gpt-5.5-pro");
+        assert!((p.input - 30.00).abs() < 0.001, "GPT-5.5 Pro input must be $30/MTok, got ${}", p.input);
+        assert!((p.output - 180.00).abs() < 0.001, "GPT-5.5 Pro output must be $180/MTok, got ${}", p.output);
+    }
+
+    #[test]
+    fn opencode_gpt55_not_billed_as_gpt54() {
+        let p = get_opencode_pricing("openai/gpt-5.5");
+        assert!((p.input - 5.00).abs() < 0.001, "Opencode GPT-5.5 input must be $5/MTok, got ${}", p.input);
+        assert!((p.output - 30.00).abs() < 0.001);
+    }
+
+    // Regression guard: dated snapshot IDs (e.g. gpt-5.5-2026-04-23) must
+    // resolve to the gpt-5.5 entry, not the gpt-5.4 default fallback.
+    #[test]
+    fn codex_gpt55_dated_snapshot_resolves_correctly() {
+        let p = get_codex_pricing("gpt-5.5-2026-04-23");
+        assert!((p.input - 5.00).abs() < 0.001, "GPT-5.5 dated snapshot must match gpt-5.5, got input ${}", p.input);
+        assert!((p.output - 30.00).abs() < 0.001);
+    }
 }
