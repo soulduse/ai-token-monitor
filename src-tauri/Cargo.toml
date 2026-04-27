@@ -1,6 +1,6 @@
 [package]
 name = "ai-token-monitor"
-version = "0.19.8"
+version = "0.19.9"
 description = "AI Token Monitor - System Tray App"
 authors = ["soul"]
 edition = "2021"
