@@ -718,6 +718,21 @@ pub fn get_oauth_usage() -> Option<crate::oauth_usage::OAuthUsage> {
 }
 
 #[tauri::command]
+pub async fn refresh_oauth_usage(app: tauri::AppHandle) -> Option<crate::oauth_usage::OAuthUsage> {
+    // Throttle: if cache is fresh within 30 seconds, return it without hitting the API.
+    // Mirrors the frontend cooldown so rapid manual clicks cannot hammer the OAuth endpoint
+    // even if the UI gate is bypassed.
+    if crate::oauth_usage::is_cache_fresh(30) {
+        return crate::oauth_usage::get_cached_usage();
+    }
+    let result = crate::oauth_usage::fetch_and_cache_usage().await;
+    if result.is_some() {
+        let _ = app.emit("usage-updated", ());
+    }
+    result
+}
+
+#[tauri::command]
 pub fn get_pricing_table() -> pricing::PricingTable {
     pricing::get_pricing_table()
 }

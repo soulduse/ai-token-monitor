@@ -231,6 +231,8 @@
   "usageAlert.stale": "Aktualisierung...",
   "usageAlert.resetsIn": "Zurücksetzen in {{time}}",
   "usageAlert.resetsNow": "Wird zurückgesetzt...",
+  "usageAlert.refresh": "Aktualisieren",
+  "usageAlert.refreshing": "Wird aktualisiert...",
 
   "usageTracking.title": "Claude Nutzungsverfolgung",
   "usageTracking.description": "Überwachen Sie Ihre Claude Code Sitzungs- und Wochenlimits in Echtzeit. Dies erfordert Zugriff auf Ihre Claude Code Anmeldedaten.",

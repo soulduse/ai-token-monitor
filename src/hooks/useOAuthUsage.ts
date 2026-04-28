@@ -6,6 +6,7 @@ import type { OAuthUsage } from "../lib/types";
 export function useOAuthUsage() {
   const [usage, setUsage] = useState<OAuthUsage | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const requestIdRef = useRef(0);
 
   const fetchUsage = useCallback(async () => {
@@ -18,6 +19,23 @@ export function useOAuthUsage() {
       // Ignore errors silently
     } finally {
       if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
+    }
+  }, []);
+
+  const refresh = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
+    setRefreshing(true);
+    try {
+      const data = await invoke<OAuthUsage | null>("refresh_oauth_usage");
+      if (requestId !== requestIdRef.current) return;
+      setUsage(data);
+    } catch {
+      // Ignore errors silently
+    } finally {
+      if (requestId === requestIdRef.current) {
+        setRefreshing(false);
         setLoading(false);
       }
     }
@@ -36,5 +54,5 @@ export function useOAuthUsage() {
     };
   }, [fetchUsage]);
 
-  return { usage, loading };
+  return { usage, loading, refreshing, refresh };
 }

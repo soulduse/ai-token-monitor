@@ -231,6 +231,8 @@
   "usageAlert.stale": "更新中...",
   "usageAlert.resetsIn": "{{time}}後重置",
   "usageAlert.resetsNow": "重置中...",
+  "usageAlert.refresh": "重新整理",
+  "usageAlert.refreshing": "重新整理中...",
 
   "usageTracking.title": "Claude 用量追蹤",
   "usageTracking.description": "即時監控 Claude Code 工作階段和每週使用限額。需要存取 Claude Code 登入憑證。",

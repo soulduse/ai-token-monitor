@@ -845,6 +845,7 @@ pub fn run() {
             commands::save_png_to_file,
             commands::get_pricing_table,
             commands::get_oauth_usage,
+            commands::refresh_oauth_usage,
             commands::enable_usage_tracking,
             commands::get_ai_keys,
             commands::test_webhook,

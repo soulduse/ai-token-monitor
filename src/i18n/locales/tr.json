@@ -231,6 +231,8 @@
   "usageAlert.stale": "Güncelleniyor...",
   "usageAlert.resetsIn": "{{time}} içinde sıfırlanıyor",
   "usageAlert.resetsNow": "Sıfırlanıyor...",
+  "usageAlert.refresh": "Yenile",
+  "usageAlert.refreshing": "Yenileniyor...",
 
   "usageTracking.title": "Claude Kullanım Takibi",
   "usageTracking.description": "Claude Code oturum ve haftalık kullanım limitlerinizi gerçek zamanlı izleyin. Bu, Claude Code giriş kimlik bilgilerinize erişim gerektirir.",

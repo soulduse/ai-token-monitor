@@ -237,6 +237,8 @@
   "usageAlert.stale": "업데이트 중...",
   "usageAlert.resetsIn": "{{time}} 후 리셋",
   "usageAlert.resetsNow": "리셋 중...",
+  "usageAlert.refresh": "새로고침",
+  "usageAlert.refreshing": "새로고침 중...",
 
   "usageTracking.title": "Claude 사용량 추적",
   "usageTracking.description": "Claude Code 세션 및 주간 사용 한도를 실시간으로 모니터링합니다. Claude Code 로그인 자격 증명에 대한 접근이 필요합니다.",

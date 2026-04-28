@@ -231,6 +231,8 @@
   "usageAlert.stale": "更新中...",
   "usageAlert.resetsIn": "{{time}}後にリセット",
   "usageAlert.resetsNow": "リセット中...",
+  "usageAlert.refresh": "更新",
+  "usageAlert.refreshing": "更新中...",
 
   "usageTracking.title": "Claude 使用量トラッキング",
   "usageTracking.description": "Claude Codeのセッションおよび週間使用制限をリアルタイムで監視します。Claude Codeのログイン認証情報へのアクセスが必要です。",

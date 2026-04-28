@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useOAuthUsage } from "../hooks/useOAuthUsage";
 import { useSettings } from "../contexts/SettingsContext";
 import { useI18n } from "../i18n/I18nContext";
+
+const REFRESH_COOLDOWN_SECONDS = 30;
 
 function getBarColor(percent: number): string {
   if (percent >= 90) return "#ef4444";
@@ -92,9 +94,40 @@ function UsageRow({
 
 export function UsageAlertBar() {
   const { prefs, refreshPrefs } = useSettings();
-  const { usage } = useOAuthUsage();
+  const { usage, refreshing, refresh } = useOAuthUsage();
   const t = useI18n();
   const [enabling, setEnabling] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+  const cooldownTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (cooldownTimerRef.current !== null) {
+        window.clearInterval(cooldownTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleRefresh = async () => {
+    if (refreshing || cooldown > 0) return;
+    setCooldown(REFRESH_COOLDOWN_SECONDS);
+    if (cooldownTimerRef.current !== null) {
+      window.clearInterval(cooldownTimerRef.current);
+    }
+    cooldownTimerRef.current = window.setInterval(() => {
+      setCooldown((prev) => {
+        if (prev <= 1) {
+          if (cooldownTimerRef.current !== null) {
+            window.clearInterval(cooldownTimerRef.current);
+            cooldownTimerRef.current = null;
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    await refresh();
+  };
 
   if (!prefs.usage_tracking_enabled) {
     return (
@@ -179,15 +212,71 @@ export function UsageAlertBar() {
         }}>
           {t("usageAlert.title")}
         </span>
-        {is_stale && (
-          <span style={{
-            fontSize: 9,
-            fontWeight: 600,
-            color: "var(--text-muted)",
-          }}>
-            {t("usageAlert.stale")}
-          </span>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {is_stale && (
+            <span style={{
+              fontSize: 9,
+              fontWeight: 600,
+              color: "var(--text-muted)",
+            }}>
+              {t("usageAlert.stale")}
+            </span>
+          )}
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing || cooldown > 0}
+            title={
+              refreshing
+                ? t("usageAlert.refreshing")
+                : cooldown > 0
+                ? `${t("usageAlert.refresh")} (${cooldown}s)`
+                : t("usageAlert.refresh")
+            }
+            aria-label={t("usageAlert.refresh")}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 18,
+              height: 18,
+              padding: 0,
+              background: "transparent",
+              border: "none",
+              borderRadius: 3,
+              color: "var(--text-muted)",
+              cursor: refreshing || cooldown > 0 ? "default" : "pointer",
+              opacity: refreshing || cooldown > 0 ? 0.4 : 0.8,
+              transition: "opacity 0.2s ease, color 0.2s ease",
+            }}
+            onMouseEnter={(e) => {
+              if (!refreshing && cooldown === 0) {
+                e.currentTarget.style.color = "var(--text-primary)";
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "var(--text-muted)";
+            }}
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{
+                animation: refreshing ? "miniProfileSpin 0.8s linear infinite" : "none",
+              }}
+            >
+              <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+              <path d="M21 3v5h-5" />
+              <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+              <path d="M3 21v-5h5" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Session (5h) */}

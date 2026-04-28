@@ -237,6 +237,8 @@
   "usageAlert.stale": "Updating...",
   "usageAlert.resetsIn": "Resets in {{time}}",
   "usageAlert.resetsNow": "Resetting...",
+  "usageAlert.refresh": "Refresh",
+  "usageAlert.refreshing": "Refreshing...",
 
   "usageTracking.title": "Claude Usage Tracking",
   "usageTracking.description": "Monitor your Claude Code session and weekly usage limits in real-time. This requires access to your Claude Code login credentials.",

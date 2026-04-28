@@ -231,6 +231,8 @@
   "usageAlert.stale": "Mise à jour...",
   "usageAlert.resetsIn": "Réinitialisation dans {{time}}",
   "usageAlert.resetsNow": "Réinitialisation...",
+  "usageAlert.refresh": "Actualiser",
+  "usageAlert.refreshing": "Actualisation...",
 
   "usageTracking.title": "Suivi d'utilisation Claude",
   "usageTracking.description": "Surveillez vos limites de session et hebdomadaires de Claude Code en temps réel. Nécessite l'accès à vos identifiants de connexion Claude Code.",
