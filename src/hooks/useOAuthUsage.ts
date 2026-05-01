@@ -13,14 +13,13 @@ export function useOAuthUsage() {
     const requestId = ++requestIdRef.current;
     try {
       const data = await invoke<OAuthUsage | null>("get_oauth_usage");
-      if (requestId !== requestIdRef.current) return;
-      setUsage(data);
+      if (requestId === requestIdRef.current) {
+        setUsage(data);
+      }
     } catch {
       // Ignore errors silently
     } finally {
-      if (requestId === requestIdRef.current) {
-        setLoading(false);
-      }
+      setLoading(false);
     }
   }, []);
 
@@ -29,15 +28,19 @@ export function useOAuthUsage() {
     setRefreshing(true);
     try {
       const data = await invoke<OAuthUsage | null>("refresh_oauth_usage");
-      if (requestId !== requestIdRef.current) return;
-      setUsage(data);
+      // Only adopt the result if no newer request has started; otherwise keep
+      // the more recent data. The spinner state is reset unconditionally below.
+      if (requestId === requestIdRef.current) {
+        setUsage(data);
+      }
     } catch {
       // Ignore errors silently
     } finally {
-      if (requestId === requestIdRef.current) {
-        setRefreshing(false);
-        setLoading(false);
-      }
+      // Always clear the spinner — never tie it to requestId, otherwise a
+      // concurrent fetchUsage() (e.g. from a "usage-updated" event fired by
+      // this very refresh) bumps requestIdRef and strands refreshing=true.
+      setRefreshing(false);
+      setLoading(false);
     }
   }, []);
 
