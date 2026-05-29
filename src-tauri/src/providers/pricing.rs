@@ -317,6 +317,27 @@ mod tests {
         assert!((p.output - 25.0).abs() < 0.001);
     }
 
+    // Regression guard: "opus-4-8" must match its own entry, not fall through
+    // to the "opus-4" substring and get billed at Opus 4.1 rates ($15/$75).
+    // Opus 4.8 shares 4.5/4.6/4.7 pricing ($5/$25) but needs its own entry
+    // so the substring match does not land on "opus-4" (Opus 4.1/4).
+    #[test]
+    fn claude_opus_48_not_billed_as_41() {
+        let p = get_claude_pricing("claude-opus-4-8-20260528");
+        assert!((p.input - 5.0).abs() < 0.001, "Opus 4.8 input must be $5/MTok, got ${}", p.input);
+        assert!((p.output - 25.0).abs() < 0.001, "Opus 4.8 output must be $25/MTok, got ${}", p.output);
+        assert!((p.cache_read - 0.50).abs() < 0.001);
+        assert!((p.cache_write_5m - 6.25).abs() < 0.001);
+        assert!((p.cache_write_1h - 10.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn opencode_opus_48_not_billed_as_41() {
+        let p = get_opencode_pricing("anthropic/claude-opus-4-8-20260528");
+        assert!((p.input - 5.0).abs() < 0.001, "Opencode Opus 4.8 input must be $5/MTok, got ${}", p.input);
+        assert!((p.output - 25.0).abs() < 0.001);
+    }
+
     #[test]
     fn claude_sonnet_pricing() {
         let p = get_claude_pricing("claude-sonnet-4-6-20260320");
