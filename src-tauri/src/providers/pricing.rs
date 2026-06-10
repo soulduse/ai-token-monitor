@@ -183,7 +183,7 @@ pub fn get_opencode_pricing(model: &str) -> OpenCodePricing {
     }
 
     // Fallback: try claude pricing first (for claude-* models), then codex
-    if model.contains("claude") || model.contains("sonnet") || model.contains("opus") || model.contains("haiku") {
+    if model.contains("claude") || model.contains("fable") || model.contains("mythos") || model.contains("sonnet") || model.contains("opus") || model.contains("haiku") {
         let entry = find_pricing(&cfg.claude, model);
         OpenCodePricing {
             input: entry.input,
@@ -336,6 +336,39 @@ mod tests {
         let p = get_opencode_pricing("anthropic/claude-opus-4-8-20260528");
         assert!((p.input - 5.0).abs() < 0.001, "Opencode Opus 4.8 input must be $5/MTok, got ${}", p.input);
         assert!((p.output - 25.0).abs() < 0.001);
+    }
+
+    // Regression guard: "claude-fable-5" must resolve to its own Fable entry
+    // ($10/$50), not fall through to the "sonnet" default and get under-billed
+    // at Sonnet rates ($3/$15). Fable 5 is the top tier above Opus.
+    #[test]
+    fn claude_fable_5_not_billed_as_sonnet() {
+        let p = get_claude_pricing("claude-fable-5");
+        assert!((p.input - 10.0).abs() < 0.001, "Fable 5 input must be $10/MTok, got ${}", p.input);
+        assert!((p.output - 50.0).abs() < 0.001, "Fable 5 output must be $50/MTok, got ${}", p.output);
+        assert!((p.cache_read - 1.00).abs() < 0.001);
+        assert!((p.cache_write_5m - 12.5).abs() < 0.001);
+        assert!((p.cache_write_1h - 20.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn opencode_fable_5_not_billed_as_sonnet() {
+        let p = get_opencode_pricing("anthropic/claude-fable-5");
+        assert!((p.input - 10.0).abs() < 0.001, "Opencode Fable 5 input must be $10/MTok, got ${}", p.input);
+        assert!((p.output - 50.0).abs() < 0.001);
+    }
+
+    // Regression guard: "claude-mythos-5" (Project Glasswing, limited availability)
+    // shares Fable 5 pricing ($10/$50) and must not fall through to the "sonnet"
+    // default ($3/$15).
+    #[test]
+    fn claude_mythos_5_not_billed_as_sonnet() {
+        let p = get_claude_pricing("claude-mythos-5");
+        assert!((p.input - 10.0).abs() < 0.001, "Mythos 5 input must be $10/MTok, got ${}", p.input);
+        assert!((p.output - 50.0).abs() < 0.001, "Mythos 5 output must be $50/MTok, got ${}", p.output);
+        assert!((p.cache_read - 1.00).abs() < 0.001);
+        assert!((p.cache_write_5m - 12.5).abs() < 0.001);
+        assert!((p.cache_write_1h - 20.0).abs() < 0.001);
     }
 
     #[test]
