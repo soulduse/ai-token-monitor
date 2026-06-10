@@ -403,7 +403,9 @@ mod tests {
 
     #[test]
     fn codex_gpt52_pricing() {
-        let p = get_codex_pricing("gpt-5.2-codex");
+        // base gpt-5.2 is $1.25; the gpt-5.2-codex variant is $1.75 (see
+        // codex_gpt52_codex_uses_codex_rate).
+        let p = get_codex_pricing("gpt-5.2");
         assert!((p.input - 1.25).abs() < 0.001);
     }
 
@@ -411,6 +413,82 @@ mod tests {
     fn codex_unknown_defaults_to_gpt54() {
         let p = get_codex_pricing("some-future-model");
         assert!((p.input - 2.50).abs() < 0.001);
+    }
+
+    // Regression guard: "gpt-5-codex" (the default Codex CLI model) must match
+    // its own entry, not fall through to the gpt-5.4 default and get billed at
+    // $2.50/$15 instead of the correct $1.25/$10 (~1.9x overcharge). Reporter saw
+    // Codex daily cost inflated vs. their reference tool.
+    #[test]
+    fn codex_gpt5_codex_not_billed_as_gpt54() {
+        let p = get_codex_pricing("gpt-5-codex");
+        assert!((p.input - 1.25).abs() < 0.001, "gpt-5-codex input must be $1.25/MTok, got ${}", p.input);
+        assert!((p.output - 10.00).abs() < 0.001, "gpt-5-codex output must be $10/MTok, got ${}", p.output);
+        assert!((p.cached_input - 0.125).abs() < 0.001, "gpt-5-codex cached must be $0.125/MTok, got ${}", p.cached_input);
+    }
+
+    // contains() ordering guard: "gpt-5.3-codex" must still match its own entry,
+    // not the broader gpt-5-codex one.
+    #[test]
+    fn codex_gpt53_codex_unaffected_by_gpt5_codex_entry() {
+        let p = get_codex_pricing("gpt-5.3-codex");
+        assert!((p.input - 1.75).abs() < 0.001, "gpt-5.3-codex input must be $1.75/MTok, got ${}", p.input);
+        assert!((p.output - 14.00).abs() < 0.001);
+    }
+
+    // Regression guard: "gpt-5.2-codex" was previously mis-registered at the
+    // gpt-5.2 base rate ($1.25/$10); the codex variant is actually $1.75/$14.
+    #[test]
+    fn codex_gpt52_codex_uses_codex_rate() {
+        let p = get_codex_pricing("gpt-5.2-codex");
+        assert!((p.input - 1.75).abs() < 0.001, "gpt-5.2-codex input must be $1.75/MTok, got ${}", p.input);
+        assert!((p.output - 14.00).abs() < 0.001, "gpt-5.2-codex output must be $14/MTok, got ${}", p.output);
+        assert!((p.cached_input - 0.175).abs() < 0.001);
+    }
+
+    // "gpt-5.1-codex-max" / "gpt-5.1-codex-mini" must match their own specific
+    // entries before the broader "gpt-5.1-codex" / "gpt-5.1" patterns.
+    #[test]
+    fn codex_gpt51_codex_variants_resolve_specifically() {
+        let max = get_codex_pricing("gpt-5.1-codex-max");
+        assert!((max.input - 1.25).abs() < 0.001, "gpt-5.1-codex-max input must be $1.25, got ${}", max.input);
+        assert!((max.output - 10.00).abs() < 0.001);
+        let mini = get_codex_pricing("gpt-5.1-codex-mini");
+        assert!((mini.input - 0.25).abs() < 0.001, "gpt-5.1-codex-mini input must be $0.25, got ${}", mini.input);
+        assert!((mini.output - 2.00).abs() < 0.001);
+        let base = get_codex_pricing("gpt-5.1");
+        assert!((base.input - 0.625).abs() < 0.001, "gpt-5.1 input must be $0.625, got ${}", base.input);
+        assert!((base.output - 5.00).abs() < 0.001);
+    }
+
+    // "gpt-5" base must resolve to its own entry, not be shadowed by a gpt-5.x
+    // pattern (it is placed last, after all gpt-5.x entries).
+    #[test]
+    fn codex_gpt5_base_resolves_after_dotted_variants() {
+        let p = get_codex_pricing("gpt-5");
+        assert!((p.input - 1.25).abs() < 0.001, "gpt-5 input must be $1.25, got ${}", p.input);
+        assert!((p.output - 10.00).abs() < 0.001);
+        // gpt-5.4 must NOT be captured by the gpt-5 base entry
+        let dotted = get_codex_pricing("gpt-5.4");
+        assert!((dotted.input - 2.50).abs() < 0.001, "gpt-5.4 must stay $2.50, got ${}", dotted.input);
+    }
+
+    // Dated snapshot of gpt-5-codex (e.g. gpt-5-codex-2025-09-15) must still
+    // resolve to the gpt-5-codex entry.
+    #[test]
+    fn codex_gpt5_codex_dated_snapshot_resolves() {
+        let p = get_codex_pricing("gpt-5-codex-2025-09-15");
+        assert!((p.input - 1.25).abs() < 0.001, "dated gpt-5-codex must be $1.25, got ${}", p.input);
+        assert!((p.output - 10.00).abs() < 0.001);
+    }
+
+    // Opencode "openai/gpt-5-codex" must match the opencode codex entry, not
+    // fall through to the opencode default ("sonnet" = $3/$15).
+    #[test]
+    fn opencode_gpt5_codex_not_billed_as_sonnet() {
+        let p = get_opencode_pricing("openai/gpt-5-codex");
+        assert!((p.input - 1.25).abs() < 0.001, "opencode gpt-5-codex input must be $1.25, got ${}", p.input);
+        assert!((p.output - 10.00).abs() < 0.001, "opencode gpt-5-codex output must be $10, got ${}", p.output);
     }
 
     // Regression guard: "gpt-5.5" must match its own entry, not fall through

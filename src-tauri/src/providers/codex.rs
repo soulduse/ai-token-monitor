@@ -1103,7 +1103,11 @@ mod tests {
         assert!((codex_mini.input - 1.50).abs() < 0.001);
 
         let gpt52codex = pricing::get_codex_pricing("gpt-5.2-codex");
-        assert!((gpt52codex.input - 1.25).abs() < 0.001);
+        assert!((gpt52codex.input - 1.75).abs() < 0.001);
+
+        let gpt5codex = pricing::get_codex_pricing("gpt-5-codex");
+        assert!((gpt5codex.input - 1.25).abs() < 0.001);
+        assert!((gpt5codex.output - 10.00).abs() < 0.001);
 
         let unknown = pricing::get_codex_pricing("some-future-model");
         assert!((unknown.input - 2.50).abs() < 0.001);
