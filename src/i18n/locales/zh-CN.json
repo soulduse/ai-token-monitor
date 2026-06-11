@@ -232,7 +232,7 @@
   "usageAlert.today": "今天",
   "usageAlert.last7Days": "最近 7 天",
   "usageAlert.extraUsage": "额外用量",
-  "usageAlert.stale": "更新中...",
+  "usageAlert.stale": "旧数据",
   "usageAlert.resetsIn": "{{time}}后重置",
   "usageAlert.resetsNow": "重置中...",
   "usageAlert.refresh": "刷新",

@@ -238,7 +238,7 @@
   "usageAlert.today": "Today",
   "usageAlert.last7Days": "Last 7 days",
   "usageAlert.extraUsage": "Extra Usage",
-  "usageAlert.stale": "Updating...",
+  "usageAlert.stale": "Stale data",
   "usageAlert.resetsIn": "Resets in {{time}}",
   "usageAlert.resetsNow": "Resetting...",
   "usageAlert.refresh": "Refresh",

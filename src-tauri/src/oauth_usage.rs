@@ -1,5 +1,9 @@
+use std::fmt;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::Mutex;
-use std::time::Instant;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -31,6 +35,48 @@ pub struct OAuthUsage {
 struct CacheEntry {
     usage: OAuthUsage,
     fetched_at: Instant,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OAuthCredentials {
+    access_token: String,
+    expires_at_millis: Option<i64>,
+}
+
+impl OAuthCredentials {
+    fn should_refresh(&self) -> bool {
+        const REFRESH_SKEW_MS: i64 = 4 * 60 * 1000;
+
+        match self.expires_at_millis {
+            Some(expires_at) => {
+                expires_at <= chrono::Utc::now().timestamp_millis() + REFRESH_SKEW_MS
+            }
+            None => false,
+        }
+    }
+}
+
+#[derive(Debug)]
+enum FetchUsageError {
+    Request(String),
+    Unauthorized,
+    RateLimited(u64),
+    HttpStatus(reqwest::StatusCode),
+    Parse(String),
+    MissingTokenAfterRefresh,
+}
+
+impl fmt::Display for FetchUsageError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Request(message) => write!(f, "request failed: {}", message),
+            Self::Unauthorized => write!(f, "OAuth token rejected"),
+            Self::RateLimited(seconds) => write!(f, "rate limited, retry after {}s", seconds),
+            Self::HttpStatus(status) => write!(f, "HTTP {}", status),
+            Self::Parse(message) => write!(f, "response parse failed: {}", message),
+            Self::MissingTokenAfterRefresh => write!(f, "OAuth refresh did not produce a token"),
+        }
+    }
 }
 
 static OAUTH_CACHE: Mutex<Option<CacheEntry>> = Mutex::new(None);
@@ -84,7 +130,10 @@ pub async fn fetch_and_cache_usage() -> Option<OAuthUsage> {
 
     // If another fetch is in progress, return cached data instead of
     // triggering a second keychain access
-    if FETCH_IN_PROGRESS.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+    if FETCH_IN_PROGRESS
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
         return get_cached_usage();
     }
 
@@ -105,9 +154,9 @@ async fn fetch_and_cache_usage_inner() -> Option<OAuthUsage> {
         }
     }
 
-    let token = read_oauth_token()?;
+    let credentials = read_oauth_credentials()?;
 
-    match fetch_usage_from_api(&token).await {
+    match fetch_usage_with_oauth_recovery(credentials).await {
         Ok(mut usage) => {
             usage.is_stale = false;
             usage.fetched_at = chrono::Local::now().to_rfc3339();
@@ -134,32 +183,70 @@ async fn fetch_and_cache_usage_inner() -> Option<OAuthUsage> {
     }
 }
 
-/// Read OAuth access token from macOS Keychain.
-fn read_oauth_token() -> Option<String> {
+async fn fetch_usage_with_oauth_recovery(
+    mut credentials: OAuthCredentials,
+) -> Result<OAuthUsage, FetchUsageError> {
+    let mut refresh_succeeded = false;
+
+    if credentials.should_refresh() {
+        refresh_succeeded = refresh_oauth_via_claude_cli();
+        if refresh_succeeded {
+            if let Some(updated) = read_oauth_credentials() {
+                credentials = updated;
+            }
+        }
+    }
+
+    match fetch_usage_from_api(&credentials.access_token).await {
+        Err(FetchUsageError::Unauthorized) => {
+            refresh_succeeded = if refresh_succeeded {
+                true
+            } else {
+                refresh_oauth_via_claude_cli()
+            };
+            let updated = read_oauth_credentials();
+            let token_changed = updated
+                .as_ref()
+                .map(|c| c.access_token.as_str())
+                .is_some_and(|token| token != credentials.access_token.as_str());
+
+            if !refresh_succeeded && !token_changed {
+                return Err(FetchUsageError::Unauthorized);
+            }
+
+            let updated = updated.ok_or(FetchUsageError::MissingTokenAfterRefresh)?;
+            fetch_usage_from_api(&updated.access_token).await
+        }
+        result => result,
+    }
+}
+
+/// Read OAuth credentials from macOS Keychain.
+fn read_oauth_credentials() -> Option<OAuthCredentials> {
     #[cfg(target_os = "macos")]
     {
-        read_oauth_token_macos()
+        read_oauth_credentials_macos()
     }
     #[cfg(not(target_os = "macos"))]
     {
-        read_oauth_token_file()
+        read_oauth_credentials_file()
     }
 }
 
 #[cfg(target_os = "macos")]
-fn read_oauth_token_macos() -> Option<String> {
+fn read_oauth_credentials_macos() -> Option<OAuthCredentials> {
     // Try Keychain first, then fall back to .credentials.json file
-    read_oauth_token_keychain().or_else(read_oauth_token_file)
+    read_oauth_credentials_keychain().or_else(read_oauth_credentials_file)
 }
 
 #[cfg(target_os = "macos")]
-fn read_oauth_token_keychain() -> Option<String> {
+fn read_oauth_credentials_keychain() -> Option<OAuthCredentials> {
     let account = whoami::username();
 
     // Try legacy name first (avoids `security dump-keychain` discovery)
     let legacy = "Claude Code-credentials";
-    if let Some(token) = read_keychain_password(legacy, &account) {
-        return Some(token);
+    if let Some(credentials) = read_keychain_credentials(legacy, &account) {
+        return Some(credentials);
     }
 
     // Claude Code v2.1.52+ uses "Claude Code-credentials-{hash}" service name.
@@ -169,8 +256,8 @@ fn read_oauth_token_keychain() -> Option<String> {
         if service == legacy {
             continue; // Already tried
         }
-        if let Some(token) = read_keychain_password(service, &account) {
-            return Some(token);
+        if let Some(credentials) = read_keychain_credentials(service, &account) {
+            return Some(credentials);
         }
     }
     None
@@ -180,9 +267,7 @@ fn read_oauth_token_keychain() -> Option<String> {
 /// Claude Code stores credentials using the same `security` binary,
 /// so it's always in the keychain item's ACL — no permission prompts.
 #[cfg(target_os = "macos")]
-fn read_keychain_password(service: &str, account: &str) -> Option<String> {
-    use std::process::Command;
-
+fn read_keychain_credentials(service: &str, account: &str) -> Option<OAuthCredentials> {
     let output = Command::new("/usr/bin/security")
         .args(["find-generic-password", "-s", service, "-a", account, "-w"])
         .output()
@@ -192,7 +277,7 @@ fn read_keychain_password(service: &str, account: &str) -> Option<String> {
         return None;
     }
 
-    extract_token_from_keychain_data(&output.stdout)
+    extract_credentials_from_keychain_data(&output.stdout)
 }
 
 /// Cached keychain service names to avoid repeated `security dump-keychain` calls
@@ -250,19 +335,14 @@ fn find_keychain_service_names() -> Vec<String> {
 }
 
 #[cfg(target_os = "macos")]
-fn extract_token_from_keychain_data(data: &[u8]) -> Option<String> {
+fn extract_credentials_from_keychain_data(data: &[u8]) -> Option<OAuthCredentials> {
     let json_str = String::from_utf8_lossy(data);
     // Claude Code may prepend a non-JSON byte
     let json_str = json_str.trim_start_matches(|c: char| !c.is_ascii() || c == '\x07');
-    let value: serde_json::Value = serde_json::from_str(json_str).ok()?;
-    value
-        .get("claudeAiOauth")?
-        .get("accessToken")?
-        .as_str()
-        .map(|s| s.to_string())
+    parse_oauth_credentials_json(json_str)
 }
 
-fn read_oauth_token_file() -> Option<String> {
+fn read_oauth_credentials_file() -> Option<OAuthCredentials> {
     // Read from ~/.claude/.credentials.json (Windows, Linux, and macOS fallback)
     let config_dir = std::env::var("CLAUDE_CONFIG_DIR")
         .ok()
@@ -270,12 +350,141 @@ fn read_oauth_token_file() -> Option<String> {
         .or_else(|| dirs::home_dir().map(|h| h.join(".claude")))?;
     let path = config_dir.join(".credentials.json");
     let content = std::fs::read_to_string(&path).ok()?;
-    let value: serde_json::Value = serde_json::from_str(&content).ok()?;
+    parse_oauth_credentials_json(&content)
+}
+
+fn parse_oauth_credentials_json(content: &str) -> Option<OAuthCredentials> {
+    let value: serde_json::Value = serde_json::from_str(content).ok()?;
+    extract_oauth_credentials(&value)
+}
+
+fn extract_oauth_credentials(value: &serde_json::Value) -> Option<OAuthCredentials> {
+    let oauth = value.get("claudeAiOauth")?;
+    let access_token = oauth
+        .get("accessToken")
+        .or_else(|| oauth.get("access_token"))
+        .and_then(value_as_string)?;
+    let expires_at_millis = oauth
+        .get("expiresAt")
+        .or_else(|| oauth.get("expires_at"))
+        .and_then(value_as_i64)
+        .map(normalize_epoch_millis);
+
+    Some(OAuthCredentials {
+        access_token,
+        expires_at_millis,
+    })
+}
+
+fn value_as_string(value: &serde_json::Value) -> Option<String> {
+    value.as_str().map(ToString::to_string)
+}
+
+fn value_as_i64(value: &serde_json::Value) -> Option<i64> {
     value
-        .get("claudeAiOauth")?
-        .get("accessToken")?
-        .as_str()
-        .map(|s| s.to_string())
+        .as_i64()
+        .or_else(|| value.as_u64().and_then(|n| i64::try_from(n).ok()))
+        .or_else(|| value.as_f64().map(|n| n as i64))
+        .or_else(|| value.as_str().and_then(|s| s.parse::<i64>().ok()))
+}
+
+fn normalize_epoch_millis(value: i64) -> i64 {
+    if value > 10_000_000_000 {
+        value
+    } else {
+        value * 1000
+    }
+}
+
+/// Let Claude Code own the OAuth refresh exchange, then re-read its stored credentials.
+/// This avoids duplicating private OAuth client details in AI Token Monitor.
+fn refresh_oauth_via_claude_cli() -> bool {
+    for candidate in claude_cli_candidates() {
+        if run_claude_auth_status(&candidate) {
+            return true;
+        }
+    }
+    false
+}
+
+fn claude_cli_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    let bin_name = if cfg!(target_os = "windows") {
+        "claude.exe"
+    } else {
+        "claude"
+    };
+
+    for key in ["CLAUDE_CLI_PATH", "CLAUDE_CODE_CLI"] {
+        if let Ok(path) = std::env::var(key) {
+            push_cli_candidate(&mut candidates, PathBuf::from(path));
+        }
+    }
+
+    if let Ok(path) = std::env::var("PATH") {
+        for dir in std::env::split_paths(&path) {
+            push_cli_candidate(&mut candidates, dir.join(bin_name));
+        }
+    }
+
+    if let Some(home) = dirs::home_dir() {
+        push_cli_candidate(&mut candidates, home.join(".local/bin").join(bin_name));
+        push_cli_candidate(&mut candidates, home.join(".claude/local").join(bin_name));
+    }
+
+    if !cfg!(target_os = "windows") {
+        push_cli_candidate(&mut candidates, PathBuf::from("/opt/homebrew/bin/claude"));
+        push_cli_candidate(&mut candidates, PathBuf::from("/usr/local/bin/claude"));
+    }
+
+    candidates
+}
+
+fn push_cli_candidate(candidates: &mut Vec<PathBuf>, candidate: PathBuf) {
+    if candidate.as_os_str().is_empty() || candidates.iter().any(|existing| existing == &candidate)
+    {
+        return;
+    }
+    candidates.push(candidate);
+}
+
+fn run_claude_auth_status(cli: &Path) -> bool {
+    if cli.components().count() > 1 && !cli.exists() {
+        return false;
+    }
+
+    let mut child = match Command::new(cli)
+        .args(["auth", "status", "--json"])
+        .env("BROWSER", "true")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(_) => return false,
+    };
+
+    let started_at = Instant::now();
+    let timeout = Duration::from_secs(12);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) if started_at.elapsed() < timeout => {
+                thread::sleep(Duration::from_millis(100));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+        }
+    }
 }
 
 /// Raw API response structure
@@ -302,17 +511,23 @@ struct ApiExtraUsage {
     utilization: Option<f64>,
 }
 
-async fn fetch_usage_from_api(token: &str) -> Result<OAuthUsage, String> {
-    let client = reqwest::Client::new();
+async fn fetch_usage_from_api(token: &str) -> Result<OAuthUsage, FetchUsageError> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(8))
+        .build()
+        .map_err(|e| FetchUsageError::Request(e.to_string()))?;
     let response = client
         .get("https://api.anthropic.com/api/oauth/usage")
         .header("Authorization", format!("Bearer {}", token))
         .header("anthropic-beta", "oauth-2025-04-20")
         .header("Content-Type", "application/json")
-        .header("User-Agent", format!("claude-code/{}", env!("CARGO_PKG_VERSION")))
+        .header(
+            "User-Agent",
+            format!("claude-code/{}", env!("CARGO_PKG_VERSION")),
+        )
         .send()
         .await
-        .map_err(|e| format!("HTTP request failed: {}", e))?;
+        .map_err(|e| FetchUsageError::Request(e.to_string()))?;
 
     let status = response.status();
     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
@@ -325,16 +540,19 @@ async fn fetch_usage_from_api(token: &str) -> Result<OAuthUsage, String> {
         if let Ok(mut guard) = RATE_LIMIT_UNTIL.lock() {
             *guard = Some(Instant::now() + std::time::Duration::from_secs(retry_after_secs));
         }
-        return Err(format!("Rate limited (429), retry after {}s", retry_after_secs));
+        return Err(FetchUsageError::RateLimited(retry_after_secs));
+    }
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(FetchUsageError::Unauthorized);
     }
     if !status.is_success() {
-        return Err(format!("HTTP {}", status));
+        return Err(FetchUsageError::HttpStatus(status));
     }
 
     let api: ApiResponse = response
         .json()
         .await
-        .map_err(|e| format!("JSON parse failed: {}", e))?;
+        .map_err(|e| FetchUsageError::Parse(e.to_string()))?;
 
     Ok(OAuthUsage {
         five_hour: api.five_hour.map(|w| UsageWindow {
@@ -367,4 +585,64 @@ async fn fetch_usage_from_api(token: &str) -> Result<OAuthUsage, String> {
         fetched_at: String::new(),
         is_stale: false,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_claude_oauth_credentials_with_millis_expiry() {
+        let value = serde_json::json!({
+            "claudeAiOauth": {
+                "accessToken": "access-token",
+                "expiresAt": 1_900_000_000_000i64
+            }
+        });
+
+        let credentials = extract_oauth_credentials(&value).expect("credentials");
+
+        assert_eq!(credentials.access_token, "access-token");
+        assert_eq!(credentials.expires_at_millis, Some(1_900_000_000_000));
+    }
+
+    #[test]
+    fn parses_claude_oauth_credentials_with_seconds_expiry() {
+        let value = serde_json::json!({
+            "claudeAiOauth": {
+                "access_token": "access-token",
+                "expires_at": "1900000000"
+            }
+        });
+
+        let credentials = extract_oauth_credentials(&value).expect("credentials");
+
+        assert_eq!(credentials.access_token, "access-token");
+        assert_eq!(credentials.expires_at_millis, Some(1_900_000_000_000));
+    }
+
+    #[test]
+    fn detects_credentials_that_need_refresh() {
+        let near_expiry = OAuthCredentials {
+            access_token: "access-token".to_string(),
+            expires_at_millis: Some(chrono::Utc::now().timestamp_millis() + 60_000),
+        };
+        let later_expiry = OAuthCredentials {
+            access_token: "access-token".to_string(),
+            expires_at_millis: Some(chrono::Utc::now().timestamp_millis() + 10 * 60_000),
+        };
+
+        assert!(near_expiry.should_refresh());
+        assert!(!later_expiry.should_refresh());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn parses_keychain_payload_with_non_json_prefix() {
+        let payload = b"\x07{\"claudeAiOauth\":{\"accessToken\":\"access-token\"}}";
+
+        let credentials = extract_credentials_from_keychain_data(payload).expect("credentials");
+
+        assert_eq!(credentials.access_token, "access-token");
+    }
 }

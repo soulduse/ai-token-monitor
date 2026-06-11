@@ -232,7 +232,7 @@
   "usageAlert.today": "Aujourd'hui",
   "usageAlert.last7Days": "7 derniers jours",
   "usageAlert.extraUsage": "Utilisation supplémentaire",
-  "usageAlert.stale": "Mise à jour...",
+  "usageAlert.stale": "Données obsolètes",
   "usageAlert.resetsIn": "Réinitialisation dans {{time}}",
   "usageAlert.resetsNow": "Réinitialisation...",
   "usageAlert.refresh": "Actualiser",

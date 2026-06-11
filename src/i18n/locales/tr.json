@@ -232,7 +232,7 @@
   "usageAlert.today": "Bugün",
   "usageAlert.last7Days": "Son 7 gün",
   "usageAlert.extraUsage": "Ek Kullanım",
-  "usageAlert.stale": "Güncelleniyor...",
+  "usageAlert.stale": "Eski veri",
   "usageAlert.resetsIn": "{{time}} içinde sıfırlanıyor",
   "usageAlert.resetsNow": "Sıfırlanıyor...",
   "usageAlert.refresh": "Yenile",

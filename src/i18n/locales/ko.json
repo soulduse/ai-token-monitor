@@ -238,7 +238,7 @@
   "usageAlert.today": "오늘",
   "usageAlert.last7Days": "최근 7일",
   "usageAlert.extraUsage": "추가 사용량",
-  "usageAlert.stale": "업데이트 중...",
+  "usageAlert.stale": "오래된 데이터",
   "usageAlert.resetsIn": "{{time}} 후 리셋",
   "usageAlert.resetsNow": "리셋 중...",
   "usageAlert.refresh": "새로고침",

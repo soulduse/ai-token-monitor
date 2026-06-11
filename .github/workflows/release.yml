@@ -8,6 +8,7 @@ on:
         required: true
         type: choice
         options:
+          - current
           - patch
           - minor
           - major
@@ -71,25 +72,32 @@ jobs:
         run: |
           CURRENT=$(node -p 'require("./package.json").version')
           IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          NEW_VERSION="$CURRENT"
 
           case "${{ inputs.bump }}" in
+            current) ;;
             major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
             minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
             patch) PATCH=$((PATCH + 1)) ;;
           esac
 
-          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          if [ "${{ inputs.bump }}" != "current" ]; then
+            NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          fi
+
           echo "version=v${NEW_VERSION}" >> $GITHUB_OUTPUT
           echo "tag=v${NEW_VERSION}" >> $GITHUB_OUTPUT
           echo "Version: $CURRENT -> $NEW_VERSION"
 
-          node -e "
-            const pkg = require('./package.json');
-            pkg.version = '${NEW_VERSION}';
-            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-          "
+          if [ "${{ inputs.bump }}" != "current" ]; then
+            node -e "
+              const pkg = require('./package.json');
+              pkg.version = '${NEW_VERSION}';
+              require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            "
 
-          node scripts/sync-version.mjs
+            node scripts/sync-version.mjs
+          fi
 
       - name: Generate changelog
         id: changelog
@@ -130,10 +138,27 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
-          git commit -m "chore: release ${{ steps.bump.outputs.tag }}"
+          if git rev-parse "${{ steps.bump.outputs.tag }}" >/dev/null 2>&1; then
+            echo "Tag ${{ steps.bump.outputs.tag }} already exists locally"
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${{ steps.bump.outputs.tag }}" >/dev/null 2>&1; then
+            echo "Tag ${{ steps.bump.outputs.tag }} already exists on origin"
+            exit 1
+          fi
+
+          if [ "${{ inputs.bump }}" != "current" ]; then
+            git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+            git commit -m "chore: release ${{ steps.bump.outputs.tag }}"
+            git push origin main
+          elif ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "Current-version release requires a clean checkout"
+            git status --short
+            exit 1
+          fi
+
           git tag "${{ steps.bump.outputs.tag }}"
-          git push origin main
           git push origin "${{ steps.bump.outputs.tag }}"
 
   build-macos:
