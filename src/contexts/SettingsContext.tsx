@@ -47,16 +47,28 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const skipNextPersist = useRef(true);
 
   useEffect(() => {
-    invoke<UserPreferences>("get_preferences").then((p) => {
-      setPrefs(p);
-      // Skip the persist effect triggered by the initial load from disk.
-      skipNextPersist.current = true;
-      prevConfigDirsRef.current = JSON.stringify(p.config_dirs);
-      prevCodexDirsRef.current = JSON.stringify(p.codex_dirs);
-      setReady(true);
-    }).catch(() => {
-      setReady(true);
-    });
+    (async () => {
+      try {
+        const p = await invoke<UserPreferences>("get_preferences");
+        // AI keys live in a separate encrypted file and are intentionally NOT returned
+        // by get_preferences. Load them on their own and merge, so translation stays
+        // enabled across app restarts (otherwise prefs.ai_keys is always empty on launch).
+        let merged = p;
+        try {
+          const keys = await invoke<UserPreferences["ai_keys"] | null>("get_ai_keys");
+          if (keys) merged = { ...p, ai_keys: keys };
+        } catch {
+          /* keys are optional — ignore load failures */
+        }
+        setPrefs(merged);
+        // Skip the persist effect triggered by the initial load from disk.
+        skipNextPersist.current = true;
+        prevConfigDirsRef.current = JSON.stringify(merged.config_dirs);
+        prevCodexDirsRef.current = JSON.stringify(merged.codex_dirs);
+      } finally {
+        setReady(true);
+      }
+    })();
   }, []);
 
   // Apply theme to document
