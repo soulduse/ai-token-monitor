@@ -987,6 +987,13 @@ const AI_PROVIDERS: AiProvider[] = [
       { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
     ],
   },
+  {
+    id: "kiro",
+    i18nKey: "settings.aiKeyKiro",
+    models: [
+      { id: "kiro", label: "Kiro CLI" },
+    ],
+  },
 ];
 
 function AiTranslationSection({
@@ -995,9 +1002,9 @@ function AiTranslationSection({
   onKeysChange,
   onModelChange,
 }: {
-  aiKeys?: { gemini?: string; openai?: string; anthropic?: string };
+  aiKeys?: { gemini?: string; openai?: string; anthropic?: string; kiro?: string };
   aiModel?: string;
-  onKeysChange: (keys: { gemini?: string; openai?: string; anthropic?: string }) => void;
+  onKeysChange: (keys: { gemini?: string; openai?: string; anthropic?: string; kiro?: string }) => void;
   onModelChange: (model: string | undefined) => void;
 }) {
   const t = useI18n();

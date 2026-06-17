@@ -137,7 +137,7 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
   } = useChat(userId, activated, visible);
   const langName = LANGUAGE_NAMES[prefs.language] ?? prefs.language;
   const { translations, translating, translate, translateReply: invokeTranslateReply } = useTranslate(langName);
-  const hasAiKey = !!(prefs.ai_keys?.gemini || prefs.ai_keys?.openai || prefs.ai_keys?.anthropic);
+  const hasAiKey = !!(prefs.ai_keys?.gemini || prefs.ai_keys?.openai || prefs.ai_keys?.anthropic || prefs.ai_keys?.kiro);
   const hasAiModel = !!prefs.ai_model;
   const myNickname = useMemo(() => getCachedProfile(userId)?.nickname ?? null, [userId, messages.length]);
   const { typingUsers, sendTyping, stopTyping } = useTypingIndicator(userId, myNickname, activated);

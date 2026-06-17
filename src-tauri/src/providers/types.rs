@@ -156,6 +156,8 @@ pub struct AiKeys {
     #[serde(default)]
     pub anthropic: Option<String>,
     #[serde(default)]
+    pub kiro: Option<String>,
+    #[serde(default)]
     pub webhook_discord_url: Option<String>,
     #[serde(default)]
     pub webhook_slack_url: Option<String>,
@@ -170,6 +172,7 @@ impl AiKeys {
         self.gemini.is_some()
             || self.openai.is_some()
             || self.anthropic.is_some()
+            || self.kiro.is_some()
             || self.webhook_discord_url.is_some()
             || self.webhook_slack_url.is_some()
             || self.webhook_telegram_bot_token.is_some()

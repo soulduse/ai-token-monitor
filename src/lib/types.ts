@@ -102,6 +102,7 @@ export interface UserPreferences {
     gemini?: string;
     openai?: string;
     anthropic?: string;
+    kiro?: string;
     webhook_discord_url?: string;
     webhook_slack_url?: string;
     webhook_telegram_bot_token?: string;
