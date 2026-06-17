@@ -211,7 +211,10 @@ fn run_kiro_once(key: &str, prompt: &str) -> Result<String, String> {
 
     let cli = resolve_kiro_cli();
     let mut child = Command::new(&cli)
-        .args(["chat", "--no-interactive", prompt])
+        // `--` is an end-of-options sentinel: everything after it is treated as a
+        // positional argument, never a flag. The prompt embeds untrusted chat text, so
+        // without this a message starting with `-`/`--` could smuggle CLI flags into kiro-cli.
+        .args(["chat", "--no-interactive", "--", prompt])
         .env("KIRO_API_KEY", key)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
