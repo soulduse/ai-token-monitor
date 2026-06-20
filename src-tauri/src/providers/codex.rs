@@ -300,7 +300,11 @@ impl CodexProvider {
                                 current_model.clone()
                             };
 
-                            let key = format!("{}:{}", session_id, line_index);
+                            // Key by source file (+ line) rather than session_id so a
+                            // session_id appearing in multiple files never lets one file's
+                            // re-parse clobber another file's cached entries. '\n' can't
+                            // occur in a path, so it's a safe field separator.
+                            let key = format!("{}\n{}", path.display(), line_index);
                             entries.insert(
                                 key,
                                 CodexEntry {
@@ -357,8 +361,15 @@ impl CodexProvider {
             let start = Instant::now();
             let count = changed_files.len();
             for path in &changed_files {
-                let file_entries = Self::parse_single_file(path);
-                entries.extend(file_entries);
+                // Drop every cached entry that came from this file before re-merging.
+                // Keys are `"<path>\n<line_index>"` (position-based within the file): a
+                // rewrite/compaction can move an event to a new line, so its old key would
+                // otherwise survive `extend` and double-count. Purging by path prefix
+                // removes only this file's stale entries — never another file's, even when
+                // they share a session_id.
+                let prefix = format!("{}\n", path.display());
+                entries.retain(|k, _| !k.starts_with(&prefix));
+                entries.extend(Self::parse_single_file(path));
             }
             eprintln!(
                 "[PERF][Codex] Incremental parse: {} changed files in {:?} (total {} files)",
@@ -1161,5 +1172,120 @@ mod tests {
         assert_eq!(stats.daily.len(), 1);
         assert_eq!(stats.daily[0].messages, 2);
         assert_eq!(stats.daily[0].sessions, 1);
+    }
+
+    /// Regression for the overcounting bug: when an already-parsed session file is
+    /// rewritten so that token_count events land on different line numbers, the
+    /// position-based dedup key changes. parse_incremental must purge the changed
+    /// file's stale entries before re-merging, or the same usage is counted twice.
+    #[test]
+    fn incremental_double_counts_when_line_index_shifts() {
+        // Unique per-process dir so parallel/repeated test runs never collide.
+        let dir = std::env::temp_dir()
+            .join(format!("codex_test_incr_shift_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("rollout-test.jsonl");
+
+        let meta_line = r#"{"type":"session_meta","payload":{"id":"sess-X"}}"#;
+        let ctx_line = r#"{"type":"turn_context","payload":{"model":"gpt-5.5"}}"#;
+        let token_line = r#"{"timestamp":"2026-06-20T01:00:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000,"cached_input_tokens":0,"output_tokens":500,"total_tokens":1500}}}}"#;
+
+        // Version 1: meta, ctx, token  → token at line 3 → key "sess-X:3"
+        fs::write(&path, format!("{}\n{}\n{}\n", meta_line, ctx_line, token_line)).unwrap();
+        let v1_meta = file_meta_of(&path);
+        let cached_entries = CodexProvider::parse_single_file(&path);
+        assert_eq!(cached_entries.len(), 1, "v1 should have exactly one entry");
+
+        // Version 2: session compacted — an extra preamble line shifts the token
+        // event down to line 4 → new key "sess-X:4" for the SAME usage. The byte
+        // length also changes, so the incremental path treats the file as changed.
+        fs::write(
+            &path,
+            format!("{}\n{}\n{}\n{}\n", meta_line, ctx_line, "{}", token_line),
+        )
+        .unwrap();
+        let v2_meta = file_meta_of(&path);
+        assert_ne!(v1_meta.1, v2_meta.1, "rewrite must change the byte length");
+
+        let mut cached_meta = HashMap::new();
+        cached_meta.insert(path.clone(), v1_meta);
+        let mut current_meta = HashMap::new();
+        current_meta.insert(path.clone(), v2_meta);
+
+        let merged =
+            CodexProvider::parse_incremental(&current_meta, &cached_entries, &cached_meta);
+        let stats = CodexProvider::build_stats(&merged);
+        let total: u64 = stats.daily.iter().map(|d| d.input_tokens).sum();
+
+        let _ = fs::remove_dir_all(&dir);
+
+        // Correct behavior: 1000 uncached input tokens total (one real event).
+        // Bug (pre-fix): the line-3 entry survived alongside the new line-4 entry → 2000.
+        assert_eq!(
+            total, 1000,
+            "input tokens double-counted: stale entry not purged on file rewrite (got {})",
+            total
+        );
+    }
+
+    /// Two files share a session_id; only one changes. The incremental purge must
+    /// drop the changed file's stale entries WITHOUT touching the unchanged file's
+    /// cached entries — i.e. purge by source file, not by session_id.
+    #[test]
+    fn incremental_preserves_other_file_with_same_session_id() {
+        let dir = std::env::temp_dir()
+            .join(format!("codex_test_cross_file_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path_a = dir.join("rollout-a.jsonl");
+        let path_b = dir.join("rollout-b.jsonl");
+
+        // Both files carry the SAME session_meta id ("sess-shared").
+        let meta = r#"{"type":"session_meta","payload":{"id":"sess-shared"}}"#;
+        let ctx = r#"{"type":"turn_context","payload":{"model":"gpt-5.5"}}"#;
+        let tok = |inp: u64| {
+            format!(
+                r#"{{"timestamp":"2026-06-20T01:00:00.000Z","type":"event_msg","payload":{{"type":"token_count","info":{{"last_token_usage":{{"input_tokens":{},"cached_input_tokens":0,"output_tokens":0,"total_tokens":{}}}}}}}}}"#,
+                inp, inp
+            )
+        };
+
+        fs::write(&path_a, format!("{}\n{}\n{}\n", meta, ctx, tok(1000))).unwrap();
+        fs::write(&path_b, format!("{}\n{}\n{}\n", meta, ctx, tok(2000))).unwrap();
+
+        // Initial full parse caches both files' entries.
+        let mut cached = CodexProvider::parse_single_file(&path_a);
+        cached.extend(CodexProvider::parse_single_file(&path_b));
+        let mut cached_meta = HashMap::new();
+        cached_meta.insert(path_a.clone(), file_meta_of(&path_a));
+        cached_meta.insert(path_b.clone(), file_meta_of(&path_b));
+
+        // Only file A changes (a preamble line shifts its event + bumps byte length).
+        fs::write(&path_a, format!("{}\n{}\n{}\n{}\n", meta, ctx, "{}", tok(1000))).unwrap();
+        let mut current_meta = HashMap::new();
+        current_meta.insert(path_a.clone(), file_meta_of(&path_a));
+        current_meta.insert(path_b.clone(), file_meta_of(&path_b));
+
+        let merged = CodexProvider::parse_incremental(&current_meta, &cached, &cached_meta);
+        let total: u64 = CodexProvider::build_stats(&merged)
+            .daily
+            .iter()
+            .map(|d| d.input_tokens)
+            .sum();
+
+        let _ = fs::remove_dir_all(&dir);
+
+        // A (1000, unchanged amount) + B (2000, untouched) = 3000. A session_id-based
+        // purge would have wiped B too, leaving only 1000.
+        assert_eq!(total, 3000, "file B's entries lost to a shared session_id purge");
+    }
+
+    fn file_meta_of(path: &Path) -> (std::time::SystemTime, u64) {
+        let m = fs::metadata(path).unwrap();
+        (
+            m.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH),
+            m.len(),
+        )
     }
 }
