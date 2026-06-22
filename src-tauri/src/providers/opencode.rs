@@ -46,6 +46,9 @@ struct OpenCodeEntry {
     session_id: String,
     input_tokens: u64,
     output_tokens: u64,
+    // Private reasoning bucket. Folded into this app's public output-rate
+    // approximation; not exposed as a separate public schema field.
+    reasoning_tokens: u64,
     cache_read_tokens: u64,
     cache_write_tokens: u64,
 }
@@ -327,11 +330,18 @@ impl OpenCodeProvider {
                 first_date = Some(entry.date.clone());
             }
 
-            let total_tokens = entry.input_tokens + entry.output_tokens;
+            // App-local output-rate approximation: fold reasoning tokens into the
+            // output bucket for cost and public output totals. This mirrors the
+            // OpenCode stats CLI display behavior, not a claim about Zen billing.
+            let output_with_reasoning = entry.output_tokens + entry.reasoning_tokens;
+            let total_tokens = entry.input_tokens
+                + output_with_reasoning
+                + entry.cache_read_tokens
+                + entry.cache_write_tokens;
             let cost = calculate_opencode_cost(
                 &entry.model,
                 entry.input_tokens,
-                entry.output_tokens,
+                output_with_reasoning,
                 entry.cache_read_tokens,
                 entry.cache_write_tokens,
             );
@@ -354,7 +364,7 @@ impl OpenCodeProvider {
             daily.cost_usd += cost;
             daily.messages += 1;
             daily.input_tokens += entry.input_tokens;
-            daily.output_tokens += entry.output_tokens;
+            daily.output_tokens += output_with_reasoning;
             daily.cache_read_tokens += entry.cache_read_tokens;
             daily.cache_write_tokens += entry.cache_write_tokens;
 
@@ -373,7 +383,7 @@ impl OpenCodeProvider {
                     cost_usd: 0.0,
                 });
             mu.input_tokens += entry.input_tokens;
-            mu.output_tokens += entry.output_tokens;
+            mu.output_tokens += output_with_reasoning;
             mu.cache_read += entry.cache_read_tokens;
             mu.cache_write += entry.cache_write_tokens;
             mu.cost_usd += cost;
@@ -550,10 +560,15 @@ fn parse_message_json(id: &str, data: &Value) -> Option<OpenCodeEntry> {
         return None;
     }
 
-    // Extract tokens — OpenCode stores as: tokens.input, tokens.output, tokens.cache.read, tokens.cache.write
+    // Extract tokens — OpenCode stores as: tokens.input, tokens.output,
+    // tokens.reasoning, tokens.cache.read, tokens.cache.write
     let tokens = data.get("tokens")?;
     let input = tokens.get("input").and_then(|v| v.as_u64()).unwrap_or(0);
     let output = tokens.get("output").and_then(|v| v.as_u64()).unwrap_or(0);
+    let reasoning = tokens
+        .get("reasoning")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     let cache_read = tokens
         .pointer("/cache/read")
         .and_then(|v| v.as_u64())
@@ -563,8 +578,14 @@ fn parse_message_json(id: &str, data: &Value) -> Option<OpenCodeEntry> {
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
 
-    // Skip zero-token messages
-    if input == 0 && output == 0 {
+    // Skip only when every non-overlapping token bucket is zero, so that
+    // reasoning-only and cache-only assistant messages are retained.
+    if input == 0
+        && output == 0
+        && reasoning == 0
+        && cache_read == 0
+        && cache_write == 0
+    {
         return None;
     }
 
@@ -590,6 +611,7 @@ fn parse_message_json(id: &str, data: &Value) -> Option<OpenCodeEntry> {
         session_id,
         input_tokens: input,
         output_tokens: output,
+        reasoning_tokens: reasoning,
         cache_read_tokens: cache_read,
         cache_write_tokens: cache_write,
     })
@@ -662,7 +684,7 @@ mod tests {
             "tokens": {
                 "input": 1500,
                 "output": 300,
-                "reasoning": 0,
+                "reasoning": 75,
                 "cache": { "read": 500, "write": 100 }
             },
             "time": { "created": 1711929600000.0 }
@@ -671,6 +693,7 @@ mod tests {
         assert_eq!(entry.model, "claude-sonnet-4-5-20250514");
         assert_eq!(entry.input_tokens, 1500);
         assert_eq!(entry.output_tokens, 300);
+        assert_eq!(entry.reasoning_tokens, 75);
         assert_eq!(entry.cache_read_tokens, 500);
         assert_eq!(entry.cache_write_tokens, 100);
         assert_eq!(entry.session_id, "session-123");
@@ -698,6 +721,55 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_message_json_reasoning_only_not_skipped() {
+        // Reasoning-only assistant message: input/output/cache are zero but
+        // reasoning > 0. Must be retained, not dropped by the zero-token guard.
+        let data: Value = serde_json::json!({
+            "role": "assistant",
+            "modelID": "claude-sonnet-4-5-20250514",
+            "sessionID": "session-reasoning",
+            "tokens": {
+                "input": 0,
+                "output": 0,
+                "reasoning": 75,
+                "cache": { "read": 0, "write": 0 }
+            },
+            "time": { "created": 1711929600000.0 }
+        });
+        let entry = parse_message_json("msg-reasoning", &data)
+            .expect("reasoning-only assistant message must be retained");
+        assert_eq!(entry.input_tokens, 0);
+        assert_eq!(entry.output_tokens, 0);
+        assert_eq!(entry.reasoning_tokens, 75);
+        assert_eq!(entry.cache_read_tokens, 0);
+        assert_eq!(entry.cache_write_tokens, 0);
+    }
+
+    #[test]
+    fn test_parse_message_json_cache_only_not_skipped() {
+        // Cache-only assistant message: input/output/reasoning are zero but
+        // cache read or cache write is non-zero. Must be retained.
+        let data: Value = serde_json::json!({
+            "role": "assistant",
+            "modelID": "claude-sonnet-4-5-20250514",
+            "sessionID": "session-cache",
+            "tokens": {
+                "input": 0,
+                "output": 0,
+                "reasoning": 0,
+                "cache": { "read": 500, "write": 100 }
+            },
+            "time": { "created": 1711929600000.0 }
+        });
+        let entry = parse_message_json("msg-cache", &data)
+            .expect("cache-only assistant message must be retained");
+        assert_eq!(entry.input_tokens, 0);
+        assert_eq!(entry.output_tokens, 0);
+        assert_eq!(entry.cache_read_tokens, 500);
+        assert_eq!(entry.cache_write_tokens, 100);
+    }
+
+    #[test]
     fn test_build_stats_aggregation() {
         let entries = vec![
             OpenCodeEntry {
@@ -706,6 +778,7 @@ mod tests {
                 session_id: "s1".to_string(),
                 input_tokens: 1000,
                 output_tokens: 200,
+                reasoning_tokens: 75,
                 cache_read_tokens: 100,
                 cache_write_tokens: 50,
             },
@@ -715,6 +788,7 @@ mod tests {
                 session_id: "s1".to_string(),
                 input_tokens: 500,
                 output_tokens: 100,
+                reasoning_tokens: 25,
                 cache_read_tokens: 50,
                 cache_write_tokens: 0,
             },
@@ -724,21 +798,121 @@ mod tests {
                 session_id: "s2".to_string(),
                 input_tokens: 800,
                 output_tokens: 300,
+                reasoning_tokens: 0,
                 cache_read_tokens: 0,
                 cache_write_tokens: 0,
+            },
+            // Cache-only assistant entry: input/output/reasoning zero, cache non-zero.
+            OpenCodeEntry {
+                date: "2026-04-02".to_string(),
+                model: "gpt-4.1".to_string(),
+                session_id: "s2".to_string(),
+                input_tokens: 0,
+                output_tokens: 0,
+                reasoning_tokens: 0,
+                cache_read_tokens: 200,
+                cache_write_tokens: 100,
             },
         ];
 
         let stats = OpenCodeProvider::build_stats(&entries);
-        assert_eq!(stats.total_messages, 3);
+        assert_eq!(stats.total_messages, 4);
         assert_eq!(stats.daily.len(), 2);
-        assert_eq!(stats.daily[0].date, "2026-04-01");
-        assert_eq!(stats.daily[0].messages, 2);
-        assert_eq!(stats.daily[0].sessions, 1);
-        assert_eq!(stats.daily[0].input_tokens, 1500);
-        assert_eq!(stats.daily[1].date, "2026-04-02");
-        assert_eq!(stats.daily[1].sessions, 1);
+
+        // Day 2026-04-01: two claude-sonnet-4-5 entries.
+        let day1 = &stats.daily[0];
+        assert_eq!(day1.date, "2026-04-01");
+        assert_eq!(day1.messages, 2);
+        assert_eq!(day1.sessions, 1);
+        assert_eq!(day1.input_tokens, 1500);
+        // Public output bucket must include output + reasoning.
+        assert_eq!(day1.output_tokens, 200 + 75 + 100 + 25);
+        assert_eq!(day1.cache_read_tokens, 100 + 50);
+        assert_eq!(day1.cache_write_tokens, 50 + 0);
+        // daily.tokens[model] must include input + output + reasoning + cache_read + cache_write.
+        let day1_total: u64 = day1.tokens.get("claude-sonnet-4-5").copied().unwrap_or(0);
+        assert_eq!(
+            day1_total,
+            1000 + 200 + 75 + 100 + 50 + 500 + 100 + 25 + 50 + 0
+        );
+
+        // Day 2026-04-02: one gpt-4.1 normal entry + one cache-only entry.
+        let day2 = &stats.daily[1];
+        assert_eq!(day2.date, "2026-04-02");
+        assert_eq!(day2.messages, 2);
+        assert_eq!(day2.sessions, 1);
+        assert_eq!(day2.input_tokens, 800);
+        assert_eq!(day2.output_tokens, 300 + 0);
+        // Cache-only entry contributes cache tokens.
+        assert_eq!(day2.cache_read_tokens, 0 + 200);
+        assert_eq!(day2.cache_write_tokens, 0 + 100);
+        let day2_total: u64 = day2.tokens.get("gpt-4.1").copied().unwrap_or(0);
+        assert_eq!(
+            day2_total,
+            800 + 300 + 0 + 0 + 0 + 0 + 0 + 0 + 200 + 100
+        );
+
         assert_eq!(stats.model_usage.len(), 2);
+        let gpt = stats
+            .model_usage
+            .get("gpt-4.1")
+            .expect("gpt-4.1 model usage");
+        assert_eq!(gpt.cache_read, 0 + 200);
+        assert_eq!(gpt.cache_write, 0 + 100);
+        let claude = stats
+            .model_usage
+            .get("claude-sonnet-4-5")
+            .expect("claude model usage");
+        assert_eq!(claude.cache_read, 100 + 50);
+        assert_eq!(claude.cache_write, 50 + 0);
+    }
+
+    #[test]
+    fn test_build_stats_cost_includes_reasoning_output_bucket() {
+        // Single entry with non-zero reasoning tokens. Cost must reflect the
+        // app-local output-rate approximation: output_tokens + reasoning_tokens
+        // passed as the output bucket to calculate_opencode_cost.
+        let entries = vec![
+            OpenCodeEntry {
+                date: "2026-04-03".to_string(),
+                model: "claude-sonnet-4-5".to_string(),
+                session_id: "s-cost".to_string(),
+                input_tokens: 1000,
+                output_tokens: 200,
+                reasoning_tokens: 300,
+                cache_read_tokens: 100,
+                cache_write_tokens: 50,
+            },
+        ];
+
+        let expected_cost = calculate_opencode_cost(
+            "claude-sonnet-4-5",
+            1000,
+            200 + 300,
+            100,
+            50,
+        );
+
+        let stats = OpenCodeProvider::build_stats(&entries);
+        let daily_cost = stats.daily[0].cost_usd;
+        let model_cost = stats
+            .model_usage
+            .get("claude-sonnet-4-5")
+            .map(|m| m.cost_usd)
+            .unwrap_or(0.0);
+
+        assert!(
+            (daily_cost - expected_cost).abs() < 1e-9,
+            "daily cost_usd {} must include reasoning output-rate approximation, expected {}",
+            daily_cost,
+            expected_cost
+        );
+        assert!(
+            (model_cost - expected_cost).abs() < 1e-9,
+            "model cost_usd {} must include reasoning output-rate approximation, expected {}",
+            model_cost,
+            expected_cost
+        );
     }
 
     #[test]
