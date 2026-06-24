@@ -67,6 +67,23 @@ struct CodexEntry {
     output_tokens: u64,
     cached_tokens: u64,
     total_tokens: u64,
+    /// Cumulative `total_token_usage` snapshot for this turn. Used only as a
+    /// replay-dedup discriminator in `build_stats`, never summed. `None` when the
+    /// event carries no `total_token_usage`.
+    cumulative: Option<CumulativeUsage>,
+}
+
+/// Cumulative session usage at a turn (`total_token_usage`). Two turns with the same
+/// per-turn delta AND the same cumulative snapshot are the same turn — a verbatim
+/// replay — so this is the discriminator that lets replayed rollout files collapse
+/// without merging genuinely distinct turns.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct CumulativeUsage {
+    input: u64,
+    cached: u64,
+    output: u64,
+    reasoning: u64,
+    total: u64,
 }
 
 struct CodexOAuthCredentials {
@@ -300,6 +317,8 @@ impl CodexProvider {
                                 current_model.clone()
                             };
 
+                            let cumulative = extract_cumulative_usage(info);
+
                             // Key by source file (+ line) rather than session_id so a
                             // session_id appearing in multiple files never lets one file's
                             // re-parse clobber another file's cached entries. '\n' can't
@@ -315,6 +334,7 @@ impl CodexProvider {
                                     output_tokens: output,
                                     cached_tokens: cached,
                                     total_tokens: total,
+                                    cumulative,
                                 },
                             );
                         }
@@ -390,7 +410,48 @@ impl CodexProvider {
         let mut first_date: Option<String> = None;
         let mut daily_session_ids: HashMap<String, HashSet<String>> = HashMap::new();
 
+        // Collapse replayed turns before aggregating. When a session is resumed or a
+        // subagent thread is spawned, Codex writes a NEW rollout file that replays the
+        // parent's earlier token_count events verbatim — identical per-turn delta AND
+        // cumulative snapshot, only the timestamp differs. Those copies live in different
+        // files, so the path-based purge in `parse_incremental` can't reach them, and they
+        // would otherwise be summed once per file (heavy resume/subagent use inflated one
+        // session ~30x in the wild). Dedup by (session, model, per-turn delta, cumulative
+        // snapshot): a verbatim replay shares the whole key and collapses, while genuinely
+        // distinct turns — e.g. a compaction turn whose cumulative is flat but whose delta
+        // differs — keep separate keys and are never merged. For sessions that are never
+        // replayed every key is unique, so this is a no-op.
+        let mut unique: HashMap<(&str, &str, u64, u64, u64, u64, CumulativeUsage), &CodexEntry> =
+            HashMap::new();
+        let mut passthrough: Vec<&CodexEntry> = Vec::new();
         for entry in entries.values() {
+            match entry.cumulative {
+                None => passthrough.push(entry),
+                Some(cum) => {
+                    let key = (
+                        entry.session_id.as_str(),
+                        entry.model.as_str(),
+                        entry.input_tokens,
+                        entry.output_tokens,
+                        entry.cached_tokens,
+                        entry.total_tokens,
+                        cum,
+                    );
+                    unique
+                        .entry(key)
+                        .and_modify(|kept| {
+                            // Attribute a replayed turn to the day it was originally
+                            // consumed (earliest date) so the daily breakdown stays stable.
+                            if entry.date < kept.date {
+                                *kept = entry;
+                            }
+                        })
+                        .or_insert(entry);
+                }
+            }
+        }
+
+        for entry in unique.values().copied().chain(passthrough.into_iter()) {
             total_messages += 1;
 
             if first_date.as_ref().map_or(true, |d| entry.date < *d) {
@@ -658,6 +719,20 @@ fn extract_token_usage(info: &Value) -> Option<(u64, u64, u64, u64)> {
         .unwrap_or(input + output);
 
     Some((input, output, cached, total))
+}
+
+/// Cumulative `total_token_usage` snapshot for a token_count event. Used only to
+/// recognise replayed turns in `build_stats` (never summed). `None` when absent.
+fn extract_cumulative_usage(info: &Value) -> Option<CumulativeUsage> {
+    let usage = info.get("total_token_usage")?;
+    let field = |key: &str| usage.get(key).and_then(|v| v.as_u64()).unwrap_or(0);
+    Some(CumulativeUsage {
+        input: field("input_tokens"),
+        cached: field("cached_input_tokens"),
+        output: field("output_tokens"),
+        reasoning: field("reasoning_output_tokens"),
+        total: field("total_tokens"),
+    })
 }
 
 fn resolve_entry_date(path_date: Option<&str>, value: &Value) -> String {
@@ -1152,6 +1227,7 @@ mod tests {
                 output_tokens: 50,
                 cached_tokens: 25,
                 total_tokens: 150,
+                cumulative: None,
             },
         );
         entries.insert(
@@ -1164,6 +1240,7 @@ mod tests {
                 output_tokens: 25,
                 cached_tokens: 10,
                 total_tokens: 225,
+                cumulative: None,
             },
         );
 
@@ -1288,4 +1365,85 @@ mod tests {
             m.len(),
         )
     }
+
+    fn replay_entry(
+        date: &str,
+        input: u64,
+        output: u64,
+        cached: u64,
+        total: u64,
+        cum: CumulativeUsage,
+    ) -> CodexEntry {
+        CodexEntry {
+            date: date.to_string(),
+            model: "gpt-5".to_string(),
+            session_id: "sess".to_string(),
+            input_tokens: input,
+            output_tokens: output,
+            cached_tokens: cached,
+            total_tokens: total,
+            cumulative: Some(cum),
+        }
+    }
+
+    /// A turn replayed verbatim into a second rollout file (resume / subagent spawn)
+    /// must be counted once, attributed to its original day — while a distinct turn that
+    /// merely shares the cumulative snapshot (compaction: flat cumulative, different
+    /// per-turn delta) must NOT be merged.
+    #[test]
+    fn build_stats_collapses_replays_but_keeps_distinct_deltas() {
+        let cum = CumulativeUsage {
+            input: 1000,
+            cached: 100,
+            output: 50,
+            reasoning: 10,
+            total: 1050,
+        };
+        let mut entries = HashMap::new();
+        // Same turn, two files, later replay date → collapses to one (earliest date kept).
+        entries.insert(
+            "fileA\n1".to_string(),
+            replay_entry("2026-06-20", 1000, 50, 100, 1050, cum),
+        );
+        entries.insert(
+            "fileB\n1".to_string(),
+            replay_entry("2026-06-22", 1000, 50, 100, 1050, cum),
+        );
+        // Compaction turn: identical cumulative snapshot, different per-turn delta → kept.
+        entries.insert(
+            "fileA\n2".to_string(),
+            replay_entry("2026-06-20", 0, 0, 0, 14880, cum),
+        );
+
+        let stats = CodexProvider::build_stats(&entries);
+
+        assert_eq!(stats.total_messages, 2, "replay collapses, compaction stays");
+        assert_eq!(stats.daily.len(), 1);
+        assert_eq!(stats.daily[0].date, "2026-06-20", "attributed to original day");
+        // Kept replay contributes uncached input 1000-100=900; compaction adds 0 input.
+        assert_eq!(stats.daily[0].input_tokens, 900);
+        assert_eq!(stats.daily[0].output_tokens, 50);
+        assert_eq!(stats.daily[0].cache_read_tokens, 100);
+    }
+
+    /// Entries without a cumulative snapshot can't be identified as replays, so they are
+    /// passed through unchanged (never collapsed) — preserving v0.19.18 behaviour.
+    #[test]
+    fn build_stats_passes_through_entries_without_cumulative() {
+        let mut entries = HashMap::new();
+        for i in 0..3 {
+            let mut e = replay_entry("2026-06-20", 100, 10, 0, 110, CumulativeUsage {
+                input: 0,
+                cached: 0,
+                output: 0,
+                reasoning: 0,
+                total: 0,
+            });
+            e.cumulative = None;
+            entries.insert(format!("f\n{i}"), e);
+        }
+        let stats = CodexProvider::build_stats(&entries);
+        assert_eq!(stats.total_messages, 3, "no cumulative → no dedup");
+    }
+
 }
