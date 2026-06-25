@@ -394,7 +394,10 @@ export function UsageAlertBar() {
   const codexRateLimits = codexStats?.rate_limits ?? null;
   const hasCodexRateLimits = !!(codexRateLimits?.primary || codexRateLimits?.secondary);
   const hasCodexSummary = codexWeek.tokens > 0 || codexWeek.cost > 0 || codexWeek.messages > 0;
-  const hasCodexData = hasCodexRateLimits || hasCodexSummary;
+  // Codex usage must only surface when the source is actually enabled in the
+  // selector. Gate on showCodex so disabling Codex hides its gauges even when
+  // cached stats / rate limits still have data.
+  const hasCodexData = showCodex && (hasCodexRateLimits || hasCodexSummary);
 
   if (showClaude && !prefs.usage_tracking_enabled && !showCodex) {
     return (
