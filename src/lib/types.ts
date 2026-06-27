@@ -152,3 +152,11 @@ export interface OAuthUsage {
   fetched_at: string;
   is_stale: boolean;
 }
+
+// Mirrors the Rust OAuthUsageStatus enum (serde rename_all = "snake_case").
+// "available": usage is cached and renderable.
+// "no_credentials": user has not signed into Claude Code — normal for
+//   Codex-only users; must not be surfaced as an error.
+// "unavailable": credentials exist but no usage cached yet (first poll pending
+//   or a failed fetch) — worth offering a refresh.
+export type OAuthUsageStatus = "available" | "no_credentials" | "unavailable";

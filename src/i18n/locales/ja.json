@@ -237,7 +237,7 @@
   "usageAlert.resetsNow": "リセット中...",
   "usageAlert.refresh": "更新",
   "usageAlert.refreshing": "更新中...",
-  "usageAlert.claudeUnavailable": "Claude の使用量を読み込めません。Claude Code にログインしているか確認するか、更新を押してください。",
+  "usageAlert.claudeUnavailable": "Claude の使用量を一時的に読み込めません。しばらくしてから更新を押してください。",
 
   "usageTracking.title": "Claude 使用量トラッキング",
   "usageTracking.description": "Claude Codeのセッションおよび週間使用制限をリアルタイムで監視します。Claude Codeのログイン認証情報へのアクセスが必要です。",

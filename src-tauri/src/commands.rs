@@ -718,6 +718,11 @@ pub fn get_oauth_usage() -> Option<crate::oauth_usage::OAuthUsage> {
 }
 
 #[tauri::command]
+pub fn get_oauth_usage_status() -> crate::oauth_usage::OAuthUsageStatus {
+    crate::oauth_usage::get_usage_status()
+}
+
+#[tauri::command]
 pub async fn refresh_oauth_usage(app: tauri::AppHandle) -> Option<crate::oauth_usage::OAuthUsage> {
     // Throttle: if cache is fresh within 30 seconds, return it without hitting the API.
     // Mirrors the frontend cooldown so rapid manual clicks cannot hammer the OAuth endpoint
