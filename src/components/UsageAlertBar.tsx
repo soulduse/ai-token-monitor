@@ -406,7 +406,7 @@ function ClaudeTrackingPrompt({
 
 export function UsageAlertBar() {
   const { prefs, refreshPrefs } = useSettings();
-  const { usage, refreshing, refresh } = useOAuthUsage();
+  const { usage, status: oauthStatus, refreshing, refresh } = useOAuthUsage();
   const { stats: codexStats } = useTokenStats("codex");
   const todayStr = useToday();
   const t = useI18n();
@@ -525,13 +525,16 @@ export function UsageAlertBar() {
 
   const hasClaudeData = showClaude && (!!five_hour || !!seven_day || !!extra_usage);
   const showClaudePrompt = showClaude && !prefs.usage_tracking_enabled;
-  // Tracking is enabled (often auto-migrated for existing users) but no usage
-  // payload is cached yet — credentials missing, first poll pending, or the
-  // OAuth fetch failed. Surface an explicit "unavailable" state instead of
-  // silently dropping the whole card, which otherwise looks like Claude usage
-  // vanished when the user merely toggled Codex off.
+  // Only surface the "unavailable" message when the backend reports that OAuth
+  // credentials exist but no usage is cached yet (first poll pending or a failed
+  // fetch). The "no_credentials" status — the normal state for Codex-only users
+  // who never signed into Claude Code — stays hidden so we don't show a
+  // permanent false error. Until the status resolves, render nothing.
   const showClaudeUnavailable =
-    showClaude && prefs.usage_tracking_enabled && !hasClaudeData;
+    showClaude &&
+    prefs.usage_tracking_enabled &&
+    !hasClaudeData &&
+    oauthStatus === "unavailable";
   if (!hasClaudeData && !showClaudePrompt && !showClaudeUnavailable && !hasCodexData) return null;
 
   return (

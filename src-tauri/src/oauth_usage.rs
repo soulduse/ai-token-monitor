@@ -113,6 +113,36 @@ pub fn get_cached_usage() -> Option<OAuthUsage> {
     })
 }
 
+/// Coarse status used by the UI to decide whether the Claude usage card should
+/// show data, stay hidden, or surface an actionable message — without leaking
+/// credential objects out of this module.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OAuthUsageStatus {
+    /// Usage is cached and renderable.
+    Available,
+    /// No cached usage and no OAuth credentials on disk/keychain — the user has
+    /// not signed into Claude Code. This is the normal state for Codex-only
+    /// users and must NOT be shown as an error.
+    NoCredentials,
+    /// Credentials exist but no usage is cached yet — first poll pending or the
+    /// fetch failed (network / 401 / 429). Worth offering a refresh.
+    Unavailable,
+}
+
+/// Classify the current OAuth usage state for the UI. Reads the in-memory cache
+/// and, only when empty, probes for credentials (read-only keychain access — no
+/// prompt, since the polling loop already reads the same entry).
+pub fn get_usage_status() -> OAuthUsageStatus {
+    if get_cached_usage().is_some() {
+        return OAuthUsageStatus::Available;
+    }
+    if read_oauth_credentials().is_none() {
+        return OAuthUsageStatus::NoCredentials;
+    }
+    OAuthUsageStatus::Unavailable
+}
+
 /// Check if cache was fetched within the given number of seconds.
 pub fn is_cache_fresh(max_age_secs: u64) -> bool {
     if let Ok(cache) = OAUTH_CACHE.lock() {

@@ -237,7 +237,7 @@
   "usageAlert.resetsNow": "重置中...",
   "usageAlert.refresh": "刷新",
   "usageAlert.refreshing": "刷新中...",
-  "usageAlert.claudeUnavailable": "无法加载 Claude 使用量。请确认已登录 Claude Code，或点击刷新。",
+  "usageAlert.claudeUnavailable": "暂时无法加载 Claude 使用量。请稍后点击刷新。",
 
   "usageTracking.title": "Claude 用量追踪",
   "usageTracking.description": "实时监控 Claude Code 会话和每周使用限额。需要访问 Claude Code 登录凭据。",

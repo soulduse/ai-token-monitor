@@ -237,7 +237,7 @@
   "usageAlert.resetsNow": "Reiniciando...",
   "usageAlert.refresh": "Actualizar",
   "usageAlert.refreshing": "Actualizando...",
-  "usageAlert.claudeUnavailable": "No se puede cargar el uso de Claude. Comprueba que has iniciado sesión en Claude Code o pulsa Actualizar.",
+  "usageAlert.claudeUnavailable": "El uso de Claude no está disponible temporalmente. Pulsa Actualizar en un momento.",
 
   "usageTracking.title": "Seguimiento de uso de Claude",
   "usageTracking.description": "Monitorea tus límites de sesión y semanales de Claude Code en tiempo real. Requiere acceso a tus credenciales de inicio de sesión de Claude Code.",
