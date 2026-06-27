@@ -243,6 +243,7 @@
   "usageAlert.resetsNow": "Resetting...",
   "usageAlert.refresh": "Refresh",
   "usageAlert.refreshing": "Refreshing...",
+  "usageAlert.claudeUnavailable": "Unable to load Claude usage. Check that you're signed in to Claude Code, or press refresh.",
 
   "usageTracking.title": "Claude Usage Tracking",
   "usageTracking.description": "Monitor your Claude Code session and weekly usage limits in real-time. This requires access to your Claude Code login credentials.",

@@ -237,6 +237,7 @@
   "usageAlert.resetsNow": "Wird zurückgesetzt...",
   "usageAlert.refresh": "Aktualisieren",
   "usageAlert.refreshing": "Wird aktualisiert...",
+  "usageAlert.claudeUnavailable": "Claude-Nutzung kann nicht geladen werden. Prüfe, ob du bei Claude Code angemeldet bist, oder klicke auf Aktualisieren.",
 
   "usageTracking.title": "Claude Nutzungsverfolgung",
   "usageTracking.description": "Überwachen Sie Ihre Claude Code Sitzungs- und Wochenlimits in Echtzeit. Dies erfordert Zugriff auf Ihre Claude Code Anmeldedaten.",
