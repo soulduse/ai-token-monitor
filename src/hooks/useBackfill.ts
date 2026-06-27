@@ -10,7 +10,7 @@ import {
 } from "../lib/backfillRegistry";
 import type { LeaderboardProvider } from "../lib/types";
 
-const PROVIDERS: LeaderboardProvider[] = ["claude", "codex", "opencode", "kimi", "glm"];
+const PROVIDERS: LeaderboardProvider[] = ["claude", "codex", "opencode", "kimi", "glm", "gjc"];
 
 function activeProviders(prefs: {
   include_claude: boolean;
@@ -18,13 +18,15 @@ function activeProviders(prefs: {
   include_opencode: boolean;
   include_kimi: boolean;
   include_glm: boolean;
+  include_gjc: boolean;
 }): LeaderboardProvider[] {
   return PROVIDERS.filter((p) => {
     if (p === "claude") return prefs.include_claude;
     if (p === "codex") return prefs.include_codex;
     if (p === "opencode") return prefs.include_opencode;
     if (p === "kimi") return prefs.include_kimi;
-    return prefs.include_glm;
+    if (p === "glm") return prefs.include_glm;
+    return prefs.include_gjc;
   });
 }
 

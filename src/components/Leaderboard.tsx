@@ -155,6 +155,7 @@ function LeaderboardContent({ user }: { user: User }) {
   if (prefs.include_opencode) availableProviders.push("opencode");
   if (prefs.include_kimi) availableProviders.push("kimi");
   if (prefs.include_glm) availableProviders.push("glm");
+  if (prefs.include_gjc) availableProviders.push("gjc");
   // Default to claude if nothing enabled
   if (availableProviders.length === 0) availableProviders.push("claude");
 

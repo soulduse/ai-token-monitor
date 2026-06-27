@@ -16,6 +16,7 @@
   "sources.opencode": "OpenCode",
   "sources.kimi": "Kimi",
   "sources.glm": "GLM",
+  "sources.gjc": "GJC",
   "sources.summary.count": "{{total}} 个中 {{active}} 个启用",
   "sources.open": "打开来源菜单",
 

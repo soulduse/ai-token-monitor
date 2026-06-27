@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 
 use crate::providers::claude_code::ClaudeCodeProvider;
 use crate::providers::codex::CodexProvider;
+use crate::providers::gjc::GjcProvider;
 use crate::providers::glm::GlmProvider;
 use crate::providers::kimi::KimiProvider;
 use crate::providers::opencode::OpenCodeProvider;
@@ -138,6 +139,31 @@ pub async fn get_glm_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
 #[tauri::command]
 pub fn is_glm_available() -> bool {
     GlmProvider::new().is_available()
+}
+
+
+#[tauri::command]
+pub async fn get_gjc_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
+    let result = tauri::async_runtime::spawn_blocking(|| {
+        let prefs = get_preferences();
+        let provider = GjcProvider::new(prefs.gjc_dirs);
+        if !provider.is_available() {
+            return Err("GJC stats not available".to_string());
+        }
+        provider.fetch_stats()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if result.is_ok() {
+        crate::update_tray_title(&app);
+    }
+    result
+}
+
+#[tauri::command]
+pub fn is_gjc_available() -> bool {
+    GjcProvider::new(get_preferences().gjc_dirs).is_available()
 }
 
 #[tauri::command]
