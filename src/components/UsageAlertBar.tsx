@@ -149,6 +149,76 @@ function UsageRow({
   );
 }
 
+function RefreshButton({
+  refreshing,
+  cooldown,
+  onRefresh,
+}: {
+  refreshing: boolean;
+  cooldown: number;
+  onRefresh: () => void;
+}) {
+  const t = useI18n();
+  const disabled = refreshing || cooldown > 0;
+
+  return (
+    <button
+      onClick={onRefresh}
+      disabled={disabled}
+      title={
+        refreshing
+          ? t("usageAlert.refreshing")
+          : cooldown > 0
+          ? `${t("usageAlert.refresh")} (${cooldown}s)`
+          : t("usageAlert.refresh")
+      }
+      aria-label={t("usageAlert.refresh")}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 18,
+        height: 18,
+        padding: 0,
+        background: "transparent",
+        border: "none",
+        borderRadius: 3,
+        color: "var(--text-muted)",
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled ? 0.4 : 0.8,
+        transition: "opacity 0.2s ease, color 0.2s ease",
+      }}
+      onMouseEnter={(e) => {
+        if (!disabled) {
+          e.currentTarget.style.color = "var(--text-primary)";
+        }
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.color = "var(--text-muted)";
+      }}
+    >
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{
+          animation: refreshing ? "miniProfileSpin 0.8s linear infinite" : "none",
+        }}
+      >
+        <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+        <path d="M21 3v5h-5" />
+        <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+        <path d="M3 21v-5h5" />
+      </svg>
+    </button>
+  );
+}
+
 function ProviderHeader({
   label,
   stale,
@@ -399,6 +469,10 @@ export function UsageAlertBar() {
   // cached stats / rate limits still have data.
   const hasCodexData = showCodex && (hasCodexRateLimits || hasCodexSummary);
 
+  // Claude-only, tracking never enabled: show the standalone enable card. When
+  // Codex is also on, the same enable affordance is rendered inline further
+  // down via showClaudePrompt → ClaudeTrackingPrompt, so this branch is
+  // deliberately gated on !showCodex to avoid a duplicate prompt.
   if (showClaude && !prefs.usage_tracking_enabled && !showCodex) {
     return (
       <div style={{
@@ -451,7 +525,14 @@ export function UsageAlertBar() {
 
   const hasClaudeData = showClaude && (!!five_hour || !!seven_day || !!extra_usage);
   const showClaudePrompt = showClaude && !prefs.usage_tracking_enabled;
-  if (!hasClaudeData && !showClaudePrompt && !hasCodexData) return null;
+  // Tracking is enabled (often auto-migrated for existing users) but no usage
+  // payload is cached yet — credentials missing, first poll pending, or the
+  // OAuth fetch failed. Surface an explicit "unavailable" state instead of
+  // silently dropping the whole card, which otherwise looks like Claude usage
+  // vanished when the user merely toggled Codex off.
+  const showClaudeUnavailable =
+    showClaude && prefs.usage_tracking_enabled && !hasClaudeData;
+  if (!hasClaudeData && !showClaudePrompt && !showClaudeUnavailable && !hasCodexData) return null;
 
   return (
     <div style={{
@@ -481,60 +562,11 @@ export function UsageAlertBar() {
             label={t("usageAlert.claude")}
             stale={is_stale}
             refreshButton={(
-              <button
-                onClick={handleRefresh}
-                disabled={refreshing || cooldown > 0}
-                title={
-                  refreshing
-                    ? t("usageAlert.refreshing")
-                    : cooldown > 0
-                    ? `${t("usageAlert.refresh")} (${cooldown}s)`
-                    : t("usageAlert.refresh")
-                }
-                aria-label={t("usageAlert.refresh")}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: 18,
-                  height: 18,
-                  padding: 0,
-                  background: "transparent",
-                  border: "none",
-                  borderRadius: 3,
-                  color: "var(--text-muted)",
-                  cursor: refreshing || cooldown > 0 ? "default" : "pointer",
-                  opacity: refreshing || cooldown > 0 ? 0.4 : 0.8,
-                  transition: "opacity 0.2s ease, color 0.2s ease",
-                }}
-                onMouseEnter={(e) => {
-                  if (!refreshing && cooldown === 0) {
-                    e.currentTarget.style.color = "var(--text-primary)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = "var(--text-muted)";
-                }}
-              >
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  style={{
-                    animation: refreshing ? "miniProfileSpin 0.8s linear infinite" : "none",
-                  }}
-                >
-                  <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-                  <path d="M21 3v5h-5" />
-                  <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
-                  <path d="M3 21v-5h5" />
-                </svg>
-              </button>
+              <RefreshButton
+                refreshing={refreshing}
+                cooldown={cooldown}
+                onRefresh={handleRefresh}
+              />
             )}
           />
           {five_hour && (
@@ -568,7 +600,29 @@ export function UsageAlertBar() {
         />
       )}
 
-      {(hasClaudeData || showClaudePrompt) && hasCodexData && (
+      {showClaudeUnavailable && (
+        <div>
+          <ProviderHeader
+            label={t("usageAlert.claude")}
+            refreshButton={(
+              <RefreshButton
+                refreshing={refreshing}
+                cooldown={cooldown}
+                onRefresh={handleRefresh}
+              />
+            )}
+          />
+          <div style={{
+            fontSize: 10,
+            color: "var(--text-secondary)",
+            lineHeight: 1.4,
+          }}>
+            {t("usageAlert.claudeUnavailable")}
+          </div>
+        </div>
+      )}
+
+      {(hasClaudeData || showClaudePrompt || showClaudeUnavailable) && hasCodexData && (
         <div style={{
           height: 1,
           background: "rgba(255,255,255,0.08)",
