@@ -271,23 +271,36 @@ fn read_oauth_credentials_macos() -> Option<OAuthCredentials> {
 
 #[cfg(target_os = "macos")]
 fn read_oauth_credentials_keychain() -> Option<OAuthCredentials> {
-    let account = whoami::username();
+    // A single service ("Claude Code-credentials") can hold MORE THAN ONE item
+    // under different accounts. Observed in the wild: one item with acct="unknown"
+    // that only carries `mcpOAuth` (no `claudeAiOauth`), and another under the OS
+    // username that carries the real `claudeAiOauth` token — or vice versa. Which
+    // item `security` returns for a given `-a` is not reliable across machines, so
+    // we try several account candidates AND fall back to an account-less lookup,
+    // accepting only an item that actually yields claudeAiOauth credentials. This
+    // is why some macOS users saw "unavailable" while others worked: the lookup
+    // happened to land on the mcpOAuth-only item.
+    let username = whoami::username();
+    let account_candidates: [Option<&str>; 3] = [Some("unknown"), Some(&username), None];
 
-    // Try legacy name first (avoids `security dump-keychain` discovery)
     let legacy = "Claude Code-credentials";
-    if let Some(credentials) = read_keychain_credentials(legacy, &account) {
-        return Some(credentials);
+    for account in account_candidates {
+        if let Some(credentials) = read_keychain_credentials(legacy, account) {
+            return Some(credentials);
+        }
     }
 
     // Claude Code v2.1.52+ uses "Claude Code-credentials-{hash}" service name.
-    // Only run discovery if legacy name didn't work.
+    // Only run discovery if the legacy name didn't yield usable credentials.
     let service_names = find_keychain_service_names();
     for service in &service_names {
         if service == legacy {
-            continue; // Already tried
+            continue; // Already tried above
         }
-        if let Some(credentials) = read_keychain_credentials(service, &account) {
-            return Some(credentials);
+        for account in account_candidates {
+            if let Some(credentials) = read_keychain_credentials(service, account) {
+                return Some(credentials);
+            }
         }
     }
     None
@@ -296,12 +309,18 @@ fn read_oauth_credentials_keychain() -> Option<OAuthCredentials> {
 /// Read a password from macOS Keychain via `/usr/bin/security` CLI.
 /// Claude Code stores credentials using the same `security` binary,
 /// so it's always in the keychain item's ACL — no permission prompts.
+/// When `account` is None the `-a` filter is omitted so `security` returns the
+/// first matching item for the service regardless of its account field.
 #[cfg(target_os = "macos")]
-fn read_keychain_credentials(service: &str, account: &str) -> Option<OAuthCredentials> {
-    let output = Command::new("/usr/bin/security")
-        .args(["find-generic-password", "-s", service, "-a", account, "-w"])
-        .output()
-        .ok()?;
+fn read_keychain_credentials(service: &str, account: Option<&str>) -> Option<OAuthCredentials> {
+    let mut args = vec!["find-generic-password", "-s", service];
+    if let Some(account) = account {
+        args.push("-a");
+        args.push(account);
+    }
+    args.push("-w");
+
+    let output = Command::new("/usr/bin/security").args(&args).output().ok()?;
 
     if !output.status.success() {
         return None;
@@ -674,5 +693,20 @@ mod tests {
         let credentials = extract_credentials_from_keychain_data(payload).expect("credentials");
 
         assert_eq!(credentials.access_token, "access-token");
+    }
+
+    #[test]
+    fn rejects_keychain_item_without_claude_oauth() {
+        // A "Claude Code-credentials" keychain item can hold only `mcpOAuth`
+        // (no `claudeAiOauth`). Extraction must return None so the lookup keeps
+        // trying other account candidates / service names instead of accepting
+        // a tokenless item and reporting "unavailable".
+        let value = serde_json::json!({
+            "mcpOAuth": {
+                "notion|abc": { "serverName": "notion" }
+            }
+        });
+
+        assert!(extract_oauth_credentials(&value).is_none());
     }
 }
