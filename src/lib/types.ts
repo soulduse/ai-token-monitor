@@ -133,7 +133,8 @@ export interface MonitoredWindows {
 
 export interface UsageWindow {
   utilization: number;
-  resets_at: string;
+  // null when the window has no scheduled reset (e.g. a scoped weekly window at 0%)
+  resets_at: string | null;
 }
 
 export interface ExtraUsage {
