@@ -18,8 +18,12 @@ function getBarColor(percent: number): string {
   return "#22c55e";
 }
 
-function formatResetTime(resetsAt: string, t: (key: string, params?: Record<string, string>) => string): string {
+function formatResetTime(resetsAt: string | null | undefined, t: (key: string, params?: Record<string, string>) => string): string {
+  // The API omits resets_at (null) for windows with no scheduled reset. Bail
+  // before the diff math so we render a clean blank instead of "NaNd NaNh".
+  if (!resetsAt) return "";
   const reset = new Date(resetsAt);
+  if (Number.isNaN(reset.getTime())) return "";
   const now = new Date();
   const diffMs = reset.getTime() - now.getTime();
   if (diffMs <= 0) return t("usageAlert.resetsNow");

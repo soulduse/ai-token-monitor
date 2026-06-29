@@ -83,31 +83,35 @@ fn check_and_fire_alerts(app_handle: &tauri::AppHandle) {
     //   - It doesn't change on minor timestamp drift within the same window
     let mut windows_to_check: Vec<(&str, f64, String, Option<String>)> = Vec::new();
 
-    // Truncate resets_at to hour to avoid spurious resets from second-level drift
-    fn stable_window_id(name: &str, resets_at: &str) -> String {
-        // Take first 13 chars of ISO timestamp (e.g. "2026-04-03T11") for hour-level stability
-        let truncated = &resets_at[..resets_at.len().min(13)];
-        format!("{}:{}", name, truncated)
+    // Truncate resets_at to hour to avoid spurious resets from second-level drift.
+    // resets_at is optional — a window with no scheduled reset still needs a
+    // stable id, so fall back to a fixed marker instead of the timestamp.
+    fn stable_window_id(name: &str, resets_at: Option<&str>) -> String {
+        match resets_at {
+            // Take first 13 chars of ISO timestamp (e.g. "2026-04-03T11") for hour-level stability
+            Some(ts) => format!("{}:{}", name, &ts[..ts.len().min(13)]),
+            None => format!("{}:none", name),
+        }
     }
 
     if monitored.five_hour {
         if let Some(w) = &usage.five_hour {
-            windows_to_check.push(("Session (5h)", w.utilization, stable_window_id("5h", &w.resets_at), Some(w.resets_at.clone())));
+            windows_to_check.push(("Session (5h)", w.utilization, stable_window_id("5h", w.resets_at.as_deref()), w.resets_at.clone()));
         }
     }
     if monitored.seven_day {
         if let Some(w) = &usage.seven_day {
-            windows_to_check.push(("Weekly", w.utilization, stable_window_id("7d", &w.resets_at), Some(w.resets_at.clone())));
+            windows_to_check.push(("Weekly", w.utilization, stable_window_id("7d", w.resets_at.as_deref()), w.resets_at.clone()));
         }
     }
     if monitored.seven_day_sonnet {
         if let Some(w) = &usage.seven_day_sonnet {
-            windows_to_check.push(("Weekly Sonnet", w.utilization, stable_window_id("7d-sonnet", &w.resets_at), Some(w.resets_at.clone())));
+            windows_to_check.push(("Weekly Sonnet", w.utilization, stable_window_id("7d-sonnet", w.resets_at.as_deref()), w.resets_at.clone()));
         }
     }
     if monitored.seven_day_opus {
         if let Some(w) = &usage.seven_day_opus {
-            windows_to_check.push(("Weekly Opus", w.utilization, stable_window_id("7d-opus", &w.resets_at), Some(w.resets_at.clone())));
+            windows_to_check.push(("Weekly Opus", w.utilization, stable_window_id("7d-opus", w.resets_at.as_deref()), w.resets_at.clone()));
         }
     }
     if monitored.extra_usage {

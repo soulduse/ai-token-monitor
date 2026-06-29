@@ -10,7 +10,11 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageWindow {
     pub utilization: f64,
-    pub resets_at: String,
+    // The API returns `null` for `resets_at` on windows that have no scheduled
+    // reset (e.g. a scoped weekly window at 0% utilization). It must stay
+    // optional — a non-optional String here makes serde fail the ENTIRE response
+    // parse, which empties the cache and surfaces a false "unavailable" error.
+    pub resets_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -549,7 +553,17 @@ struct ApiResponse {
 #[derive(Debug, Deserialize)]
 struct ApiUsageWindow {
     utilization: f64,
-    resets_at: String,
+    #[serde(default)]
+    resets_at: Option<String>,
+}
+
+impl From<ApiUsageWindow> for UsageWindow {
+    fn from(w: ApiUsageWindow) -> Self {
+        UsageWindow {
+            utilization: w.utilization,
+            resets_at: w.resets_at,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -604,22 +618,10 @@ async fn fetch_usage_from_api(token: &str) -> Result<OAuthUsage, FetchUsageError
         .map_err(|e| FetchUsageError::Parse(e.to_string()))?;
 
     Ok(OAuthUsage {
-        five_hour: api.five_hour.map(|w| UsageWindow {
-            utilization: w.utilization,
-            resets_at: w.resets_at,
-        }),
-        seven_day: api.seven_day.map(|w| UsageWindow {
-            utilization: w.utilization,
-            resets_at: w.resets_at,
-        }),
-        seven_day_sonnet: api.seven_day_sonnet.map(|w| UsageWindow {
-            utilization: w.utilization,
-            resets_at: w.resets_at,
-        }),
-        seven_day_opus: api.seven_day_opus.map(|w| UsageWindow {
-            utilization: w.utilization,
-            resets_at: w.resets_at,
-        }),
+        five_hour: api.five_hour.map(UsageWindow::from),
+        seven_day: api.seven_day.map(UsageWindow::from),
+        seven_day_sonnet: api.seven_day_sonnet.map(UsageWindow::from),
+        seven_day_opus: api.seven_day_opus.map(UsageWindow::from),
         extra_usage: api.extra_usage.and_then(|e| {
             let monthly_limit = e.monthly_limit?;
             let used_credits = e.used_credits?;
@@ -693,6 +695,33 @@ mod tests {
         let credentials = extract_credentials_from_keychain_data(payload).expect("credentials");
 
         assert_eq!(credentials.access_token, "access-token");
+    }
+
+    #[test]
+    fn parses_api_response_with_null_resets_at() {
+        // Real api.anthropic.com/api/oauth/usage payload shape: a scoped weekly
+        // window (e.g. Sonnet) at 0% utilization reports `resets_at: null`. A
+        // non-optional String field made serde fail the ENTIRE parse here, which
+        // emptied the cache and surfaced a false "unavailable" error in the UI.
+        let body = r#"{
+            "five_hour": {"utilization": 63.0, "resets_at": "2026-06-29T04:50:00Z", "limit_dollars": null},
+            "seven_day": {"utilization": 8.0, "resets_at": "2026-07-03T18:00:00Z"},
+            "seven_day_oauth_apps": null,
+            "seven_day_opus": null,
+            "seven_day_sonnet": {"utilization": 0.0, "resets_at": null},
+            "extra_usage": {"is_enabled": false, "monthly_limit": null, "used_credits": null, "utilization": null}
+        }"#;
+
+        let api: ApiResponse = serde_json::from_str(body).expect("response should parse");
+
+        let sonnet = api.seven_day_sonnet.expect("seven_day_sonnet present");
+        assert_eq!(sonnet.utilization, 0.0);
+        assert_eq!(sonnet.resets_at, None);
+        assert_eq!(
+            api.five_hour.unwrap().resets_at.as_deref(),
+            Some("2026-06-29T04:50:00Z")
+        );
+        assert!(api.seven_day_opus.is_none());
     }
 
     #[test]
