@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0",
-  "last_updated": "2026-06-10",
+  "version": "1.7.0",
+  "last_updated": "2026-07-01",
   "sources": {
     "claude": "https://platform.claude.com/docs/en/about-claude/pricing",
     "codex": "https://developers.openai.com/api/docs/pricing"
@@ -19,6 +19,10 @@
       { "match": "opus-4-1",  "label": "Opus 4.1/4",          "input": 15.0, "output": 75.0,  "cache_read": 1.50, "cache_write": 18.75, "cache_write_1h": 30.0  },
       { "match": "opus-4",    "label": "Opus 4.1/4",          "input": 15.0, "output": 75.0,  "cache_read": 1.50, "cache_write": 18.75, "cache_write_1h": 30.0  },
       { "match": "opus",      "label": "Opus 4.8/4.7/4.6/4.5", "input": 5.0,  "output": 25.0,  "cache_read": 0.50, "cache_write": 6.25,  "cache_write_1h": 10.0  },
+      { "match": "sonnet-5",  "label": "Sonnet 5",      "input": 2.0,  "output": 10.0,  "cache_read": 0.20, "cache_write": 2.50,  "cache_write_1h": 4.0,
+        "scheduled": [
+          { "from": "2026-09-01", "input": 3.0, "output": 15.0, "cache_read": 0.30, "cache_write": 3.75, "cache_write_1h": 6.0 }
+        ] },
       { "match": "sonnet-4-6","label": "Sonnet 4.x",    "input": 3.0,  "output": 15.0,  "cache_read": 0.30, "cache_write": 3.75,  "cache_write_1h": 6.0   },
       { "match": "sonnet-4-5","label": "Sonnet 4.x",    "input": 3.0,  "output": 15.0,  "cache_read": 0.30, "cache_write": 3.75,  "cache_write_1h": 6.0   },
       { "match": "sonnet-4",  "label": "Sonnet 4.x",    "input": 3.0,  "output": 15.0,  "cache_read": 0.30, "cache_write": 3.75,  "cache_write_1h": 6.0   },
@@ -70,6 +74,10 @@
       { "match": "opus-4-1",          "label": "Claude Opus 4.1/4",            "input": 15.0,  "output": 75.0,   "cache_read": 1.50,  "cache_write": 18.75  },
       { "match": "opus-4",            "label": "Claude Opus 4.1/4",            "input": 15.0,  "output": 75.0,   "cache_read": 1.50,  "cache_write": 18.75  },
       { "match": "opus",              "label": "Claude Opus 4.8/4.7/4.6/4.5", "input": 5.0,   "output": 25.0,   "cache_read": 0.50,  "cache_write": 6.25   },
+      { "match": "sonnet-5",          "label": "Claude Sonnet 5",          "input": 2.0,   "output": 10.0,   "cache_read": 0.20,  "cache_write": 2.50,
+        "scheduled": [
+          { "from": "2026-09-01", "input": 3.0, "output": 15.0, "cache_read": 0.30, "cache_write": 3.75 }
+        ] },
       { "match": "sonnet-4-6",        "label": "Claude Sonnet 4.x",        "input": 3.0,   "output": 15.0,   "cache_read": 0.30,  "cache_write": 3.75   },
       { "match": "sonnet-4-5",        "label": "Claude Sonnet 4.x",        "input": 3.0,   "output": 15.0,   "cache_read": 0.30,  "cache_write": 3.75   },
       { "match": "sonnet-4",          "label": "Claude Sonnet 4.x",        "input": 3.0,   "output": 15.0,   "cache_read": 0.30,  "cache_write": 3.75   },
