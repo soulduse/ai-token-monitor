@@ -42,6 +42,78 @@ struct PricingEntry {
     cache_write_1h: f64,
     #[serde(default)]
     cached_input: f64,
+    /// Date-scheduled price overrides. When a model's price changes on a known
+    /// future date (e.g. Sonnet 5's introductory pricing ending 2026-08-31),
+    /// list the new prices with a `from` date. On lookup, the latest schedule
+    /// whose `from` is on/before today (UTC) overrides the base fields.
+    #[serde(default)]
+    scheduled: Vec<ScheduledPrice>,
+}
+
+/// A price override that takes effect on `from` (inclusive, UTC). Any price
+/// field left unset (0.0) falls back to the entry's base value.
+#[derive(Deserialize)]
+struct ScheduledPrice {
+    from: String,
+    #[serde(default)]
+    input: f64,
+    #[serde(default)]
+    output: f64,
+    #[serde(default)]
+    cache_read: f64,
+    #[serde(default)]
+    cache_write: f64,
+    #[serde(default)]
+    cache_write_1h: f64,
+    #[serde(default)]
+    cached_input: f64,
+}
+
+/// Prices for one model, already resolved for the current date. This is what
+/// callers read from — it hides the base-vs-scheduled distinction.
+struct ResolvedPrice {
+    input: f64,
+    output: f64,
+    cache_read: f64,
+    cache_write: f64,
+    cache_write_1h: f64,
+    cached_input: f64,
+}
+
+impl PricingEntry {
+    /// Resolve this entry's prices for `today` (a UTC `YYYY-MM-DD` string),
+    /// applying the latest matching scheduled override. Schedules are compared
+    /// as ISO date strings, which sort chronologically.
+    fn resolve_for(&self, today: &str) -> ResolvedPrice {
+        let mut price = ResolvedPrice {
+            input: self.input,
+            output: self.output,
+            cache_read: self.cache_read,
+            cache_write: self.cache_write,
+            cache_write_1h: self.cache_write_1h,
+            cached_input: self.cached_input,
+        };
+        // Pick the latest schedule effective on/before today.
+        if let Some(sched) = self
+            .scheduled
+            .iter()
+            .filter(|s| s.from.as_str() <= today)
+            .max_by(|a, b| a.from.cmp(&b.from))
+        {
+            if sched.input > 0.0 { price.input = sched.input; }
+            if sched.output > 0.0 { price.output = sched.output; }
+            if sched.cache_read > 0.0 { price.cache_read = sched.cache_read; }
+            if sched.cache_write > 0.0 { price.cache_write = sched.cache_write; }
+            if sched.cache_write_1h > 0.0 { price.cache_write_1h = sched.cache_write_1h; }
+            if sched.cached_input > 0.0 { price.cached_input = sched.cached_input; }
+        }
+        price
+    }
+}
+
+/// Today's date as a UTC `YYYY-MM-DD` string, used to resolve scheduled prices.
+fn today_utc() -> String {
+    chrono::Utc::now().format("%Y-%m-%d").to_string()
 }
 
 // --- Public pricing types (used by providers) ---
@@ -119,34 +191,39 @@ fn find_pricing<'a>(provider: &'a ProviderConfig, model: &str) -> &'a PricingEnt
 
 // --- Public API ---
 
+/// Look up and date-resolve a model's prices in one step.
+fn resolved_pricing(provider: &ProviderConfig, model: &str) -> ResolvedPrice {
+    find_pricing(provider, model).resolve_for(&today_utc())
+}
+
 pub fn get_claude_pricing(model: &str) -> ClaudePricing {
-    let entry = find_pricing(&config().claude, model);
+    let p = resolved_pricing(&config().claude, model);
     ClaudePricing {
-        input: entry.input,
-        output: entry.output,
-        cache_read: entry.cache_read,
-        cache_write_5m: entry.cache_write,
-        cache_write_1h: if entry.cache_write_1h > 0.0 { entry.cache_write_1h } else { entry.cache_write },
+        input: p.input,
+        output: p.output,
+        cache_read: p.cache_read,
+        cache_write_5m: p.cache_write,
+        cache_write_1h: if p.cache_write_1h > 0.0 { p.cache_write_1h } else { p.cache_write },
     }
 }
 
 pub fn get_codex_pricing(model: &str) -> CodexPricing {
-    let entry = find_pricing(&config().codex, model);
+    let p = resolved_pricing(&config().codex, model);
     CodexPricing {
-        input: entry.input,
-        output: entry.output,
-        cached_input: entry.cached_input,
+        input: p.input,
+        output: p.output,
+        cached_input: p.cached_input,
     }
 }
 
 pub fn get_kimi_pricing(model: &str) -> KimiPricing {
     let cfg = config();
     if let Some(ref kimi) = cfg.kimi {
-        let entry = find_pricing(kimi, model);
+        let p = resolved_pricing(kimi, model);
         return KimiPricing {
-            input: entry.input,
-            output: entry.output,
-            cache_read: entry.cache_read,
+            input: p.input,
+            output: p.output,
+            cache_read: p.cache_read,
         };
     }
     // Fallback defaults
@@ -157,11 +234,11 @@ pub fn get_kimi_pricing(model: &str) -> KimiPricing {
 pub fn get_glm_pricing(model: &str) -> GlmPricing {
     let cfg = config();
     if let Some(ref glm) = cfg.glm {
-        let entry = find_pricing(glm, model);
+        let p = resolved_pricing(glm, model);
         return GlmPricing {
-            input: entry.input,
-            output: entry.output,
-            cache_read: entry.cache_read,
+            input: p.input,
+            output: p.output,
+            cache_read: p.cache_read,
         };
     }
     // Fallback defaults
@@ -173,30 +250,30 @@ pub fn get_opencode_pricing(model: &str) -> OpenCodePricing {
     // Use dedicated opencode pricing if available, otherwise try to match
     // against claude or codex pricing tables based on model name.
     if let Some(ref oc) = cfg.opencode {
-        let entry = find_pricing(oc, model);
+        let p = resolved_pricing(oc, model);
         return OpenCodePricing {
-            input: entry.input,
-            output: entry.output,
-            cache_read: entry.cache_read,
-            cache_write: entry.cache_write,
+            input: p.input,
+            output: p.output,
+            cache_read: p.cache_read,
+            cache_write: p.cache_write,
         };
     }
 
     // Fallback: try claude pricing first (for claude-* models), then codex
     if model.contains("claude") || model.contains("fable") || model.contains("mythos") || model.contains("sonnet") || model.contains("opus") || model.contains("haiku") {
-        let entry = find_pricing(&cfg.claude, model);
+        let p = resolved_pricing(&cfg.claude, model);
         OpenCodePricing {
-            input: entry.input,
-            output: entry.output,
-            cache_read: entry.cache_read,
-            cache_write: entry.cache_write,
+            input: p.input,
+            output: p.output,
+            cache_read: p.cache_read,
+            cache_write: p.cache_write,
         }
     } else {
-        let entry = find_pricing(&cfg.codex, model);
+        let p = resolved_pricing(&cfg.codex, model);
         OpenCodePricing {
-            input: entry.input,
-            output: entry.output,
-            cache_read: entry.cached_input,
+            input: p.input,
+            output: p.output,
+            cache_read: p.cached_input,
             cache_write: 0.0,
         }
     }
@@ -240,17 +317,21 @@ fn format_price(val: f64) -> String {
 }
 
 fn deduplicated_rows(provider: &ProviderConfig, use_cached_input: bool) -> Vec<PricingRow> {
+    let today = today_utc();
     let mut rows = Vec::new();
     let mut seen_labels = std::collections::HashSet::new();
     for entry in &provider.models {
         let label = if entry.label.is_empty() { &entry.match_pattern } else { &entry.label };
         if seen_labels.insert(label.to_string()) {
+            // Show the price effective today so scheduled changes (e.g. Sonnet 5
+            // introductory → standard) surface in the tooltip automatically.
+            let p = entry.resolve_for(&today);
             rows.push(PricingRow {
                 model: label.to_string(),
-                input: format_price(entry.input),
-                output: format_price(entry.output),
-                cache_read: format_price(if use_cached_input { entry.cached_input } else { entry.cache_read }),
-                cache_write: if use_cached_input { "—".to_string() } else { format_price(entry.cache_write) },
+                input: format_price(p.input),
+                output: format_price(p.output),
+                cache_read: format_price(if use_cached_input { p.cached_input } else { p.cache_read }),
+                cache_write: if use_cached_input { "—".to_string() } else { format_price(p.cache_write) },
             });
         }
     }
@@ -378,6 +459,70 @@ mod tests {
         assert!((p.output - 15.0).abs() < 0.001);
         assert!((p.cache_write_5m - 3.75).abs() < 0.001);
         assert!((p.cache_write_1h - 6.0).abs() < 0.001);
+    }
+
+    // Regression guard: "claude-sonnet-5" must match its own entry, not fall
+    // through to the "sonnet" default (Sonnet 4.x, $3/$15). Its entry sits above
+    // the "sonnet" fallback so the substring match lands correctly.
+    #[test]
+    fn claude_sonnet_5_not_billed_as_sonnet_4x() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let entry = find_pricing(&cfg.claude, "claude-sonnet-5");
+        // Introductory window: $2/$10.
+        let intro = entry.resolve_for("2026-07-01");
+        assert!((intro.input - 2.0).abs() < 0.001, "Sonnet 5 intro input must be $2/MTok, got ${}", intro.input);
+        assert!((intro.output - 10.0).abs() < 0.001, "Sonnet 5 intro output must be $10/MTok, got ${}", intro.output);
+        assert!((intro.cache_read - 0.20).abs() < 0.001);
+        assert!((intro.cache_write - 2.50).abs() < 0.001);
+        assert!((intro.cache_write_1h - 4.0).abs() < 0.001);
+    }
+
+    // Scheduled price transition: on/after 2026-09-01, Sonnet 5 moves to standard
+    // pricing ($3/$15) automatically, with no manual pricing.json edit.
+    #[test]
+    fn claude_sonnet_5_switches_to_standard_on_sept_1() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let entry = find_pricing(&cfg.claude, "claude-sonnet-5");
+
+        // Day before the switch: still introductory.
+        let before = entry.resolve_for("2026-08-31");
+        assert!((before.input - 2.0).abs() < 0.001, "on 8/31 input must still be $2, got ${}", before.input);
+        assert!((before.output - 10.0).abs() < 0.001);
+
+        // Switch day (inclusive): standard.
+        let on = entry.resolve_for("2026-09-01");
+        assert!((on.input - 3.0).abs() < 0.001, "on 9/1 input must be $3, got ${}", on.input);
+        assert!((on.output - 15.0).abs() < 0.001, "on 9/1 output must be $15, got ${}", on.output);
+        assert!((on.cache_read - 0.30).abs() < 0.001);
+        assert!((on.cache_write - 3.75).abs() < 0.001);
+        assert!((on.cache_write_1h - 6.0).abs() < 0.001);
+
+        // Well after the switch: still standard.
+        let after = entry.resolve_for("2027-01-01");
+        assert!((after.input - 3.0).abs() < 0.001);
+    }
+
+    // Entries without a `scheduled` array resolve to their base values unchanged.
+    #[test]
+    fn unscheduled_entry_resolves_to_base() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let entry = find_pricing(&cfg.claude, "claude-opus-4-8-20260528");
+        let p = entry.resolve_for("2026-09-01");
+        assert!((p.input - 5.0).abs() < 0.001);
+        assert!((p.output - 25.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn opencode_sonnet_5_not_billed_as_sonnet_4x() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let oc = cfg.opencode.as_ref().expect("opencode config present");
+        let entry = find_pricing(oc, "anthropic/claude-sonnet-5");
+        let intro = entry.resolve_for("2026-07-01");
+        assert!((intro.input - 2.0).abs() < 0.001, "Opencode Sonnet 5 intro input must be $2/MTok, got ${}", intro.input);
+        assert!((intro.output - 10.0).abs() < 0.001);
+        let standard = entry.resolve_for("2026-09-01");
+        assert!((standard.input - 3.0).abs() < 0.001, "Opencode Sonnet 5 standard input must be $3/MTok, got ${}", standard.input);
+        assert!((standard.output - 15.0).abs() < 0.001);
     }
 
     #[test]
