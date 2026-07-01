@@ -89,6 +89,13 @@ struct CumulativeUsage {
 struct CodexOAuthCredentials {
     access_token: String,
     account_id: Option<String>,
+    /// Present when the auth.json stores a ChatGPT refresh token. Used to mint a
+    /// fresh access token when the stored one has expired (the common cause of
+    /// the usage panel falling back to a stale local snapshot — "리셋 중...").
+    refresh_token: Option<String>,
+    /// The auth.json path these credentials were read from, so a successful
+    /// refresh can persist the rotated tokens back for Codex CLI to reuse.
+    auth_path: Option<PathBuf>,
 }
 
 // --- Provider ---
@@ -163,7 +170,8 @@ impl CodexProvider {
             let Ok(value) = serde_json::from_str::<Value>(&content) else {
                 continue;
             };
-            if let Some(credentials) = parse_codex_oauth_credentials(&value) {
+            if let Some(mut credentials) = parse_codex_oauth_credentials(&value) {
+                credentials.auth_path = Some(path.clone());
                 return Some(credentials);
             }
         }
@@ -769,41 +777,61 @@ fn parse_codex_oauth_credentials(value: &Value) -> Option<CodexOAuthCredentials>
         .or_else(|| value.get("chatgptAccountId"))
         .and_then(value_as_string);
 
+    let refresh_token = value
+        .pointer("/tokens/refresh_token")
+        .or_else(|| value.pointer("/tokens/refreshToken"))
+        .or_else(|| value.get("refresh_token"))
+        .or_else(|| value.get("refreshToken"))
+        .and_then(value_as_string);
+
     Some(CodexOAuthCredentials {
         access_token,
         account_id,
+        refresh_token,
+        auth_path: None,
     })
 }
 
-async fn fetch_codex_oauth_rate_limits(
-    credentials: &CodexOAuthCredentials,
-) -> Option<CodexRateLimits> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(8))
-        .build()
-        .ok()?;
+/// OpenAI's public OAuth client id for the Codex CLI (shared with Codex CLI and
+/// OpenCode). Used only to mint a new access token from a stored refresh token.
+const CODEX_OAUTH_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
+const CODEX_OAUTH_TOKEN_ENDPOINT: &str = "https://auth.openai.com/oauth/token";
+
+/// Try the usage endpoints with a specific bearer token. Returns:
+/// - `Ok(Some(limits))` on success,
+/// - `Ok(None)` if every endpoint responded but none yielded rate limits,
+/// - `Err(())` if any endpoint returned 401 (token likely expired → refresh).
+async fn try_fetch_usage(
+    client: &reqwest::Client,
+    access_token: &str,
+    account_id: Option<&str>,
+) -> Result<Option<CodexRateLimits>, ()> {
     let endpoints = [
         "https://chatgpt.com/backend-api/wham/usage",
         "https://chatgpt.com/backend-api/codex/usage",
     ];
 
+    let mut saw_unauthorized = false;
+
     for endpoint in endpoints {
         let mut request = client
             .get(endpoint)
-            .header(
-                "Authorization",
-                format!("Bearer {}", credentials.access_token),
-            )
+            .header("Authorization", format!("Bearer {access_token}"))
             .header("User-Agent", "codex-cli")
             .header("Accept", "application/json");
 
-        if let Some(account_id) = &credentials.account_id {
+        if let Some(account_id) = account_id {
             request = request.header("ChatGPT-Account-Id", account_id);
         }
 
         let Ok(response) = request.send().await else {
             continue;
         };
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            saw_unauthorized = true;
+            continue;
+        }
 
         if !response.status().is_success() {
             continue;
@@ -814,11 +842,164 @@ async fn fetch_codex_oauth_rate_limits(
         };
 
         if let Some(rate_limits) = extract_rate_limits_from_value(&value, "oauth") {
-            return Some(rate_limits);
+            return Ok(Some(rate_limits));
         }
     }
 
-    None
+    if saw_unauthorized {
+        Err(())
+    } else {
+        Ok(None)
+    }
+}
+
+async fn fetch_codex_oauth_rate_limits(
+    credentials: &CodexOAuthCredentials,
+) -> Option<CodexRateLimits> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(8))
+        .build()
+        .ok()?;
+
+    // First attempt with the stored access token.
+    match try_fetch_usage(
+        &client,
+        &credentials.access_token,
+        credentials.account_id.as_deref(),
+    )
+    .await
+    {
+        Ok(Some(limits)) => return Some(limits),
+        Ok(None) => return None, // reachable but no rate limits — refreshing won't help
+        Err(()) => {}            // 401 → fall through to refresh-and-retry
+    }
+
+    // The access token is expired/revoked. Mint a fresh one from the refresh
+    // token, persist it back to auth.json for Codex CLI, and retry once.
+    let refresh_token = credentials.refresh_token.as_deref()?;
+    let refreshed = refresh_codex_access_token(&client, refresh_token).await?;
+
+    if let Some(path) = &credentials.auth_path {
+        persist_refreshed_codex_tokens(path, &refreshed);
+    }
+
+    let account_id = refreshed
+        .account_id
+        .as_deref()
+        .or(credentials.account_id.as_deref());
+
+    match try_fetch_usage(&client, &refreshed.access_token, account_id).await {
+        Ok(Some(limits)) => Some(limits),
+        _ => None,
+    }
+}
+
+/// The subset of an OAuth token response we care about.
+struct RefreshedCodexTokens {
+    access_token: String,
+    /// Refresh tokens rotate — the response may carry a new one that must be
+    /// persisted, or omit it (in which case the old one stays valid).
+    refresh_token: Option<String>,
+    id_token: Option<String>,
+    account_id: Option<String>,
+}
+
+/// Exchange a refresh token for a new access token via OpenAI's OAuth endpoint.
+async fn refresh_codex_access_token(
+    client: &reqwest::Client,
+    refresh_token: &str,
+) -> Option<RefreshedCodexTokens> {
+    let body = serde_json::json!({
+        "client_id": CODEX_OAUTH_CLIENT_ID,
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+    });
+
+    let response = client
+        .post(CODEX_OAUTH_TOKEN_ENDPOINT)
+        .header("Content-Type", "application/json")
+        .header("User-Agent", "codex-cli")
+        .json(&body)
+        .send()
+        .await
+        .ok()?;
+
+    if !response.status().is_success() {
+        return None;
+    }
+
+    let value = response.json::<Value>().await.ok()?;
+
+    let access_token = value.get("access_token").and_then(value_as_string)?;
+    let id_token = value.get("id_token").and_then(value_as_string);
+    // account_id is embedded in the id_token JWT; fall back to the caller's.
+    let account_id = id_token
+        .as_deref()
+        .and_then(account_id_from_id_token);
+
+    Some(RefreshedCodexTokens {
+        access_token,
+        refresh_token: value.get("refresh_token").and_then(value_as_string),
+        id_token,
+        account_id,
+    })
+}
+
+/// Extract the ChatGPT account id from an id_token JWT's claims, mirroring how
+/// Codex derives it. Best-effort: returns None on any decode failure.
+fn account_id_from_id_token(id_token: &str) -> Option<String> {
+    use base64::Engine;
+    let payload_b64 = id_token.split('.').nth(1)?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload_b64)
+        .ok()?;
+    let claims: Value = serde_json::from_slice(&bytes).ok()?;
+    claims
+        .pointer("/https:~1~1api.openai.com~1auth/chatgpt_account_id")
+        .or_else(|| claims.get("chatgpt_account_id"))
+        .or_else(|| claims.get("account_id"))
+        .and_then(value_as_string)
+}
+
+/// Write refreshed tokens back into auth.json, preserving every other field
+/// (auth_mode, unrelated keys). Only tokens.{access,refresh,id}_token and
+/// last_refresh are touched. Failures are non-fatal — the in-memory token still
+/// serves the current poll.
+fn persist_refreshed_codex_tokens(path: &Path, refreshed: &RefreshedCodexTokens) {
+    let Ok(content) = fs::read_to_string(path) else {
+        return;
+    };
+    let Ok(mut root) = serde_json::from_str::<Value>(&content) else {
+        return;
+    };
+    let Some(obj) = root.as_object_mut() else {
+        return;
+    };
+
+    let tokens = obj
+        .entry("tokens")
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    if let Some(tokens) = tokens.as_object_mut() {
+        tokens.insert(
+            "access_token".into(),
+            Value::String(refreshed.access_token.clone()),
+        );
+        if let Some(rt) = &refreshed.refresh_token {
+            tokens.insert("refresh_token".into(), Value::String(rt.clone()));
+        }
+        if let Some(it) = &refreshed.id_token {
+            tokens.insert("id_token".into(), Value::String(it.clone()));
+        }
+    }
+
+    obj.insert(
+        "last_refresh".into(),
+        Value::String(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
+    );
+
+    if let Ok(serialized) = serde_json::to_string_pretty(&root) {
+        let _ = fs::write(path, serialized);
+    }
 }
 
 fn extract_rate_limits_from_value(value: &Value, source: &str) -> Option<CodexRateLimits> {
@@ -1168,6 +1349,86 @@ mod tests {
         });
 
         assert!(parse_codex_oauth_credentials(&value).is_none());
+    }
+
+    #[test]
+    fn test_parse_codex_oauth_credentials_reads_refresh_token() {
+        let value: Value = serde_json::json!({
+            "auth_mode": "chatgpt",
+            "tokens": {
+                "access_token": "access-abc",
+                "refresh_token": "refresh-xyz",
+                "account_id": "acct-123"
+            }
+        });
+        let creds = parse_codex_oauth_credentials(&value).expect("chatgpt creds parse");
+        assert_eq!(creds.access_token, "access-abc");
+        assert_eq!(creds.refresh_token.as_deref(), Some("refresh-xyz"));
+        assert_eq!(creds.account_id.as_deref(), Some("acct-123"));
+        // auth_path is injected by read_oauth_credentials, not the parser.
+        assert!(creds.auth_path.is_none());
+    }
+
+    #[test]
+    fn test_account_id_from_id_token_jwt() {
+        use base64::Engine;
+        // Minimal JWT: header.payload.signature; only payload is decoded.
+        let payload = serde_json::json!({ "chatgpt_account_id": "acct-from-jwt" });
+        let payload_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(serde_json::to_vec(&payload).unwrap());
+        let jwt = format!("header.{payload_b64}.sig");
+        assert_eq!(
+            account_id_from_id_token(&jwt).as_deref(),
+            Some("acct-from-jwt")
+        );
+        // Garbage input must not panic.
+        assert!(account_id_from_id_token("not-a-jwt").is_none());
+    }
+
+    #[test]
+    fn test_persist_refreshed_tokens_preserves_schema() {
+        // Write a realistic auth.json, refresh it, and confirm unrelated fields
+        // survive while only the token fields + last_refresh change.
+        let dir = std::env::temp_dir().join(format!("codex-auth-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("auth.json");
+        std::fs::write(
+            &path,
+            serde_json::to_string_pretty(&serde_json::json!({
+                "auth_mode": "chatgpt",
+                "last_refresh": "2026-06-20T00:00:00.000Z",
+                "tokens": {
+                    "access_token": "old-access",
+                    "refresh_token": "old-refresh",
+                    "id_token": "old-id",
+                    "account_id": "acct-keep"
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let refreshed = RefreshedCodexTokens {
+            access_token: "new-access".into(),
+            refresh_token: Some("new-refresh".into()),
+            id_token: Some("new-id".into()),
+            account_id: None,
+        };
+        persist_refreshed_codex_tokens(&path, &refreshed);
+
+        let written: Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        // Rotated tokens applied.
+        assert_eq!(written.pointer("/tokens/access_token").and_then(|v| v.as_str()), Some("new-access"));
+        assert_eq!(written.pointer("/tokens/refresh_token").and_then(|v| v.as_str()), Some("new-refresh"));
+        assert_eq!(written.pointer("/tokens/id_token").and_then(|v| v.as_str()), Some("new-id"));
+        // Unrelated fields preserved.
+        assert_eq!(written.get("auth_mode").and_then(|v| v.as_str()), Some("chatgpt"));
+        assert_eq!(written.pointer("/tokens/account_id").and_then(|v| v.as_str()), Some("acct-keep"));
+        // last_refresh was bumped away from the seeded value.
+        assert_ne!(written.get("last_refresh").and_then(|v| v.as_str()), Some("2026-06-20T00:00:00.000Z"));
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
