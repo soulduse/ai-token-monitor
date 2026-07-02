@@ -30,6 +30,7 @@ export function LeaderboardUploader() {
   const { stats: opencodeStats } = useTokenStats("opencode");
   const { stats: kimiStats } = useTokenStats("kimi");
   const { stats: glmStats } = useTokenStats("glm");
+  const { stats: gjcStats } = useTokenStats("gjc");
 
   const claude = useSnapshotUploader({
     stats: prefs.include_claude ? claudeStats : null,
@@ -61,6 +62,12 @@ export function LeaderboardUploader() {
     optedIn,
     provider: "glm",
   });
+  const gjc = useSnapshotUploader({
+    stats: prefs.include_gjc ? gjcStats : null,
+    user,
+    optedIn,
+    provider: "gjc",
+  });
 
   const runners = useMemo<Partial<Record<LeaderboardProvider, BackfillRunner>>>(
     () => ({
@@ -69,6 +76,7 @@ export function LeaderboardUploader() {
       opencode: prefs.include_opencode && opencode.ready ? opencode.manualBackfill : undefined,
       kimi: prefs.include_kimi && kimi.ready ? kimi.manualBackfill : undefined,
       glm: prefs.include_glm && glm.ready ? glm.manualBackfill : undefined,
+      gjc: prefs.include_gjc && gjc.ready ? gjc.manualBackfill : undefined,
     }),
     [
       prefs.include_claude,
@@ -76,16 +84,19 @@ export function LeaderboardUploader() {
       prefs.include_opencode,
       prefs.include_kimi,
       prefs.include_glm,
+      prefs.include_gjc,
       claude.ready,
       codex.ready,
       opencode.ready,
       kimi.ready,
       glm.ready,
+      gjc.ready,
       claude.manualBackfill,
       codex.manualBackfill,
       opencode.manualBackfill,
       kimi.manualBackfill,
       glm.manualBackfill,
+      gjc.manualBackfill,
     ],
   );
 

@@ -75,6 +75,7 @@ function AppContent() {
     includeOpencode: prefs.include_opencode,
     includeKimi: prefs.include_kimi,
     includeGlm: prefs.include_glm,
+    includeGjc: prefs.include_gjc,
   });
   const t = useI18n();
   const { user, profile } = useAuth();

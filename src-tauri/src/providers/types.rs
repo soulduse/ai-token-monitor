@@ -123,6 +123,10 @@ pub struct UserPreferences {
     pub include_kimi: bool,
     #[serde(default)]
     pub include_glm: bool,
+    #[serde(default)]
+    pub include_gjc: bool,
+    #[serde(default = "default_gjc_dirs")]
+    pub gjc_dirs: Vec<String>,
     #[serde(default = "default_codex_dirs")]
     pub codex_dirs: Vec<String>,
     #[serde(default)]
@@ -198,6 +202,10 @@ fn default_config_dirs() -> Vec<String> {
 
 fn default_codex_dirs() -> Vec<String> {
     vec!["~/.codex".to_string()]
+}
+
+fn default_gjc_dirs() -> Vec<String> {
+    vec!["~/.gjc".to_string()]
 }
 
 fn default_true() -> bool {
@@ -279,6 +287,8 @@ impl Default for UserPreferences {
             include_opencode: false,
             include_kimi: false,
             include_glm: false,
+            include_gjc: false,
+            gjc_dirs: default_gjc_dirs(),
             codex_dirs: default_codex_dirs(),
             salary_enabled: false,
             monthly_salary: None,

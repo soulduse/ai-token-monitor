@@ -16,6 +16,7 @@
   "sources.opencode": "OpenCode",
   "sources.kimi": "Kimi",
   "sources.glm": "GLM",
+  "sources.gjc": "GJC",
   "sources.summary.count": "{{total}} içinden {{active}} aktif",
   "sources.open": "Kaynak menüsünü aç",
 
