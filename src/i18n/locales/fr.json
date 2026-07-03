@@ -4,12 +4,10 @@
   "app.loading": "Chargement...",
   "app.error.title": "Aucune statistique trouvée",
   "app.error.description": "Assurez-vous que Claude Code, Codex ou OpenCode est installé et a été utilisé au moins une fois.",
-
   "tab.overview": "Aperçu",
   "tab.analytics": "Analyse",
   "tab.leaderboard": "Classement",
   "tab.chat": "Chat",
-
   "sources.title": "Sources",
   "sources.claude": "Claude",
   "sources.codex": "Codex",
@@ -19,7 +17,6 @@
   "sources.gjc": "GJC",
   "sources.summary.count": "{{active}} sur {{total}} actives",
   "sources.open": "Ouvrir le menu des sources",
-
   "today.title": "Aujourd'hui",
   "today.tokens": "jetons",
   "today.vs7d": "vs moy. 7j",
@@ -33,7 +30,6 @@
   "today.costTooltipOut": "Sortie",
   "today.costTooltipCacheR": "Cache L",
   "today.costTooltipCacheW": "Cache É",
-
   "daily.title": "Quotidien ({{days}}j)",
   "daily.tokens": "Jetons",
   "daily.cost": "Coût",
@@ -41,13 +37,11 @@
   "daily.list": "Liste",
   "daily.copy": "Copier",
   "daily.copied": "Copié !",
-
   "period.thisWeek": "Cette semaine",
   "period.lastWeek": "Semaine dernière",
   "period.thisMonth": "Ce mois",
   "period.lastMonth": "Mois dernier",
   "period.sessions": "sessions",
-
   "activity.title": "Activité",
   "activity.weeks": "Activité ({{weeks}} sem.)",
   "activity.less": "Moins",
@@ -61,17 +55,14 @@
   "activity.longest": "Plus longue",
   "activity.current": "Actuelle",
   "activity.days": "jours",
-
   "day.mon": "Lun",
   "day.wed": "Mer",
   "day.fri": "Ven",
   "day.sun": "Dim",
-
   "model.title": "Utilisation des modèles",
   "model.input": "Entrée",
   "model.output": "Sortie",
   "model.cache": "Cache",
-
   "cache.title": "Efficacité du cache",
   "cache.cached": "en cache",
   "cache.read": "Lecture cache",
@@ -81,7 +72,6 @@
   "cache.tooltipDesc": "Part des jetons d'entrée provenant du cache plutôt que renvoyés.",
   "cache.tooltipGood": "% élevé = bon : la réutilisation du cache réduit les coûts (lecture cache 90% moins chère que l'entrée).",
   "cache.tooltipFormula": "Taux de réussite = cache_read / (input + cache_read)",
-
   "leaderboard.comingSoon": "Classement bientôt disponible",
   "leaderboard.notConfigured": "Le service de classement n'est pas encore configuré.",
   "leaderboard.join": "Rejoindre le classement",
@@ -102,7 +92,6 @@
   "leaderboard.new": "NEW",
   "leaderboard.you": "(vous)",
   "leaderboard.msgs": "msgs",
-
   "header.menu": "Plus",
   "header.share": "Partager cette app",
   "header.github": "Voir le dépôt GitHub",
@@ -115,7 +104,6 @@
   "header.captureFailed": "Échec de la capture",
   "header.summaryCopied": "Résumé copié !",
   "header.quickActions": "Accès rapide",
-
   "settings.title": "Paramètres",
   "settings.tab.general": "Général",
   "settings.tab.account": "Compte",
@@ -148,9 +136,7 @@
   "settings.codexConfigDirs": "Répertoires Codex",
   "settings.codexConfigDirsTooltip": "Répertoires où Codex stocke les données de session. Ajoutez plusieurs répertoires pour agréger l'utilisation de différentes configurations.",
   "settings.codexConfigDirsInvalid": "Chemin invalide ou dossier sessions manquant",
-
   "support.buyMeCoffee": "Offrez-moi un café",
-
   "wrapped.title": "Mon rapport IA",
   "wrapped.month": "Ce mois",
   "wrapped.year": "Cette année",
@@ -172,7 +158,6 @@
   "wrapped.summaryCache": "Cache",
   "wrapped.share": "Partager",
   "wrapped.copied": "Copié !",
-
   "receipt.title": "Reçu",
   "receipt.subtotal": "SOUS-TOTAL",
   "receipt.cacheDiscount": "REMISE CACHE",
@@ -188,7 +173,6 @@
   "receipt.thisWeek": "Cette semaine",
   "receipt.thisMonth": "Ce mois",
   "receipt.allTime": "Tout",
-
   "salary.title": "Comparaison salariale",
   "salary.setup": "Définir votre salaire pour les comparaisons",
   "salary.setupButton": "Configurer",
@@ -198,9 +182,7 @@
   "salary.coffee": "Lattés",
   "salary.netflix": "Netflix",
   "salary.chicken": "Poulets",
-
   "settings.monthlySalary": "Salaire mensuel",
-
   "export.title": "Résumé AI Token Monitor",
   "export.date": "Date",
   "export.today": "Aujourd'hui",
@@ -213,7 +195,6 @@
   "export.totalSessions": "Total sessions",
   "export.totalMessages": "Total messages",
   "export.models": "Modèles",
-
   "update.available": "v{{version}} disponible",
   "update.download": "Mettre à jour",
   "update.downloading": "Téléchargement... {{progress}}%",
@@ -221,15 +202,14 @@
   "update.restartBtn": "Redémarrer",
   "update.error": "Échec de la mise à jour",
   "update.restartManual": "Veuillez redémarrer manuellement",
-
   "settings.usageAlerts": "Alertes d'utilisation",
   "settings.usageTracking": "Suivi d'utilisation",
-
   "usageAlert.title": "Utilisation",
   "usageAlert.claude": "Claude Code",
   "usageAlert.codex": "Codex",
   "usageAlert.session": "Session (5h)",
   "usageAlert.weekly": "Hebdomadaire",
+  "usageAlert.weeklyModel": "Hebdo {{model}}",
   "usageAlert.today": "Aujourd'hui",
   "usageAlert.last7Days": "7 derniers jours",
   "usageAlert.extraUsage": "Utilisation supplémentaire",
@@ -239,12 +219,10 @@
   "usageAlert.refresh": "Actualiser",
   "usageAlert.refreshing": "Actualisation...",
   "usageAlert.claudeUnavailable": "L'utilisation de Claude est temporairement indisponible. Appuyez sur Actualiser dans un instant.",
-
   "usageTracking.title": "Suivi d'utilisation Claude",
   "usageTracking.description": "Surveillez vos limites de session et hebdomadaires de Claude Code en temps réel. Nécessite l'accès à vos identifiants de connexion Claude Code.",
   "usageTracking.enable": "Activer",
   "usageTracking.enabling": "Activation...",
-
   "chat.join": "Rejoindre le chat",
   "chat.description": "Discutez avec les autres développeurs du classement. Connectez-vous et activez le classement pour participer.",
   "chat.placeholder": "Tapez un message...",
@@ -287,7 +265,6 @@
   "settings.aiKeySecure": "Les clés API sont chiffrées et stockées en toute sécurité sur votre appareil",
   "settings.aiKeyPlaceholder": "Entrer la clé API",
   "settings.aiNoKeys": "Ajoutez au moins une clé API pour activer la traduction",
-
   "settings.tab.webhooks": "Webhooks",
   "settings.webhookTitle": "Notifications Webhook",
   "settings.webhookDescription": "Recevez des alertes via Discord, Slack ou Telegram lorsque les limites d'utilisation approchent des seuils ou sont réinitialisées.",
@@ -300,14 +277,12 @@
   "settings.webhookGuideDiscord": "Paramètres du serveur > Intégrations > Webhooks > Nouveau Webhook > Copier l'URL",
   "settings.webhookGuideSlack": "Applications > Incoming Webhooks > Ajouter à Slack > Copier l'URL du Webhook",
   "settings.webhookGuideTelegram": "Envoyer /newbot à @BotFather > Copier le token, ajouter le bot au groupe puis obtenir le Chat ID via l'API /getUpdates",
-
   "miniProfile.viewGithub": "Voir le profil GitHub",
   "miniProfile.noActivity": "Aucune activité récente",
   "miniProfile.loadError": "Impossible de charger les données d'activité",
   "miniProfile.streakTooltip": "Jours consécutifs d'activité",
   "miniProfile.addLink": "Ajouter un lien",
   "miniProfile.add": "Ajouter",
-
   "badge.title": "Mon badge",
   "badge.leaderboard": "Classement",
   "badge.card": "Carte",
@@ -325,7 +300,6 @@
   "badge.saved": "Enregistré !",
   "badge.urlSection": "URL de badge dynamique",
   "badge.urlDesc": "Intégrez dans votre GitHub README",
-
   "analytics.subtab.usage": "Utilisation",
   "analytics.subtab.projects": "Projets",
   "analytics.subtab.tools": "Outils",

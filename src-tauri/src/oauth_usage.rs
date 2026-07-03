@@ -25,12 +25,33 @@ pub struct ExtraUsage {
     pub utilization: f64,
 }
 
+/// A weekly window scoped to a specific model (e.g. Sonnet, Opus, Fable).
+/// These arrive in the response's `limits` array as `weekly_scoped` entries
+/// carrying a `scope.model.display_name`. The API adds and removes them at any
+/// time — Fable, for instance, may be temporary — so we capture whatever active
+/// scoped limits the response contains and let the UI render them generically.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelWindow {
+    /// Human-readable model name from `scope.model.display_name` (e.g. "Fable").
+    pub model: String,
+    #[serde(flatten)]
+    pub window: UsageWindow,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuthUsage {
     pub five_hour: Option<UsageWindow>,
     pub seven_day: Option<UsageWindow>,
+    // Legacy per-model fields. The API now returns these as null and delivers
+    // per-model limits via the `limits` array instead (see seven_day_models).
+    // Kept for backward compatibility with any older cached payload / response.
     pub seven_day_sonnet: Option<UsageWindow>,
     pub seven_day_opus: Option<UsageWindow>,
+    // Active, model-scoped weekly windows (Sonnet/Opus/Fable/...) parsed from
+    // the API's `limits` array. This is what both the UI and the webhook alert
+    // logic iterate over. Sorted and de-duplicated by model for stable output.
+    #[serde(default)]
+    pub seven_day_models: Vec<ModelWindow>,
     pub extra_usage: Option<ExtraUsage>,
     pub fetched_at: String,
     pub is_stale: bool,
@@ -548,6 +569,76 @@ struct ApiResponse {
     seven_day_sonnet: Option<ApiUsageWindow>,
     seven_day_opus: Option<ApiUsageWindow>,
     extra_usage: Option<ApiExtraUsage>,
+    // Newer per-model / scoped limits arrive here instead of dedicated
+    // `seven_day_<model>` keys (which the API now returns as null). Each entry
+    // describes one limit window; scoped ones carry the model in `scope`.
+    #[serde(default)]
+    limits: Vec<ApiLimit>,
+}
+
+/// One entry of the response `limits` array. Only the fields we consume are
+/// declared; unknown fields (severity, group, ...) are ignored by serde.
+#[derive(Debug, Deserialize)]
+struct ApiLimit {
+    /// "session" | "weekly_all" | "weekly_scoped" | ... (future values ignored).
+    #[serde(default)]
+    kind: Option<String>,
+    #[serde(default)]
+    percent: Option<f64>,
+    #[serde(default)]
+    resets_at: Option<String>,
+    #[serde(default)]
+    is_active: Option<bool>,
+    #[serde(default)]
+    scope: Option<ApiLimitScope>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiLimitScope {
+    #[serde(default)]
+    model: Option<ApiLimitModel>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiLimitModel {
+    #[serde(default)]
+    display_name: Option<String>,
+}
+
+/// Extract per-model weekly windows from the `limits` array. Only active,
+/// model-scoped entries (e.g. Fable) with a display name become `ModelWindow`s;
+/// the unscoped session/weekly-all limits are already covered by `five_hour` /
+/// `seven_day`, so they're skipped here. Sorted by model for stable ordering.
+fn collect_model_windows(limits: &[ApiLimit]) -> Vec<ModelWindow> {
+    let mut windows: Vec<ModelWindow> = limits
+        .iter()
+        .filter(|l| l.is_active.unwrap_or(false))
+        .filter_map(|l| {
+            let model = l
+                .scope
+                .as_ref()?
+                .model
+                .as_ref()?
+                .display_name
+                .as_ref()?
+                .trim();
+            if model.is_empty() {
+                return None;
+            }
+            Some(ModelWindow {
+                model: model.to_string(),
+                window: UsageWindow {
+                    utilization: l.percent.unwrap_or(0.0),
+                    resets_at: l.resets_at.clone(),
+                },
+            })
+        })
+        .collect();
+    windows.sort_by(|a, b| a.model.cmp(&b.model));
+    // Guard against the API sending two active scoped entries for the same
+    // model — keep the first so React keys and alert ids stay unique.
+    windows.dedup_by(|a, b| a.model == b.model);
+    windows
 }
 
 #[derive(Debug, Deserialize)]
@@ -617,11 +708,15 @@ async fn fetch_usage_from_api(token: &str) -> Result<OAuthUsage, FetchUsageError
         .await
         .map_err(|e| FetchUsageError::Parse(e.to_string()))?;
 
+    // Active, model-scoped weekly limits (e.g. Fable) now arrive in `limits`.
+    let seven_day_models = collect_model_windows(&api.limits);
+
     Ok(OAuthUsage {
         five_hour: api.five_hour.map(UsageWindow::from),
         seven_day: api.seven_day.map(UsageWindow::from),
         seven_day_sonnet: api.seven_day_sonnet.map(UsageWindow::from),
         seven_day_opus: api.seven_day_opus.map(UsageWindow::from),
+        seven_day_models,
         extra_usage: api.extra_usage.and_then(|e| {
             let monthly_limit = e.monthly_limit?;
             let used_credits = e.used_credits?;
@@ -722,6 +817,68 @@ mod tests {
             Some("2026-06-29T04:50:00Z")
         );
         assert!(api.seven_day_opus.is_none());
+    }
+
+    #[test]
+    fn collects_active_model_scoped_weekly_limits_including_fable() {
+        // Real payload shape (2026-07): per-model weekly limits arrive in the
+        // `limits` array as `weekly_scoped` entries carrying scope.model.display_name.
+        // The legacy `seven_day_<model>` keys are now null. Only ACTIVE scoped
+        // limits become model windows; the unscoped session/weekly_all entries are
+        // already covered by five_hour/seven_day and must be skipped here.
+        let body = r#"{
+            "five_hour": {"utilization": 48.0, "resets_at": "2026-07-03T08:50:00Z"},
+            "seven_day": {"utilization": 78.0, "resets_at": "2026-07-07T12:00:00Z"},
+            "seven_day_sonnet": null,
+            "seven_day_opus": null,
+            "extra_usage": {"is_enabled": false, "monthly_limit": null, "used_credits": null, "utilization": null},
+            "limits": [
+                {"kind": "session", "group": "session", "percent": 48, "severity": "normal", "resets_at": "2026-07-03T08:50:00Z", "scope": null, "is_active": false},
+                {"kind": "weekly_all", "group": "weekly", "percent": 78, "severity": "warning", "resets_at": "2026-07-07T12:00:00Z", "scope": null, "is_active": false},
+                {"kind": "weekly_scoped", "group": "weekly", "percent": 97, "severity": "critical", "resets_at": "2026-07-07T12:00:00Z", "scope": {"model": {"id": null, "display_name": "Fable"}, "surface": null}, "is_active": true}
+            ]
+        }"#;
+
+        let api: ApiResponse = serde_json::from_str(body).expect("response should parse");
+        let models = collect_model_windows(&api.limits);
+
+        assert_eq!(models.len(), 1, "only the active scoped Fable limit is a model window");
+        let fable = &models[0];
+        assert_eq!(fable.model, "Fable");
+        assert_eq!(fable.window.utilization, 97.0);
+        assert_eq!(fable.window.resets_at.as_deref(), Some("2026-07-07T12:00:00Z"));
+    }
+
+    #[test]
+    fn ignores_inactive_scoped_limits_so_stale_models_disappear() {
+        // A scoped limit that is not active (e.g. a model the account isn't
+        // currently subject to) must not render — this is how Fable disappears
+        // once it's removed or the account is no longer hitting it.
+        let body = r#"{
+            "five_hour": {"utilization": 10.0, "resets_at": "2026-07-03T08:50:00Z"},
+            "seven_day": {"utilization": 20.0, "resets_at": "2026-07-07T12:00:00Z"},
+            "limits": [
+                {"kind": "weekly_scoped", "group": "weekly", "percent": 5, "resets_at": null, "scope": {"model": {"display_name": "Fable"}}, "is_active": false}
+            ]
+        }"#;
+
+        let api: ApiResponse = serde_json::from_str(body).expect("response should parse");
+        let models = collect_model_windows(&api.limits);
+        assert!(models.is_empty(), "inactive scoped limits produce no model windows");
+    }
+
+    #[test]
+    fn parses_response_without_limits_array() {
+        // Older payloads / accounts without the `limits` field must still parse
+        // (serde default → empty vec), yielding no model windows rather than a
+        // parse failure that would blank the whole usage panel.
+        let body = r#"{
+            "five_hour": {"utilization": 10.0, "resets_at": "2026-07-03T08:50:00Z"},
+            "seven_day": {"utilization": 20.0, "resets_at": "2026-07-07T12:00:00Z"}
+        }"#;
+
+        let api: ApiResponse = serde_json::from_str(body).expect("response should parse");
+        assert!(collect_model_windows(&api.limits).is_empty());
     }
 
     #[test]

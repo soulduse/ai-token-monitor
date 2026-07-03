@@ -4,12 +4,10 @@
   "app.loading": "Yükleniyor...",
   "app.error.title": "Kullanım istatistiği bulunamadı",
   "app.error.description": "Claude Code, Codex veya OpenCode'un en az bir kez kullanıldığından emin olun.",
-
   "tab.overview": "Genel Bakış",
   "tab.analytics": "Analitik",
   "tab.leaderboard": "Sıralama",
   "tab.chat": "Sohbet",
-
   "sources.title": "Kaynaklar",
   "sources.claude": "Claude",
   "sources.codex": "Codex",
@@ -19,7 +17,6 @@
   "sources.gjc": "GJC",
   "sources.summary.count": "{{total}} içinden {{active}} aktif",
   "sources.open": "Kaynak menüsünü aç",
-
   "today.title": "Bugün",
   "today.tokens": "token",
   "today.vs7d": "7g ort. kıyasla",
@@ -33,7 +30,6 @@
   "today.costTooltipOut": "Çıktı",
   "today.costTooltipCacheR": "Önbellek O",
   "today.costTooltipCacheW": "Önbellek Y",
-
   "daily.title": "Günlük ({{days}}g)",
   "daily.tokens": "Token",
   "daily.cost": "Maliyet",
@@ -41,13 +37,11 @@
   "daily.list": "Liste",
   "daily.copy": "Kopyala",
   "daily.copied": "Kopyalandı!",
-
   "period.thisWeek": "Bu Hafta",
   "period.lastWeek": "Geçen Hafta",
   "period.thisMonth": "Bu Ay",
   "period.lastMonth": "Geçen Ay",
   "period.sessions": "oturum",
-
   "activity.title": "Aktivite",
   "activity.weeks": "Aktivite ({{weeks}} hafta)",
   "activity.less": "Az",
@@ -61,17 +55,14 @@
   "activity.longest": "En Uzun",
   "activity.current": "Mevcut",
   "activity.days": "gün",
-
   "day.mon": "Pzt",
   "day.wed": "Çar",
   "day.fri": "Cum",
   "day.sun": "Paz",
-
   "model.title": "Model Kullanımı",
   "model.input": "Girdi",
   "model.output": "Çıktı",
   "model.cache": "Önbellek",
-
   "cache.title": "Önbellek Verimliliği",
   "cache.cached": "önbelleklendi",
   "cache.read": "Önbellek Okuma",
@@ -81,7 +72,6 @@
   "cache.tooltipDesc": "Girdi tokenlarınızın ne kadarının yeniden gönderilmek yerine önbellekten geldiği.",
   "cache.tooltipGood": "Yüksek % = iyi: önbelleğe alınmış bağlamın yeniden kullanılması maliyet tasarrufu sağlar (önbellek okumaları girdiden %90 daha ucuzdur).",
   "cache.tooltipFormula": "İsabet oranı = önbellek_okuma / (girdi + önbellek_okuma)",
-
   "leaderboard.comingSoon": "Sıralama Yakında",
   "leaderboard.notConfigured": "Sıralama servisi henüz yapılandırılmadı.",
   "leaderboard.join": "Sıralamaya Katıl",
@@ -102,7 +92,6 @@
   "leaderboard.new": "YENİ",
   "leaderboard.you": "(siz)",
   "leaderboard.msgs": "msj",
-
   "header.menu": "Daha Fazla",
   "header.quickActions": "Hızlı Eylemler",
   "header.share": "Uygulamayı paylaş",
@@ -115,7 +104,6 @@
   "header.copied": "Kopyalandı!",
   "header.captureFailed": "Yakalama başarısız",
   "header.summaryCopied": "Özet kopyalandı!",
-
   "settings.title": "Ayarlar",
   "settings.tab.general": "Genel",
   "settings.tab.account": "Hesap",
@@ -148,9 +136,7 @@
   "settings.codexConfigDirs": "Codex Dizinleri",
   "settings.codexConfigDirsTooltip": "Codex'in oturum verilerini sakladığı dizinler. Farklı yapılandırmalardan kullanımı toplamak için birden fazla dizin ekleyin.",
   "settings.codexConfigDirsInvalid": "Geçersiz yol veya sessions klasörü bulunamadı",
-
   "support.buyMeCoffee": "Bana bir kahve ısmarla",
-
   "wrapped.title": "AI Raporum",
   "wrapped.month": "Bu Ay",
   "wrapped.year": "Bu Yıl",
@@ -172,7 +158,6 @@
   "wrapped.summaryCache": "Önbellek",
   "wrapped.share": "Paylaş",
   "wrapped.copied": "Kopyalandı!",
-
   "receipt.title": "Fiş",
   "receipt.subtotal": "ARA TOPLAM",
   "receipt.cacheDiscount": "ÖNBELLEK İNDİRİMİ",
@@ -188,7 +173,6 @@
   "receipt.thisWeek": "Bu Hafta",
   "receipt.thisMonth": "Bu Ay",
   "receipt.allTime": "Tüm Zamanlar",
-
   "salary.title": "Maaş Karşılaştırması",
   "salary.setup": "Karşılaştırmaları görmek için maaşınızı ayarlayın",
   "salary.setupButton": "Kur",
@@ -198,9 +182,7 @@
   "salary.coffee": "Kahve",
   "salary.netflix": "Netflix",
   "salary.chicken": "Tavuk",
-
   "settings.monthlySalary": "Aylık Maaş",
-
   "export.title": "AI Token Monitor Özeti",
   "export.date": "Tarih",
   "export.today": "Bugün",
@@ -213,7 +195,6 @@
   "export.totalSessions": "Toplam Oturum",
   "export.totalMessages": "Toplam Mesaj",
   "export.models": "Modeller",
-
   "update.available": "v{{version}} mevcut",
   "update.download": "Güncelle",
   "update.downloading": "İndiriliyor... {{progress}}%",
@@ -221,15 +202,14 @@
   "update.restartBtn": "Yeniden Başlat",
   "update.error": "Güncelleme başarısız",
   "update.restartManual": "Lütfen manuel olarak yeniden başlatın",
-
   "settings.usageAlerts": "Kullanım Uyarıları",
   "settings.usageTracking": "Kullanım Takibi",
-
   "usageAlert.title": "Kullanım",
   "usageAlert.claude": "Claude Code",
   "usageAlert.codex": "Codex",
   "usageAlert.session": "Oturum (5sa)",
   "usageAlert.weekly": "Haftalık",
+  "usageAlert.weeklyModel": "Haftalık {{model}}",
   "usageAlert.today": "Bugün",
   "usageAlert.last7Days": "Son 7 gün",
   "usageAlert.extraUsage": "Ek Kullanım",
@@ -239,12 +219,10 @@
   "usageAlert.refresh": "Yenile",
   "usageAlert.refreshing": "Yenileniyor...",
   "usageAlert.claudeUnavailable": "Claude kullanımı geçici olarak kullanılamıyor. Birazdan yenile'ye basın.",
-
   "usageTracking.title": "Claude Kullanım Takibi",
   "usageTracking.description": "Claude Code oturum ve haftalık kullanım limitlerinizi gerçek zamanlı izleyin. Bu, Claude Code giriş kimlik bilgilerinize erişim gerektirir.",
   "usageTracking.enable": "Etkinleştir",
   "usageTracking.enabling": "Etkinleştiriliyor...",
-
   "chat.join": "Sohbete Katıl",
   "chat.description": "Sıralamadaki diğer geliştiricilerle sohbet edin. Katılmak için giriş yapın ve sıralamayı etkinleştirin.",
   "chat.placeholder": "Mesaj yaz...",
@@ -299,14 +277,12 @@
   "settings.webhookGuideDiscord": "Sunucu Ayarları > Entegrasyonlar > Webhook'lar > Yeni Webhook > URL'yi Kopyala",
   "settings.webhookGuideSlack": "Uygulamalar > Gelen Webhook'lar > Slack'e Ekle > Webhook URL'sini Kopyala",
   "settings.webhookGuideTelegram": "@BotFather'a mesaj gönderin > /newbot > Token'ı kopyalayın, ardından botu gruba ekleyin ve /getUpdates API ile Sohbet Kimliğini alın",
-
   "miniProfile.viewGithub": "GitHub Profilini Görüntüle",
   "miniProfile.noActivity": "Son aktivite yok",
   "miniProfile.loadError": "Aktivite verileri yüklenemedi",
   "miniProfile.streakTooltip": "Ardışık aktivite günleri",
   "miniProfile.addLink": "Bağlantı ekle",
   "miniProfile.add": "Ekle",
-
   "badge.title": "Rozetim",
   "badge.leaderboard": "Sıralama",
   "badge.card": "Kart",
@@ -324,7 +300,6 @@
   "badge.saved": "Kaydedildi!",
   "badge.urlSection": "Dinamik Rozet URL'si",
   "badge.urlDesc": "GitHub README dosyanıza yerleştirin",
-
   "analytics.subtab.usage": "Kullanım",
   "analytics.subtab.projects": "Projeler",
   "analytics.subtab.tools": "Araçlar",

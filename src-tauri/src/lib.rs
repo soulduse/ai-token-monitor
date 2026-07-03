@@ -81,7 +81,10 @@ fn check_and_fire_alerts(app_handle: &tauri::AppHandle) {
     // window_id combines the window name with resets_at (truncated to hour) so that:
     //   - It changes when the usage window resets → clears fired_thresholds
     //   - It doesn't change on minor timestamp drift within the same window
-    let mut windows_to_check: Vec<(&str, f64, String, Option<String>)> = Vec::new();
+    // Name is Cow so it can hold both the fixed &'static labels and the
+    // per-model "Weekly {model}" strings built at runtime without leaking.
+    let mut windows_to_check: Vec<(std::borrow::Cow<'static, str>, f64, String, Option<String>)> =
+        Vec::new();
 
     // Truncate resets_at to hour to avoid spurious resets from second-level drift.
     // resets_at is optional — a window with no scheduled reset still needs a
@@ -96,29 +99,43 @@ fn check_and_fire_alerts(app_handle: &tauri::AppHandle) {
 
     if monitored.five_hour {
         if let Some(w) = &usage.five_hour {
-            windows_to_check.push(("Session (5h)", w.utilization, stable_window_id("5h", w.resets_at.as_deref()), w.resets_at.clone()));
+            windows_to_check.push(("Session (5h)".into(), w.utilization, stable_window_id("5h", w.resets_at.as_deref()), w.resets_at.clone()));
         }
     }
     if monitored.seven_day {
         if let Some(w) = &usage.seven_day {
-            windows_to_check.push(("Weekly", w.utilization, stable_window_id("7d", w.resets_at.as_deref()), w.resets_at.clone()));
+            windows_to_check.push(("Weekly".into(), w.utilization, stable_window_id("7d", w.resets_at.as_deref()), w.resets_at.clone()));
         }
     }
-    if monitored.seven_day_sonnet {
-        if let Some(w) = &usage.seven_day_sonnet {
-            windows_to_check.push(("Weekly Sonnet", w.utilization, stable_window_id("7d-sonnet", w.resets_at.as_deref()), w.resets_at.clone()));
+    // Per-model weekly limits (Sonnet/Opus/Fable/...) now arrive in the API's
+    // `limits` array and are surfaced via `seven_day_models`; the legacy
+    // `seven_day_sonnet`/`seven_day_opus` fields are permanently null. Drive
+    // alerts off the live list so newly-introduced scoped models (e.g. Fable)
+    // are covered too. Sonnet/Opus keep their dedicated opt-in toggles; any
+    // other scoped model rides on the general weekly toggle.
+    for m in &usage.seven_day_models {
+        let enabled = match m.model.as_str() {
+            "Sonnet" => monitored.seven_day_sonnet,
+            "Opus" => monitored.seven_day_opus,
+            _ => monitored.seven_day,
+        };
+        if !enabled {
+            continue;
         }
-    }
-    if monitored.seven_day_opus {
-        if let Some(w) = &usage.seven_day_opus {
-            windows_to_check.push(("Weekly Opus", w.utilization, stable_window_id("7d-opus", w.resets_at.as_deref()), w.resets_at.clone()));
-        }
+        let name = format!("Weekly {}", m.model);
+        let id = stable_window_id(&format!("7d-{}", m.model), m.window.resets_at.as_deref());
+        windows_to_check.push((
+            std::borrow::Cow::Owned(name),
+            m.window.utilization,
+            id,
+            m.window.resets_at.clone(),
+        ));
     }
     if monitored.extra_usage {
         if let Some(w) = &usage.extra_usage {
             if w.is_enabled {
                 // Extra usage resets monthly; use monthly_limit as part of ID
-                windows_to_check.push(("Extra Usage", w.utilization, format!("extra:{}", w.monthly_limit), None));
+                windows_to_check.push(("Extra Usage".into(), w.utilization, format!("extra:{}", w.monthly_limit), None));
             }
         }
     }

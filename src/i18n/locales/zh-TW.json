@@ -4,12 +4,10 @@
   "app.loading": "載入中...",
   "app.error.title": "未找到使用統計",
   "app.error.description": "請確保已安裝Claude Code、Codex或OpenCode，並已使用至少一次。",
-
   "tab.overview": "總覽",
   "tab.analytics": "分析",
   "tab.leaderboard": "排行榜",
   "tab.chat": "聊天",
-
   "sources.title": "來源",
   "sources.claude": "Claude",
   "sources.codex": "Codex",
@@ -19,7 +17,6 @@
   "sources.gjc": "GJC",
   "sources.summary.count": "{{total}} 個中 {{active}} 個啟用",
   "sources.open": "開啟來源選單",
-
   "today.title": "今日",
   "today.tokens": "令牌",
   "today.vs7d": "對比7日均值",
@@ -33,7 +30,6 @@
   "today.costTooltipOut": "輸出",
   "today.costTooltipCacheR": "快取 R",
   "today.costTooltipCacheW": "快取 W",
-
   "daily.title": "每日 ({{days}}天)",
   "daily.tokens": "令牌",
   "daily.cost": "費用",
@@ -41,13 +37,11 @@
   "daily.list": "列表",
   "daily.copy": "複製",
   "daily.copied": "已複製！",
-
   "period.thisWeek": "本週",
   "period.lastWeek": "上週",
   "period.thisMonth": "本月",
   "period.lastMonth": "上月",
   "period.sessions": "工作階段",
-
   "activity.title": "活動",
   "activity.weeks": "活動 ({{weeks}}週)",
   "activity.less": "少",
@@ -61,17 +55,14 @@
   "activity.longest": "最長",
   "activity.current": "目前",
   "activity.days": "天",
-
   "day.mon": "一",
   "day.wed": "三",
   "day.fri": "五",
   "day.sun": "日",
-
   "model.title": "模型使用量",
   "model.input": "輸入",
   "model.output": "輸出",
   "model.cache": "快取",
-
   "cache.title": "快取效率",
   "cache.cached": "已快取",
   "cache.read": "快取讀取",
@@ -81,7 +72,6 @@
   "cache.tooltipDesc": "輸入令牌中從快取取得而非重新傳送的比例。",
   "cache.tooltipGood": "百分比越高越好：重複使用快取可節省費用（快取讀取比輸入便宜90%）。",
   "cache.tooltipFormula": "命中率 = cache_read / (input + cache_read)",
-
   "leaderboard.comingSoon": "排行榜即將推出",
   "leaderboard.notConfigured": "排行榜服務尚未設定。",
   "leaderboard.join": "加入排行榜",
@@ -102,7 +92,6 @@
   "leaderboard.new": "NEW",
   "leaderboard.you": "(你)",
   "leaderboard.msgs": "則訊息",
-
   "header.menu": "更多",
   "header.share": "分享此應用",
   "header.github": "查看 GitHub 儲存庫",
@@ -115,7 +104,6 @@
   "header.captureFailed": "擷取失敗",
   "header.summaryCopied": "摘要已複製！",
   "header.quickActions": "快捷操作",
-
   "settings.title": "設定",
   "settings.tab.general": "一般",
   "settings.tab.account": "帳戶",
@@ -148,9 +136,7 @@
   "settings.codexConfigDirs": "Codex 目錄",
   "settings.codexConfigDirsTooltip": "Codex 儲存工作階段資料的目錄。新增多個目錄以彙總不同設定的使用量。",
   "settings.codexConfigDirsInvalid": "路徑無效或缺少 sessions 資料夾",
-
   "support.buyMeCoffee": "請我喝杯咖啡",
-
   "wrapped.title": "我的 AI 報告",
   "wrapped.month": "本月",
   "wrapped.year": "今年",
@@ -172,7 +158,6 @@
   "wrapped.summaryCache": "快取",
   "wrapped.share": "分享",
   "wrapped.copied": "已複製！",
-
   "receipt.title": "收據",
   "receipt.subtotal": "小計",
   "receipt.cacheDiscount": "快取折扣",
@@ -188,7 +173,6 @@
   "receipt.thisWeek": "本週",
   "receipt.thisMonth": "本月",
   "receipt.allTime": "全部",
-
   "salary.title": "薪資對比",
   "salary.setup": "設定薪資以查看對比",
   "salary.setupButton": "設定",
@@ -198,9 +182,7 @@
   "salary.coffee": "拿鐵",
   "salary.netflix": "Netflix",
   "salary.chicken": "炸雞",
-
   "settings.monthlySalary": "月薪",
-
   "export.title": "AI Token Monitor 摘要",
   "export.date": "日期",
   "export.today": "今日",
@@ -213,7 +195,6 @@
   "export.totalSessions": "總工作階段",
   "export.totalMessages": "總訊息",
   "export.models": "模型",
-
   "update.available": "v{{version}} 可用",
   "update.download": "更新",
   "update.downloading": "下載中... {{progress}}%",
@@ -221,15 +202,14 @@
   "update.restartBtn": "重啟",
   "update.error": "更新失敗",
   "update.restartManual": "請手動重啟",
-
   "settings.usageAlerts": "用量提醒",
   "settings.usageTracking": "用量追蹤",
-
   "usageAlert.title": "用量",
   "usageAlert.claude": "Claude Code",
   "usageAlert.codex": "Codex",
   "usageAlert.session": "工作階段 (5小時)",
   "usageAlert.weekly": "每週",
+  "usageAlert.weeklyModel": "每週 {{model}}",
   "usageAlert.today": "今天",
   "usageAlert.last7Days": "最近 7 天",
   "usageAlert.extraUsage": "額外用量",
@@ -239,12 +219,10 @@
   "usageAlert.refresh": "重新整理",
   "usageAlert.refreshing": "重新整理中...",
   "usageAlert.claudeUnavailable": "暫時無法載入 Claude 使用量。請稍後點擊重新整理。",
-
   "usageTracking.title": "Claude 用量追蹤",
   "usageTracking.description": "即時監控 Claude Code 工作階段和每週使用限額。需要存取 Claude Code 登入憑證。",
   "usageTracking.enable": "啟用",
   "usageTracking.enabling": "啟用中...",
-
   "chat.join": "加入聊天",
   "chat.description": "與排行榜上的其他開發者聊天。登入並啟用排行榜即可參與。",
   "chat.placeholder": "輸入訊息...",
@@ -287,7 +265,6 @@
   "settings.aiKeySecure": "API金鑰已加密並安全儲存在本機裝置上",
   "settings.aiKeyPlaceholder": "輸入API金鑰",
   "settings.aiNoKeys": "請至少添加一個API金鑰以啟用翻譯",
-
   "settings.tab.webhooks": "Webhooks",
   "settings.webhookTitle": "Webhook 通知",
   "settings.webhookDescription": "當用量接近閾值或重置時，透過 Discord、Slack 或 Telegram 接收提醒。",
@@ -300,14 +277,12 @@
   "settings.webhookGuideDiscord": "伺服器設定 > 整合 > Webhooks > 新建 Webhook > 複製 URL",
   "settings.webhookGuideSlack": "應用程式 > Incoming Webhooks > 新增到 Slack > 複製 Webhook URL",
   "settings.webhookGuideTelegram": "向 @BotFather 傳送 /newbot > 複製令牌，將機器人加入群組後透過 /getUpdates API 取得 Chat ID",
-
   "miniProfile.viewGithub": "查看 GitHub 個人資料",
   "miniProfile.noActivity": "暫無近期活動",
   "miniProfile.loadError": "無法載入活動資料",
   "miniProfile.streakTooltip": "連續活躍天數",
   "miniProfile.addLink": "新增連結",
   "miniProfile.add": "新增",
-
   "badge.title": "我的徽章",
   "badge.leaderboard": "排行榜",
   "badge.card": "卡片",
@@ -325,7 +300,6 @@
   "badge.saved": "已儲存！",
   "badge.urlSection": "動態徽章 URL",
   "badge.urlDesc": "嵌入你的 GitHub README",
-
   "analytics.subtab.usage": "用量",
   "analytics.subtab.projects": "專案",
   "analytics.subtab.tools": "工具",
