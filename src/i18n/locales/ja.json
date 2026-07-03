@@ -4,12 +4,10 @@
   "app.loading": "読み込み中...",
   "app.error.title": "使用統計が見つかりません",
   "app.error.description": "Claude Code、Codex、またはOpenCodeがインストールされ、少なくとも一度使用されていることを確認してください。",
-
   "tab.overview": "概要",
   "tab.analytics": "分析",
   "tab.leaderboard": "リーダーボード",
   "tab.chat": "チャット",
-
   "sources.title": "ソース",
   "sources.claude": "Claude",
   "sources.codex": "Codex",
@@ -19,7 +17,6 @@
   "sources.gjc": "GJC",
   "sources.summary.count": "{{total}}中{{active}}使用",
   "sources.open": "ソースメニューを開く",
-
   "today.title": "今日",
   "today.tokens": "トークン",
   "today.vs7d": "7日平均比",
@@ -33,7 +30,6 @@
   "today.costTooltipOut": "出力",
   "today.costTooltipCacheR": "キャッシュ R",
   "today.costTooltipCacheW": "キャッシュ W",
-
   "daily.title": "日次 ({{days}}日)",
   "daily.tokens": "トークン",
   "daily.cost": "コスト",
@@ -41,13 +37,11 @@
   "daily.list": "リスト",
   "daily.copy": "コピー",
   "daily.copied": "コピーしました！",
-
   "period.thisWeek": "今週",
   "period.lastWeek": "先週",
   "period.thisMonth": "今月",
   "period.lastMonth": "先月",
   "period.sessions": "セッション",
-
   "activity.title": "アクティビティ",
   "activity.weeks": "アクティビティ ({{weeks}}週間)",
   "activity.less": "少",
@@ -61,17 +55,14 @@
   "activity.longest": "最長",
   "activity.current": "現在",
   "activity.days": "日",
-
   "day.mon": "月",
   "day.wed": "水",
   "day.fri": "金",
   "day.sun": "日",
-
   "model.title": "モデル使用量",
   "model.input": "入力",
   "model.output": "出力",
   "model.cache": "キャッシュ",
-
   "cache.title": "キャッシュ効率",
   "cache.cached": "キャッシュ済",
   "cache.read": "キャッシュ読取",
@@ -81,7 +72,6 @@
   "cache.tooltipDesc": "入力トークンのうち、再送信ではなくキャッシュから取得された割合です。",
   "cache.tooltipGood": "高い% = 良好: キャッシュの再利用でコスト削減（キャッシュ読取は入力より90%安価）。",
   "cache.tooltipFormula": "ヒット率 = cache_read / (input + cache_read)",
-
   "leaderboard.comingSoon": "リーダーボード準備中",
   "leaderboard.notConfigured": "リーダーボードサービスはまだ設定されていません。",
   "leaderboard.join": "リーダーボードに参加",
@@ -102,7 +92,6 @@
   "leaderboard.new": "NEW",
   "leaderboard.you": "(あなた)",
   "leaderboard.msgs": "メッセージ",
-
   "header.menu": "もっと見る",
   "header.share": "アプリを共有",
   "header.github": "GitHubリポジトリを表示",
@@ -115,7 +104,6 @@
   "header.captureFailed": "キャプチャ失敗",
   "header.summaryCopied": "要約をコピーしました！",
   "header.quickActions": "クイックアクション",
-
   "settings.title": "設定",
   "settings.tab.general": "一般",
   "settings.tab.account": "アカウント",
@@ -148,9 +136,7 @@
   "settings.codexConfigDirs": "Codex ディレクトリ",
   "settings.codexConfigDirsTooltip": "Codexがセッションデータを保存するディレクトリです。複数のディレクトリを追加して、異なる設定の使用量を集計できます。",
   "settings.codexConfigDirsInvalid": "無効なパスまたはsessionsフォルダがありません",
-
   "support.buyMeCoffee": "コーヒーをおごる",
-
   "wrapped.title": "マイAIレポート",
   "wrapped.month": "今月",
   "wrapped.year": "今年",
@@ -172,7 +158,6 @@
   "wrapped.summaryCache": "キャッシュ",
   "wrapped.share": "共有",
   "wrapped.copied": "コピー済み！",
-
   "receipt.title": "レシート",
   "receipt.subtotal": "小計",
   "receipt.cacheDiscount": "キャッシュ割引",
@@ -188,7 +173,6 @@
   "receipt.thisWeek": "今週",
   "receipt.thisMonth": "今月",
   "receipt.allTime": "全期間",
-
   "salary.title": "給与比較",
   "salary.setup": "給与を設定して比較を確認",
   "salary.setupButton": "設定",
@@ -198,9 +182,7 @@
   "salary.coffee": "ラテ",
   "salary.netflix": "Netflix",
   "salary.chicken": "チキン",
-
   "settings.monthlySalary": "月給",
-
   "export.title": "AI Token Monitor サマリー",
   "export.date": "日付",
   "export.today": "今日",
@@ -213,7 +195,6 @@
   "export.totalSessions": "総セッション",
   "export.totalMessages": "総メッセージ",
   "export.models": "モデル",
-
   "update.available": "v{{version}} が利用可能",
   "update.download": "更新",
   "update.downloading": "ダウンロード中... {{progress}}%",
@@ -221,15 +202,14 @@
   "update.restartBtn": "再起動",
   "update.error": "更新に失敗しました",
   "update.restartManual": "手動で再起動してください",
-
   "settings.usageAlerts": "使用量アラート",
   "settings.usageTracking": "使用量トラッキング",
-
   "usageAlert.title": "使用量",
   "usageAlert.claude": "Claude Code",
   "usageAlert.codex": "Codex",
   "usageAlert.session": "セッション (5時間)",
   "usageAlert.weekly": "週間",
+  "usageAlert.weeklyModel": "週間 {{model}}",
   "usageAlert.today": "今日",
   "usageAlert.last7Days": "直近7日",
   "usageAlert.extraUsage": "追加使用量",
@@ -239,12 +219,10 @@
   "usageAlert.refresh": "更新",
   "usageAlert.refreshing": "更新中...",
   "usageAlert.claudeUnavailable": "Claude の使用量を一時的に読み込めません。しばらくしてから更新を押してください。",
-
   "usageTracking.title": "Claude 使用量トラッキング",
   "usageTracking.description": "Claude Codeのセッションおよび週間使用制限をリアルタイムで監視します。Claude Codeのログイン認証情報へのアクセスが必要です。",
   "usageTracking.enable": "有効にする",
   "usageTracking.enabling": "有効化中...",
-
   "chat.join": "チャットに参加",
   "chat.description": "リーダーボードの他の開発者とチャットしましょう。ログインしてリーダーボードを有効にすると参加できます。",
   "chat.placeholder": "メッセージを入力...",
@@ -287,7 +265,6 @@
   "settings.aiKeySecure": "APIキーはローカルに暗号化して安全に保存されます",
   "settings.aiKeyPlaceholder": "APIキーを入力",
   "settings.aiNoKeys": "翻訳を有効にするにはAPIキーを1つ以上追加してください",
-
   "settings.tab.webhooks": "Webhooks",
   "settings.webhookTitle": "Webhook通知",
   "settings.webhookDescription": "使用量が閾値に近づいたりリセットされた時に、Discord、Slack、Telegramでアラートを受け取れます。",
@@ -300,14 +277,12 @@
   "settings.webhookGuideDiscord": "サーバー設定 > 連携サービス > Webhooks > 新しいWebhook > URL をコピー",
   "settings.webhookGuideSlack": "アプリ > Incoming Webhooks > Slackに追加 > Webhook URL をコピー",
   "settings.webhookGuideTelegram": "@BotFatherに /newbot メッセージ > トークンをコピー、ボットをグループに追加後 /getUpdates API で Chat ID を確認",
-
   "miniProfile.viewGithub": "GitHubプロフィールを見る",
   "miniProfile.noActivity": "最近のアクティビティなし",
   "miniProfile.loadError": "アクティビティデータを読み込めませんでした",
   "miniProfile.streakTooltip": "連続作業日数",
   "miniProfile.addLink": "リンクを追加",
   "miniProfile.add": "追加",
-
   "badge.title": "マイバッジ",
   "badge.leaderboard": "リーダーボード",
   "badge.card": "カード",
@@ -325,7 +300,6 @@
   "badge.saved": "保存しました！",
   "badge.urlSection": "動的バッジURL",
   "badge.urlDesc": "GitHub READMEに埋め込みましょう",
-
   "analytics.subtab.usage": "使用量",
   "analytics.subtab.projects": "プロジェクト",
   "analytics.subtab.tools": "ツール",

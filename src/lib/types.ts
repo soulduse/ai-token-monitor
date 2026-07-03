@@ -139,6 +139,14 @@ export interface UsageWindow {
   resets_at: string | null;
 }
 
+// A weekly window scoped to a specific model (e.g. Sonnet, Opus, Fable).
+// These come from the API's `limits` array (active `weekly_scoped` entries) and
+// may be added/removed at any time, so the UI iterates over this list rather
+// than hard-coding models. `model` is the human-readable display name.
+export interface ModelWindow extends UsageWindow {
+  model: string;
+}
+
 export interface ExtraUsage {
   is_enabled: boolean;
   monthly_limit: number;
@@ -151,6 +159,9 @@ export interface OAuthUsage {
   seven_day: UsageWindow | null;
   seven_day_sonnet: UsageWindow | null;
   seven_day_opus: UsageWindow | null;
+  // Every per-model weekly window the API returned (sonnet/opus/fable/...).
+  // Optional for backward-compat with any cached payload lacking the field.
+  seven_day_models?: ModelWindow[];
   extra_usage: ExtraUsage | null;
   fetched_at: string;
   is_stale: boolean;

@@ -525,9 +525,16 @@ export function UsageAlertBar() {
 
   if (!showClaude && showCodex && !hasCodexData) return null;
 
-  const { five_hour, seven_day, extra_usage, is_stale } = usage ?? {};
+  const { five_hour, seven_day, seven_day_models, extra_usage, is_stale } = usage ?? {};
 
-  const hasClaudeData = showClaude && (!!five_hour || !!seven_day || !!extra_usage);
+  // Per-model weekly windows (e.g. Fable). The backend already filters these to
+  // the active, model-scoped limits, so we render whatever it sends. This makes
+  // newly introduced or removed model limits appear/disappear on their own —
+  // Fable, for instance, may be temporary and will simply stop rendering.
+  const modelWindows = seven_day_models ?? [];
+
+  const hasClaudeData =
+    showClaude && (!!five_hour || !!seven_day || modelWindows.length > 0 || !!extra_usage);
   const showClaudePrompt = showClaude && !prefs.usage_tracking_enabled;
   // Only surface the "unavailable" message when the backend reports that OAuth
   // credentials exist but no usage is cached yet (first poll pending or a failed
@@ -590,6 +597,14 @@ export function UsageAlertBar() {
               subtitle={formatResetTime(seven_day.resets_at, t)}
             />
           )}
+          {modelWindows.map((m) => (
+            <UsageRow
+              key={m.model}
+              label={t("usageAlert.weeklyModel", { model: m.model })}
+              utilization={m.utilization}
+              subtitle={formatResetTime(m.resets_at, t)}
+            />
+          ))}
           {extra_usage && extra_usage.is_enabled && (
             <UsageRow
               label={t("usageAlert.extraUsage")}
