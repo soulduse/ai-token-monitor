@@ -67,6 +67,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         skipNextPersist.current = true;
         prevConfigDirsRef.current = JSON.stringify(merged.config_dirs);
         prevCodexDirsRef.current = JSON.stringify(merged.codex_dirs);
+        prevGjcDirsRef.current = JSON.stringify(merged.gjc_dirs);
       } finally {
         setReady(true);
       }
@@ -128,22 +129,30 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   // Persist to disk when prefs change
   const prevConfigDirsRef = useRef<string>(JSON.stringify(defaultPrefs.config_dirs));
   const prevCodexDirsRef = useRef<string>(JSON.stringify(defaultPrefs.codex_dirs));
+  const prevGjcDirsRef = useRef<string>(JSON.stringify(defaultPrefs.gjc_dirs));
   useEffect(() => {
     if (skipNextPersist.current) {
       skipNextPersist.current = false;
       prevConfigDirsRef.current = JSON.stringify(prefs.config_dirs);
       prevCodexDirsRef.current = JSON.stringify(prefs.codex_dirs);
+      prevGjcDirsRef.current = JSON.stringify(prefs.gjc_dirs);
       return;
     }
     if (!ready) return;
     invoke("set_preferences", { prefs }).catch(() => {});
 
-    // If config_dirs or codex_dirs changed, trigger stats refresh
+    // If config_dirs, codex_dirs or gjc_dirs changed, trigger stats refresh
     const newDirsJson = JSON.stringify(prefs.config_dirs);
     const newCodexDirsJson = JSON.stringify(prefs.codex_dirs);
-    if (newDirsJson !== prevConfigDirsRef.current || newCodexDirsJson !== prevCodexDirsRef.current) {
+    const newGjcDirsJson = JSON.stringify(prefs.gjc_dirs);
+    if (
+      newDirsJson !== prevConfigDirsRef.current ||
+      newCodexDirsJson !== prevCodexDirsRef.current ||
+      newGjcDirsJson !== prevGjcDirsRef.current
+    ) {
       prevConfigDirsRef.current = newDirsJson;
       prevCodexDirsRef.current = newCodexDirsJson;
+      prevGjcDirsRef.current = newGjcDirsJson;
       emit("stats-updated").catch(() => {});
     }
   }, [prefs, ready]);
@@ -159,6 +168,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       skipNextPersist.current = true;
       prevConfigDirsRef.current = JSON.stringify(p.config_dirs);
       prevCodexDirsRef.current = JSON.stringify(p.codex_dirs);
+      prevGjcDirsRef.current = JSON.stringify(p.gjc_dirs);
       setPrefs(p);
     } catch {
       // ignore
