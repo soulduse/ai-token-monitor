@@ -756,11 +756,25 @@ pub async fn refresh_oauth_usage(app: tauri::AppHandle) -> Option<crate::oauth_u
     if crate::oauth_usage::is_cache_fresh(30) {
         return crate::oauth_usage::get_cached_usage();
     }
+    // If we're inside a 429 back-off window, fetch_and_cache_usage() will
+    // short-circuit and hand back the same stale cache. Don't emit
+    // "usage-updated" in that case — the data hasn't changed and re-emitting
+    // makes the refresh button look like it silently did nothing.
+    let rate_limited_before = crate::oauth_usage::rate_limit_remaining_secs().is_some();
     let result = crate::oauth_usage::fetch_and_cache_usage().await;
-    if result.is_some() {
+    let rate_limited_after = crate::oauth_usage::rate_limit_remaining_secs().is_some();
+    if result.is_some() && !rate_limited_before && !rate_limited_after {
         let _ = app.emit("usage-updated", ());
     }
     result
+}
+
+/// Seconds remaining before the Claude usage API can be polled again after a
+/// 429, or `None` when refresh is unthrottled. Lets the UI explain an inert
+/// refresh button.
+#[tauri::command]
+pub fn get_oauth_rate_limit_remaining() -> Option<u64> {
+    crate::oauth_usage::rate_limit_remaining_secs()
 }
 
 #[tauri::command]

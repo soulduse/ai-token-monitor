@@ -214,6 +214,8 @@
   "usageAlert.last7Days": "最近 7 天",
   "usageAlert.extraUsage": "額外用量",
   "usageAlert.stale": "舊資料",
+  "usageAlert.rateLimited": "{{seconds}}秒後重試",
+  "usageAlert.rateLimitedTooltip": "請求過多，稍後將自動重試。資料會自動更新。",
   "usageAlert.resetsIn": "{{time}}後重置",
   "usageAlert.resetsNow": "重置中...",
   "usageAlert.refresh": "重新整理",

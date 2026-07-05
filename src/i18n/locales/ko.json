@@ -220,6 +220,8 @@
   "usageAlert.last7Days": "최근 7일",
   "usageAlert.extraUsage": "추가 사용량",
   "usageAlert.stale": "오래된 데이터",
+  "usageAlert.rateLimited": "{{seconds}}초 후 재시도",
+  "usageAlert.rateLimitedTooltip": "요청이 많아 잠시 후 자동으로 다시 시도합니다. 데이터가 곧 갱신됩니다.",
   "usageAlert.resetsIn": "{{time}} 후 리셋",
   "usageAlert.resetsNow": "리셋 중...",
   "usageAlert.refresh": "새로고침",
