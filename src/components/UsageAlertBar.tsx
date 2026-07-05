@@ -226,13 +226,19 @@ function RefreshButton({
 function ProviderHeader({
   label,
   stale,
+  rateLimitRemaining,
   refreshButton,
 }: {
   label: string;
   stale?: boolean;
+  rateLimitRemaining?: number | null;
   refreshButton?: ReactNode;
 }) {
   const t = useI18n();
+  // When inside a 429 back-off window, refresh genuinely can't hit the API yet.
+  // Say so explicitly instead of leaving the bare "stale" badge, which makes the
+  // refresh button look broken.
+  const throttled = rateLimitRemaining != null && rateLimitRemaining > 0;
 
   return (
     <div style={{
@@ -249,7 +255,18 @@ function ProviderHeader({
         {label}
       </span>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        {stale && (
+        {throttled ? (
+          <span
+            title={t("usageAlert.rateLimitedTooltip")}
+            style={{
+              fontSize: 9,
+              fontWeight: 600,
+              color: "var(--text-muted)",
+            }}
+          >
+            {t("usageAlert.rateLimited", { seconds: Math.ceil(rateLimitRemaining!) })}
+          </span>
+        ) : stale && (
           <span style={{
             fontSize: 9,
             fontWeight: 600,
@@ -410,7 +427,7 @@ function ClaudeTrackingPrompt({
 
 export function UsageAlertBar() {
   const { prefs, refreshPrefs } = useSettings();
-  const { usage, status: oauthStatus, refreshing, refresh } = useOAuthUsage();
+  const { usage, status: oauthStatus, refreshing, rateLimitRemaining, refresh } = useOAuthUsage();
   const { stats: codexStats } = useTokenStats("codex");
   const todayStr = useToday();
   const t = useI18n();
@@ -575,6 +592,7 @@ export function UsageAlertBar() {
           <ProviderHeader
             label={t("usageAlert.claude")}
             stale={is_stale}
+            rateLimitRemaining={rateLimitRemaining}
             refreshButton={(
               <RefreshButton
                 refreshing={refreshing}

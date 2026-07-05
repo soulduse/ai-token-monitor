@@ -8,18 +8,23 @@ export function useOAuthUsage() {
   const [status, setStatus] = useState<OAuthUsageStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // Seconds remaining in a 429 back-off window, or null when refresh is
+  // unthrottled. Surfaced so the badge can explain an inert refresh button.
+  const [rateLimitRemaining, setRateLimitRemaining] = useState<number | null>(null);
   const requestIdRef = useRef(0);
 
   const fetchUsage = useCallback(async () => {
     const requestId = ++requestIdRef.current;
     try {
-      const [data, nextStatus] = await Promise.all([
+      const [data, nextStatus, rateLimit] = await Promise.all([
         invoke<OAuthUsage | null>("get_oauth_usage"),
         invoke<OAuthUsageStatus>("get_oauth_usage_status").catch(() => null),
+        invoke<number | null>("get_oauth_rate_limit_remaining").catch(() => null),
       ]);
       if (requestId === requestIdRef.current) {
         setUsage(data);
         if (nextStatus) setStatus(nextStatus);
+        setRateLimitRemaining(rateLimit ?? null);
       }
     } catch {
       // Ignore errors silently
@@ -39,11 +44,13 @@ export function useOAuthUsage() {
       // report "unavailable" even on a successful refresh.
       const data = await invoke<OAuthUsage | null>("refresh_oauth_usage");
       const nextStatus = await invoke<OAuthUsageStatus>("get_oauth_usage_status").catch(() => null);
+      const rateLimit = await invoke<number | null>("get_oauth_rate_limit_remaining").catch(() => null);
       // Only adopt the result if no newer request has started; otherwise keep
       // the more recent data. The spinner state is reset unconditionally below.
       if (requestId === requestIdRef.current) {
         setUsage(data);
         if (nextStatus) setStatus(nextStatus);
+        setRateLimitRemaining(rateLimit ?? null);
       }
     } catch {
       // Ignore errors silently
@@ -69,5 +76,5 @@ export function useOAuthUsage() {
     };
   }, [fetchUsage]);
 
-  return { usage, status, loading, refreshing, refresh };
+  return { usage, status, loading, refreshing, rateLimitRemaining, refresh };
 }

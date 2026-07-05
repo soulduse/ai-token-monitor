@@ -220,6 +220,8 @@
   "usageAlert.last7Days": "Last 7 days",
   "usageAlert.extraUsage": "Extra Usage",
   "usageAlert.stale": "Stale data",
+  "usageAlert.rateLimited": "Retrying in {{seconds}}s",
+  "usageAlert.rateLimitedTooltip": "Too many requests — auto-retrying shortly. Data will update automatically.",
   "usageAlert.resetsIn": "Resets in {{time}}",
   "usageAlert.resetsNow": "Resetting...",
   "usageAlert.refresh": "Refresh",

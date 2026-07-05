@@ -130,8 +130,10 @@ pub fn get_cached_usage() -> Option<OAuthUsage> {
     let cache = OAUTH_CACHE.lock().ok()?;
     cache.as_ref().map(|entry| {
         let mut usage = entry.usage.clone();
-        // Mark as stale if older than 10 minutes
-        if entry.fetched_at.elapsed().as_secs() > 600 {
+        // Mark as stale if older than 15 minutes. Kept comfortably above the
+        // 5-minute poll interval (lib.rs) so a single failed/slow poll does not
+        // immediately flip the badge to "stale".
+        if entry.fetched_at.elapsed().as_secs() > 900 {
             usage.is_stale = true;
         }
         usage
@@ -166,6 +168,20 @@ pub fn get_usage_status() -> OAuthUsageStatus {
         return OAuthUsageStatus::NoCredentials;
     }
     OAuthUsageStatus::Unavailable
+}
+
+/// Seconds remaining in the current 429 rate-limit back-off window, if any.
+/// The UI uses this to explain why a manual refresh currently does nothing
+/// instead of leaving the button looking inert. Returns `None` when we are
+/// free to hit the API again.
+pub fn rate_limit_remaining_secs() -> Option<u64> {
+    let until = (*RATE_LIMIT_UNTIL.lock().ok()?)?;
+    let now = Instant::now();
+    if until > now {
+        Some((until - now).as_secs().max(1))
+    } else {
+        None
+    }
 }
 
 /// Check if cache was fetched within the given number of seconds.
@@ -690,7 +706,8 @@ async fn fetch_usage_from_api(token: &str) -> Result<OAuthUsage, FetchUsageError
             .get("retry-after")
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(300); // default 5 min if header missing
+            .unwrap_or(60); // default 1 min if header missing — a missing header
+                            // should not lock manual refresh out for 5 minutes.
         if let Ok(mut guard) = RATE_LIMIT_UNTIL.lock() {
             *guard = Some(Instant::now() + std::time::Duration::from_secs(retry_after_secs));
         }
@@ -894,5 +911,23 @@ mod tests {
         });
 
         assert!(extract_oauth_credentials(&value).is_none());
+    }
+
+    #[test]
+    fn rate_limit_remaining_reports_window_then_clears() {
+        // Future window → remaining seconds are reported so the UI can explain
+        // why refresh is throttled.
+        *RATE_LIMIT_UNTIL.lock().unwrap() = Some(Instant::now() + Duration::from_secs(45));
+        let remaining = rate_limit_remaining_secs().expect("should be within window");
+        assert!((1..=45).contains(&remaining), "got {remaining}");
+
+        // Past window → None, so the UI drops back to the normal stale badge.
+        *RATE_LIMIT_UNTIL.lock().unwrap() =
+            Some(Instant::now() - Duration::from_secs(1));
+        assert_eq!(rate_limit_remaining_secs(), None);
+
+        // No window set → None.
+        *RATE_LIMIT_UNTIL.lock().unwrap() = None;
+        assert_eq!(rate_limit_remaining_secs(), None);
     }
 }

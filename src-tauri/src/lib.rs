@@ -894,6 +894,7 @@ pub fn run() {
             commands::get_pricing_table,
             commands::get_oauth_usage,
             commands::get_oauth_usage_status,
+            commands::get_oauth_rate_limit_remaining,
             commands::refresh_oauth_usage,
             commands::enable_usage_tracking,
             commands::get_ai_keys,

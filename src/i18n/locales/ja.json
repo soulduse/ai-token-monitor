@@ -214,6 +214,8 @@
   "usageAlert.last7Days": "直近7日",
   "usageAlert.extraUsage": "追加使用量",
   "usageAlert.stale": "古いデータ",
+  "usageAlert.rateLimited": "{{seconds}}秒後に再試行",
+  "usageAlert.rateLimitedTooltip": "リクエストが多いため、まもなく自動で再試行します。データは自動的に更新されます。",
   "usageAlert.resetsIn": "{{time}}後にリセット",
   "usageAlert.resetsNow": "リセット中...",
   "usageAlert.refresh": "更新",

@@ -214,6 +214,8 @@
   "usageAlert.last7Days": "Letzte 7 Tage",
   "usageAlert.extraUsage": "Zusätzliche Nutzung",
   "usageAlert.stale": "Veraltete Daten",
+  "usageAlert.rateLimited": "Neuer Versuch in {{seconds}}s",
+  "usageAlert.rateLimitedTooltip": "Zu viele Anfragen — automatischer Wiederholungsversuch in Kürze. Die Daten werden automatisch aktualisiert.",
   "usageAlert.resetsIn": "Zurücksetzen in {{time}}",
   "usageAlert.resetsNow": "Wird zurückgesetzt...",
   "usageAlert.refresh": "Aktualisieren",
