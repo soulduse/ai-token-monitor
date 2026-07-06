@@ -3,6 +3,7 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { AppLogo } from "./AppLogo";
 import { SettingsOverlay } from "./SettingsOverlay";
 import { WrappedOverlay } from "./wrapped/WrappedOverlay";
 import { ReceiptOverlay } from "./receipt/ReceiptOverlay";
@@ -208,25 +209,7 @@ export function Header({ stats, updater }: Props) {
           userSelect: "none",
         } as React.CSSProperties}
       >
-        <div style={{
-          width: 36,
-          height: 36,
-          borderRadius: "var(--radius-sm)",
-          background: "linear-gradient(135deg, var(--accent-purple), var(--accent-pink))",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 20,
-          flexShrink: 0,
-          pointerEvents: "none",
-        }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="18" y1="20" x2="18" y2="10"/>
-            <line x1="12" y1="20" x2="12" y2="4"/>
-            <line x1="6" y1="20" x2="6" y2="14"/>
-            <polyline points="4 7 8 3 12 7" stroke="white" strokeWidth="1.5" fill="none"/>
-          </svg>
-        </div>
+        <AppLogo size={36} />
         <div style={{ pointerEvents: "none" }}>
           <div style={{
             fontSize: 15,
