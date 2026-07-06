@@ -10,7 +10,7 @@ fn client() -> &'static Client {
     HTTP_CLIENT.get_or_init(|| {
         Client::builder()
             .timeout(Duration::from_secs(8))
-            .user_agent("Mozilla/5.0 (compatible; AITokenMonitor/1.0)")
+            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
             .redirect(reqwest::redirect::Policy::limited(5))
             .build()
             .unwrap_or_default()
@@ -49,21 +49,24 @@ pub async fn fetch_url_metadata(url: String) -> Result<UrlMetadata, String> {
         return Err("Only HTTP/HTTPS URLs are supported".to_string());
     }
 
-    let response = client()
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to fetch URL: {}", e))?;
+    // Metadata is decorative — never let a blocked or failing fetch prevent
+    // adding a valid link (e.g. LinkedIn returns 999/403 to non-browser clients).
+    let fallback = || UrlMetadata {
+        url: url.clone(),
+        title: None,
+        favicon_url: extract_origin(&url).map(|origin| format!("{}/favicon.ico", origin)),
+    };
 
-    if !response.status().is_success() {
-        return Err(format!("HTTP {}", response.status()));
-    }
+    let response = match client().get(&url).send().await {
+        Ok(resp) if resp.status().is_success() => resp,
+        _ => return Ok(fallback()),
+    };
 
     let final_url = response.url().to_string();
-    let body = response
-        .text()
-        .await
-        .map_err(|e| format!("Failed to read response: {}", e))?;
+    let body = match response.text().await {
+        Ok(body) => body,
+        Err(_) => return Ok(fallback()),
+    };
 
     let document = Html::parse_document(&body);
 
