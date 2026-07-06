@@ -5,7 +5,14 @@
 
 > **[English](../README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [Türkçe](README.tr.md)**
 
-App per la barra di sistema di macOS e Windows che monitora in tempo reale l'utilizzo dei token, i costi e l'attività di **Claude Code**, **Codex** e **OpenCode**, con classifica, chat e notifiche webhook integrate.
+![AI Token Monitor — monitoraggio in tempo reale di token e costi degli strumenti di AI coding, direttamente dalla barra dei menu](images/hero.png)
+
+**AI Token Monitor** è una leggera app per la barra di sistema di macOS e Windows che risponde a una sola domanda, tutto il giorno: *quanto mi stanno costando davvero i miei strumenti di AI coding?* Legge i log di sessione locali che **Claude Code**, **Codex**, **OpenCode** e **GJC** già scrivono, calcola il costo di ogni token con tariffe per modello (letture dalla cache incluse) e mostra la spesa di oggi accanto all'orologio — con grafici, avvisi sui limiti del piano, classifica opzionale, chat e notifiche webhook a un clic di distanza.
+
+- **Zero configurazione** — niente chiavi API, niente proxy. Se hai eseguito Claude Code o Codex almeno una volta, funziona subito.
+- **Spesa a colpo d'occhio** — costo in tempo reale nella barra dei menu / barra di sistema, dashboard completa con un clic.
+- **Sempre un passo avanti ai limiti** — barre live del limite di sessione (5 ore) e del piano settimanale, più avvisi Discord / Slack / Telegram prima di raggiungere il tetto.
+- **Privacy by design** — 100% offline per impostazione predefinita; classifica, chat e webhook sono rigorosamente opzionali.
 
 | Overview | Analytics | Leaderboard |
 |:---:|:---:|:---:|
@@ -21,7 +28,19 @@ App per la barra di sistema di macOS e Windows che monitora in tempo reale l'uti
 | **macOS** (Apple Silicon) | `.dmg` | Supporto Intel Mac in arrivo |
 | **Windows** | Installer `.exe` | Windows 10+ (richiede WebView2, installato automaticamente) |
 
+## Come funziona
+
+![Come funziona AI Token Monitor — legge i log di sessione locali, li analizza e calcola i costi in locale, mostra tutto nella barra di sistema e nella dashboard](images/how-it-works.png)
+
+1. **Legge i log di sessione locali** — osserva i file JSONL che le tue CLI AI già scrivono (per i percorsi esatti vedi [Fonti dei dati](#fonti-dei-dati))
+2. **Analizza e calcola i costi in locale** — un motore Rust deduplica le voci, applica le tariffe per modello (letture dalla cache incluse) e riaggrega i dati non appena un file cambia
+3. **Lo mostra ovunque** — costo nella barra di sistema, grafici della dashboard, barra di avviso sui limiti del piano e notifiche webhook opzionali
+
+Tutto questo avviene sulla tua macchina. L'app **non effettua alcuna richiesta di rete** a meno che tu non attivi classifica, chat o webhook — e anche in quel caso vengono condivisi solo conteggi aggregati, mai codice o contenuti delle conversazioni.
+
 ## Funzionalita
+
+![Funzionalità in evidenza — monitora e visualizza, competi e condividi, resta nel budget, personalizza](images/features.png)
 
 ### Monitoraggio e visualizzazione
 - **Monitoraggio token in tempo reale** — analizza i file JSONL delle sessioni di Claude Code, Codex e OpenCode per statistiche d'uso precise

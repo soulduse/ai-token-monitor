@@ -5,7 +5,14 @@
 
 > **[English](../README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [繁體中文](README.zh-TW.md) | [Türkçe](README.tr.md) | [Italiano](README.it.md)**
 
-一款 macOS 和 Windows 系统托盘应用,可实时追踪 **Claude Code**、**Codex** 和 **OpenCode** 的令牌使用量、费用和活动,并内置排行榜、聊天和 Webhook 提醒。
+![AI Token Monitor — 在菜单栏实时追踪 AI 编程工具的令牌与费用](images/hero.png)
+
+**AI Token Monitor** 是一款轻量的 macOS / Windows 系统托盘应用,全天候回答一个问题:*我的 AI 编程工具到底花了多少钱?* 它读取 **Claude Code**、**Codex**、**OpenCode** 和 **GJC** 本来就在写入的本地会话日志,按各模型单价(含缓存读取)为每个令牌计费,并把今日支出直接显示在时钟旁边——图表、套餐限额提醒、可选的排行榜、聊天和 Webhook 通知都只需一次点击。
+
+- **零配置** — 无需 API 密钥、无需代理。只要运行过一次 Claude Code 或 Codex,即刻可用。
+- **支出一目了然** — 菜单栏 / 系统托盘实时显示费用,点击即可打开完整仪表盘。
+- **抢先于限额** — 实时显示 5 小时会话与每周套餐限额进度条,并在触顶前通过 Discord / Slack / Telegram 提醒。
+- **隐私优先** — 默认 100% 离线;排行榜、聊天和 Webhook 均为严格可选。
 
 | 概览 | 分析 | 排行榜 |
 |:---:|:---:|:---:|
@@ -21,7 +28,19 @@
 | **macOS** (Apple Silicon) | `.dmg` | Intel Mac 即将支持 |
 | **Windows** | `.exe` 安装程序 | Windows 10+(需要 WebView2,自动安装) |
 
+## 工作原理
+
+![AI Token Monitor 工作原理 — 读取本地会话日志,在本地解析计费,在托盘和仪表盘中展示](images/how-it-works.png)
+
+1. **读取本地会话日志** — 监视 AI CLI 本来就在写入的 JSONL 文件(具体路径见[数据源](#数据源))
+2. **本地解析与计费** — Rust 引擎对条目去重,应用各模型单价(含缓存读取),文件一变化立即重新汇总
+3. **随处可见** — 托盘费用显示、仪表盘图表、套餐限额提醒条,以及可选的 Webhook 通知
+
+以上全部在你的电脑上完成。除非你主动开启排行榜、聊天或 Webhook,应用**不会发出任何网络请求**——即使开启,也只会共享汇总数据,绝不会共享代码或对话内容。
+
 ## 主要功能
+
+![功能亮点 — 追踪与可视化、竞争与分享、控制预算、个性化定制](images/features.png)
 
 ### 追踪与可视化
 - **实时令牌追踪** — 直接解析 Claude Code / Codex / OpenCode 的会话 JSONL 文件,准确统计使用量
