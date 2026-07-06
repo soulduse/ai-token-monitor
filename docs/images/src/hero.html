@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #0a0e14;
+    --panel: #10161f;
+    --border: #263041;
+    --text: #e6edf3;
+    --muted: #8b98a9;
+    --g1: #0e4429; --g2: #006d32; --g3: #26a641; --g4: #39d353;
+    --amber: #f0b429;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 880px; height: 360px; overflow: hidden; }
+  body {
+    background: var(--bg);
+    font-family: "SF Mono", ui-monospace, Menlo, Monaco, monospace;
+    color: var(--text);
+    position: relative;
+  }
+  /* faint contribution-heatmap backdrop */
+  .heatgrid {
+    position: absolute; inset: 0;
+    display: grid;
+    grid-template-columns: repeat(60, 1fr);
+    grid-auto-rows: 12.4px;
+    gap: 2.4px;
+    padding: 4px;
+    opacity: .55;
+  }
+  .heatgrid i { border-radius: 2.5px; background: #151d29; }
+  .heatgrid i.l1 { background: rgba(14,68,41,.55); }
+  .heatgrid i.l2 { background: rgba(0,109,50,.5); }
+  .heatgrid i.l3 { background: rgba(38,166,65,.42); }
+  .heatgrid i.l4 { background: rgba(57,211,83,.4); }
+  .fade {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(720px 300px at 26% 46%, rgba(10,14,20,.97) 30%, rgba(10,14,20,.72) 62%, rgba(10,14,20,.28) 100%);
+  }
+  .wrap {
+    position: absolute; inset: 0;
+    display: flex; align-items: center;
+    padding: 0 44px;
+    gap: 36px;
+  }
+  .left { flex: 1; min-width: 0; }
+  .kicker {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; letter-spacing: .18em; color: var(--g4);
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+  .kicker::before {
+    content: ""; width: 22px; height: 1px; background: var(--g3);
+  }
+  h1 {
+    font-size: 42px; line-height: 1.08; letter-spacing: -.02em;
+    font-weight: 700;
+  }
+  h1 .accent { color: var(--g4); }
+  .tag {
+    margin-top: 14px; font-size: 14.5px; line-height: 1.55;
+    color: var(--muted); max-width: 430px;
+  }
+  .tag b { color: var(--text); font-weight: 600; }
+  .pills { margin-top: 22px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill {
+    font-size: 11.5px; padding: 5px 11px; border-radius: 999px;
+    border: 1px solid var(--border); color: #b6c2d0;
+    background: rgba(16,22,31,.8);
+  }
+  .pill.hot { border-color: rgba(57,211,83,.45); color: var(--g4); }
+  .meta { margin-top: 16px; font-size: 11px; color: #5b6878; letter-spacing: .04em; }
+  /* right: mini dashboard mock */
+  .card {
+    width: 300px; flex: none;
+    background: linear-gradient(180deg, #121a25, #0d141d);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 18px 16px;
+    box-shadow: 0 24px 60px rgba(0,0,0,.55), 0 0 0 1px rgba(57,211,83,.05);
+    position: relative;
+  }
+  .card::before {
+    content: ""; position: absolute; left: 18px; right: 18px; top: 0;
+    height: 2px; border-radius: 2px;
+    background: linear-gradient(90deg, var(--g2), var(--g4), transparent);
+  }
+  .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .lbl { font-size: 10px; letter-spacing: .14em; color: var(--muted); text-transform: uppercase; }
+  .live { font-size: 9.5px; color: var(--g4); display: flex; align-items: center; gap: 5px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--g4); box-shadow: 0 0 8px var(--g4); }
+  .cost { font-size: 34px; font-weight: 700; margin-top: 8px; letter-spacing: -.02em; }
+  .cost small { font-size: 13px; color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .sub b { color: var(--amber); font-weight: 600; }
+  .bars { display: flex; align-items: flex-end; gap: 7px; height: 64px; margin-top: 16px; }
+  .bars i { flex: 1; border-radius: 3px 3px 0 0; background: linear-gradient(180deg, var(--g3), var(--g1)); }
+  .bars i.top { background: linear-gradient(180deg, var(--g4), var(--g2)); }
+  .strip { display: flex; gap: 3px; margin-top: 14px; }
+  .strip i { width: 10px; height: 10px; border-radius: 2px; }
+  .cap { font-size: 9px; color: #5b6878; margin-top: 7px; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+  <div class="heatgrid" id="grid"></div>
+  <div class="fade"></div>
+  <div class="wrap">
+    <div class="left">
+      <div class="kicker">system tray · macOS &amp; Windows</div>
+      <h1>AI Token<br>Monitor<span class="accent">_</span></h1>
+      <div class="tag">Every token your AI coding agents burn, priced and charted in real time — <b>right from your menu bar</b>.</div>
+      <div class="pills">
+        <span class="pill hot">Claude Code</span>
+        <span class="pill hot">Codex</span>
+        <span class="pill hot">OpenCode</span>
+        <span class="pill hot">GJC</span>
+        <span class="pill">100% local by default</span>
+      </div>
+      <div class="meta">Tauri v2 · Rust + React · MIT License</div>
+    </div>
+    <div class="card">
+      <div class="row">
+        <span class="lbl">Today's spend</span>
+        <span class="live"><span class="dot"></span>LIVE</span>
+      </div>
+      <div class="cost">$12.84<small>· 4.2M tokens</small></div>
+      <div class="sub">Session limit <b>62%</b> · resets in 2h 41m</div>
+      <div class="bars">
+        <i style="height:34%"></i><i style="height:52%"></i><i style="height:41%"></i>
+        <i style="height:68%"></i><i class="top" style="height:95%"></i><i style="height:58%"></i>
+        <i style="height:74%"></i>
+      </div>
+      <div class="strip" id="strip"></div>
+      <div class="cap"><span>7-day activity</span><span>claude-fable-5 · gpt-5.4</span></div>
+    </div>
+  </div>
+<script>
+  // deterministic pseudo-random heatmap
+  const grid = document.getElementById('grid');
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 60 * 28; i++) {
+    const el = document.createElement('i');
+    const r = rnd();
+    if (r > .93) el.className = 'l4';
+    else if (r > .84) el.className = 'l3';
+    else if (r > .72) el.className = 'l2';
+    else if (r > .55) el.className = 'l1';
+    grid.appendChild(el);
+  }
+  const strip = document.getElementById('strip');
+  const lv = ['#151d29','#0e4429','#006d32','#26a641','#39d353'];
+  [1,3,2,4,3,4,2,3,1,4,3,2,4,4,3,2,3,4,1,2,3,4].forEach(n => {
+    const el = document.createElement('i');
+    el.style.background = lv[n];
+    strip.appendChild(el);
+  });
+</script>
+</body>
+</html>

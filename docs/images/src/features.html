@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #0a0e14;
+    --panel: #10161f;
+    --border: #263041;
+    --text: #e6edf3;
+    --muted: #8b98a9;
+    --g1: #0e4429; --g2: #006d32; --g3: #26a641; --g4: #39d353;
+    --amber: #f0b429;
+    --blue: #58a6ff;
+    --pink: #db61a2;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 880px; height: 560px; overflow: hidden; }
+  body {
+    background:
+      radial-gradient(500px 220px at 18% -60px, rgba(38,166,65,.09), transparent 70%),
+      radial-gradient(500px 220px at 85% 110%, rgba(88,166,255,.06), transparent 70%),
+      var(--bg);
+    font-family: "SF Mono", ui-monospace, Menlo, Monaco, monospace;
+    color: var(--text);
+    padding: 32px 40px 0;
+  }
+  .kicker {
+    font-size: 10.5px; letter-spacing: .2em; color: var(--g4);
+    text-transform: uppercase; text-align: center;
+  }
+  h2 { text-align: center; font-size: 24px; letter-spacing: -.01em; margin-top: 8px; }
+  .grid {
+    margin-top: 26px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  }
+  .card {
+    background: linear-gradient(180deg, #121a25, #0d141d);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 20px 16px;
+    position: relative; overflow: hidden;
+  }
+  .card::before {
+    content: ""; position: absolute; left: 20px; right: 20px; top: 0;
+    height: 2px; border-radius: 2px;
+    background: linear-gradient(90deg, var(--ac, var(--g4)), transparent);
+  }
+  .card.track { --ac: var(--g4); }
+  .card.social { --ac: var(--blue); }
+  .card.alert { --ac: var(--amber); }
+  .card.custom { --ac: var(--pink); }
+  .head { display: flex; align-items: center; gap: 10px; }
+  .ico {
+    width: 30px; height: 30px; border-radius: 9px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px;
+    background: color-mix(in srgb, var(--ac) 13%, transparent);
+    border: 1px solid color-mix(in srgb, var(--ac) 42%, transparent);
+  }
+  .head h3 { font-size: 14px; letter-spacing: -.01em; }
+  ul { list-style: none; margin-top: 12px; display: flex; flex-direction: column; gap: 7px; }
+  li {
+    font-size: 11px; line-height: 1.5; color: #b6c2d0;
+    padding-left: 16px; position: relative;
+  }
+  li::before {
+    content: ""; position: absolute; left: 2px; top: 6px;
+    width: 6px; height: 6px; border-radius: 2px;
+    background: var(--ac);
+  }
+  li b { color: var(--text); font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="kicker">feature highlights</div>
+  <h2>A cockpit for your AI coding spend</h2>
+  <div class="grid">
+    <div class="card track">
+      <div class="head"><div class="ico">📊</div><h3>Track &amp; visualize</h3></div>
+      <ul>
+        <li><b>Real-time tokens &amp; cost</b> across every provider, deduplicated</li>
+        <li>7 / 30-day charts, weekly &amp; monthly period navigation</li>
+        <li><b>GitHub-style activity graph</b> with 2D / 3D toggle</li>
+        <li>Model breakdown &amp; cache-efficiency donut</li>
+      </ul>
+    </div>
+    <div class="card social">
+      <div class="head"><div class="ico">🏆</div><h3>Compete &amp; share</h3></div>
+      <ul>
+        <li><b>Global leaderboard</b> — daily / weekly / monthly (opt-in, GitHub OAuth)</li>
+        <li>Live <b>badges for your README</b> — PNG, SVG, or hosted URL</li>
+        <li>Realtime chat with mentions, images &amp; AI translation</li>
+        <li>AI Wrapped recap &amp; receipt-style summaries</li>
+      </ul>
+    </div>
+    <div class="card alert">
+      <div class="head"><div class="ico">🔔</div><h3>Stay under budget</h3></div>
+      <ul>
+        <li><b>Today's cost in the tray</b> — always one glance away</li>
+        <li>Live 5-hour session &amp; weekly plan-limit bar</li>
+        <li><b>Discord / Slack / Telegram</b> webhook alerts on thresholds</li>
+        <li>Auto-updater with in-app download progress</li>
+      </ul>
+    </div>
+    <div class="card custom">
+      <div class="head"><div class="ico">🎨</div><h3>Make it yours</h3></div>
+      <ul>
+        <li>4 themes × Auto / Light / Dark, <b>10 languages</b></li>
+        <li>Multiple config roots — merge work + personal accounts</li>
+        <li>Salary comparator: your AI spend in lattes ☕</li>
+        <li>Launch on startup, compact numbers, auto-hide window</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>
