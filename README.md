@@ -5,7 +5,14 @@
 
 > **[한국어](docs/README.ko.md) | [日本語](docs/README.ja.md) | [简体中文](docs/README.zh-CN.md) | [繁體中文](docs/README.zh-TW.md) | [Türkçe](docs/README.tr.md) | [Italiano](docs/README.it.md)**
 
-A system tray app for macOS and Windows that tracks **Claude Code**, **Codex**, and **OpenCode** token usage, cost, and activity in real time — with a built-in leaderboard, chat, and webhook alerts.
+![AI Token Monitor — real-time token & cost tracking for AI coding tools, right from your menu bar](docs/images/hero.png)
+
+**AI Token Monitor** is a lightweight system tray app for macOS and Windows that answers one question, all day long: *how much are my AI coding tools actually costing me?* It reads the local session logs that **Claude Code**, **Codex**, **OpenCode**, and **GJC** already write, prices every token with per-model rates (cache reads included), and puts today's spend right next to your clock — with charts, plan-limit alerts, an opt-in leaderboard, chat, and webhook notifications one click away.
+
+- **Zero setup** — no API keys, no proxies. If you've run Claude Code or Codex once, it just works.
+- **Spend at a glance** — live cost in the menu bar / system tray, full dashboard on click.
+- **Stay ahead of limits** — live 5-hour session & weekly plan bars, plus Discord / Slack / Telegram alerts before you hit the wall.
+- **Private by design** — 100% offline by default; leaderboard, chat, and webhooks are strictly opt-in.
 
 <table>
   <tr>
@@ -34,7 +41,19 @@ A system tray app for macOS and Windows that tracks **Claude Code**, **Codex**, 
 | **macOS** (Apple Silicon) | `.dmg` | Intel Mac support coming soon |
 | **Windows** | `.exe` installer | Windows 10+ (WebView2 required, auto-installed) |
 
+## How It Works
+
+![How AI Token Monitor works — reads local session logs, parses & prices locally, shows cost in the tray and dashboard](docs/images/how-it-works.png)
+
+1. **Reads local session logs** — watches the JSONL files your AI CLIs already write (see [Data Sources](#data-sources) for exact paths)
+2. **Parses & prices locally** — a Rust engine deduplicates entries, applies per-model pricing (cache reads included), and re-aggregates the moment a file changes
+3. **Shows it everywhere** — tray cost ticker, dashboard charts, plan-limit alert bar, and optional webhook notifications
+
+Everything above happens on your machine. The app makes **zero network requests** unless you opt in to the leaderboard, chat, or webhooks — and even then only aggregated counts are shared, never code or conversation content.
+
 ## Features
+
+![Feature highlights — track & visualize, compete & share, stay under budget, make it yours](docs/images/features.png)
 
 ### Tracking & Visualization
 - **Real-time token tracking** — parses session JSONL files from Claude Code, Codex, and OpenCode for accurate usage stats

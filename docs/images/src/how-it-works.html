@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #0a0e14;
+    --panel: #10161f;
+    --border: #263041;
+    --text: #e6edf3;
+    --muted: #8b98a9;
+    --g1: #0e4429; --g2: #006d32; --g3: #26a641; --g4: #39d353;
+    --amber: #f0b429;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 880px; height: 584px; overflow: hidden; }
+  body {
+    background:
+      radial-gradient(600px 260px at 50% -80px, rgba(38,166,65,.10), transparent 70%),
+      var(--bg);
+    font-family: "SF Mono", ui-monospace, Menlo, Monaco, monospace;
+    color: var(--text);
+    padding: 34px 40px 0;
+  }
+  .kicker {
+    font-size: 10.5px; letter-spacing: .2em; color: var(--g4);
+    text-transform: uppercase; text-align: center;
+  }
+  h2 { text-align: center; font-size: 24px; letter-spacing: -.01em; margin-top: 8px; }
+  .cols { display: flex; align-items: stretch; gap: 0; margin-top: 28px; }
+  .step {
+    flex: 1;
+    background: linear-gradient(180deg, #121a25, #0d141d);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 18px 18px;
+    position: relative;
+  }
+  .step::before {
+    content: ""; position: absolute; left: 18px; right: 18px; top: 0;
+    height: 2px; border-radius: 2px;
+    background: linear-gradient(90deg, var(--g3), transparent);
+  }
+  .num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; border-radius: 7px;
+    background: rgba(57,211,83,.12); border: 1px solid rgba(57,211,83,.4);
+    color: var(--g4); font-size: 12px; font-weight: 700;
+  }
+  .step h3 { font-size: 14.5px; margin-top: 12px; letter-spacing: -.01em; }
+  .step p { font-size: 11.5px; line-height: 1.6; color: var(--muted); margin-top: 8px; }
+  .arrow {
+    flex: none; width: 46px; display: flex; align-items: center; justify-content: center;
+    color: var(--g3); font-size: 18px;
+  }
+  .paths { margin-top: 12px; display: flex; flex-direction: column; gap: 5px; }
+  .path {
+    font-size: 9.6px; color: #9db4c8; background: #0a1119;
+    border: 1px solid #1d2735; border-radius: 6px;
+    padding: 5px 8px; white-space: nowrap; overflow: hidden;
+  }
+  .path b { color: var(--g4); font-weight: 600; }
+  .chips { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 5px; }
+  .chip {
+    font-size: 9.8px; padding: 4px 8px; border-radius: 999px;
+    border: 1px solid var(--border); color: #b6c2d0;
+  }
+  .outs { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .out {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 10.6px; color: #cdd9e5;
+    background: #0a1119; border: 1px solid #1d2735; border-radius: 7px;
+    padding: 6px 9px;
+  }
+  .out i {
+    width: 7px; height: 7px; border-radius: 2px; flex: none;
+    background: var(--g4);
+  }
+  .out i.a { background: var(--amber); }
+  .out i.b { background: #58a6ff; }
+  .privacy {
+    margin-top: 24px;
+    border: 1px solid rgba(57,211,83,.32);
+    background: linear-gradient(90deg, rgba(14,68,41,.28), rgba(14,68,41,.08));
+    border-radius: 12px;
+    padding: 13px 18px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .lock {
+    width: 30px; height: 30px; border-radius: 9px; flex: none;
+    background: rgba(57,211,83,.14); border: 1px solid rgba(57,211,83,.45);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+  .privacy .txt { font-size: 11.5px; line-height: 1.55; color: #b8e6c4; }
+  .privacy .txt b { color: var(--g4); }
+</style>
+</head>
+<body>
+  <div class="kicker">how it works</div>
+  <h2>Your usage never has to leave your machine</h2>
+  <div class="cols">
+    <div class="step">
+      <span class="num">1</span>
+      <h3>Reads local session logs</h3>
+      <p>Watches the JSONL session files your AI CLIs already write. No API keys, no proxy, no setup.</p>
+      <div class="paths">
+        <div class="path"><b>Claude</b> ~/.claude/projects/**</div>
+        <div class="path"><b>Codex</b> ~/.codex/sessions/**</div>
+        <div class="path"><b>OpenCode</b> ~/.local/share/opencode</div>
+        <div class="path"><b>GJC</b> ~/.gjc/agent/sessions/**</div>
+      </div>
+    </div>
+    <div class="arrow">▶</div>
+    <div class="step">
+      <span class="num">2</span>
+      <h3>Parses &amp; prices locally</h3>
+      <p>A Rust engine deduplicates entries, applies per-model pricing (cache reads included), and re-aggregates the instant a file changes.</p>
+      <div class="chips">
+        <span class="chip">per-model pricing</span>
+        <span class="chip">cache-aware cost</span>
+        <span class="chip">multi-account dirs</span>
+        <span class="chip">file watcher</span>
+      </div>
+    </div>
+    <div class="arrow">▶</div>
+    <div class="step">
+      <span class="num">3</span>
+      <h3>Shows it everywhere</h3>
+      <p>Live cost in your tray, full dashboard one click away, alerts before you hit a limit.</p>
+      <div class="outs">
+        <div class="out"><i></i>Menu-bar cost ticker</div>
+        <div class="out"><i></i>Charts · heatmap · breakdowns</div>
+        <div class="out"><i class="a"></i>Plan-limit alert bar</div>
+        <div class="out"><i class="b"></i>Discord / Slack / Telegram</div>
+      </div>
+    </div>
+  </div>
+  <div class="privacy">
+    <div class="lock">🔒</div>
+    <div class="txt"><b>Offline by default.</b> The app makes zero network requests unless you opt in — leaderboard, chat, and webhooks are strictly optional, and only aggregated counts are ever shared. Your code and conversations stay on your machine.</div>
+  </div>
+</body>
+</html>

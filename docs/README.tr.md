@@ -5,7 +5,14 @@
 
 > **[English](../README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [Italiano](README.it.md)**
 
-macOS ve Windows sistem tepsisinde **Claude Code**, **Codex** ve **OpenCode** token kullanımını, maliyetini ve etkinliğini gerçek zamanlı olarak izleyen bir uygulamadır. Liderlik tablosu, sohbet ve webhook bildirimleri tek bir ekranda sunulur.
+![AI Token Monitor — AI kodlama araçlarınızın token ve maliyetini menü çubuğundan gerçek zamanlı izleyin](images/hero.png)
+
+**AI Token Monitor**, gün boyu tek bir soruyu yanıtlayan hafif bir macOS / Windows sistem tepsisi uygulamasıdır: *AI kodlama araçlarım bana gerçekte ne kadara mal oluyor?* **Claude Code**, **Codex**, **OpenCode** ve **GJC**'nin zaten yazdığı yerel oturum günlüklerini okur, her token'ı modele özgü fiyatlarla (önbellek okumaları dahil) ücretlendirir ve bugünün harcamasını saatinizin hemen yanında gösterir — grafikler, plan limiti uyarıları, isteğe bağlı liderlik tablosu, sohbet ve webhook bildirimleri de tek tık uzağınızda.
+
+- **Sıfır kurulum** — API anahtarı yok, proxy yok. Claude Code veya Codex'i bir kez çalıştırdıysanız hemen çalışır.
+- **Harcama bir bakışta** — menü çubuğunda / sistem tepsisinde canlı maliyet, tek tıkla tam gösterge paneli.
+- **Limitlerin bir adım önünde** — canlı 5 saatlik oturum ve haftalık plan limiti çubukları; limite dayanmadan önce Discord / Slack / Telegram uyarıları.
+- **Tasarım gereği gizli** — varsayılan olarak %100 çevrimdışı; liderlik tablosu, sohbet ve webhook'lar tamamen isteğe bağlıdır.
 
 | Overview | Analytics | Leaderboard |
 |:---:|:---:|:---:|
@@ -21,7 +28,19 @@ macOS ve Windows sistem tepsisinde **Claude Code**, **Codex** ve **OpenCode** to
 | **macOS** (Apple Silicon) | `.dmg` | Intel Mac desteği yakında |
 | **Windows** | `.exe` yükleyici | Windows 10+ (WebView2 gerekli, otomatik kurulur) |
 
+## Nasıl Çalışır
+
+![AI Token Monitor nasıl çalışır — yerel oturum günlüklerini okur, yerelde ayrıştırıp fiyatlandırır, tepside ve gösterge panelinde gösterir](images/how-it-works.png)
+
+1. **Yerel oturum günlüklerini okur** — AI CLI'larınızın zaten yazdığı JSONL dosyalarını izler (tam yollar için [Veri Kaynakları](#veri-kaynakları) bölümüne bakın)
+2. **Yerelde ayrıştırır ve fiyatlandırır** — Rust motoru kayıtları tekilleştirir, modele özgü fiyatları (önbellek okumaları dahil) uygular ve dosya değiştiği anda yeniden toplar
+3. **Her yerde gösterir** — tepside maliyet göstergesi, gösterge paneli grafikleri, plan limiti uyarı çubuğu ve isteğe bağlı webhook bildirimleri
+
+Bunların tamamı kendi makinenizde gerçekleşir. Liderlik tablosunu, sohbeti veya webhook'ları etkinleştirmediğiniz sürece uygulama **hiçbir ağ isteği göndermez** — etkinleştirseniz bile yalnızca toplu sayılar paylaşılır; kod veya konuşma içeriği asla paylaşılmaz.
+
 ## Özellikler
+
+![Öne çıkan özellikler — izleyin ve görselleştirin, yarışın ve paylaşın, bütçenizi aşmayın, kişiselleştirin](images/features.png)
 
 ### İzleme ve Görselleştirme
 - **Gerçek zamanlı token izleme** — Claude Code / Codex / OpenCode oturum JSONL dosyalarını doğrudan ayrıştırarak kesin kullanım istatistikleri sunar
