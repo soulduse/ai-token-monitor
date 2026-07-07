@@ -439,10 +439,13 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
             }
         }
 
-        // Adaptive debounce: escalate during burst activity
+        // Adaptive debounce: escalate during burst activity. Long-running agent
+        // sessions append to their JSONL every few seconds, so a short burst window
+        // just re-parses the same hot files over and over — 30s keeps the tray at
+        // most half a minute stale while cutting parse cycles by 3x.
         let mut recent_triggers: Vec<std::time::Instant> = Vec::new();
         let base_debounce = std::time::Duration::from_secs(2);
-        let burst_debounce = std::time::Duration::from_secs(10);
+        let burst_debounce = std::time::Duration::from_secs(30);
 
         loop {
             match rx.recv_timeout(std::time::Duration::from_secs(60)) {
@@ -477,9 +480,10 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                     providers::kimi::invalidate_stats_cache();
                     providers::glm::invalidate_stats_cache();
                     providers::gjc::invalidate_stats_cache();
-                    let _ = app_handle.emit("stats-updated", ());
-                    // Re-parse in background so the tray reflects new data even when the
-                    // popup is closed (get_all_stats is only called by the frontend).
+                    // Re-parse in background, then notify the frontend. Emitting only
+                    // after the parse completes means the frontend's get_*_stats calls
+                    // hit the warm cache instead of racing this thread and parsing the
+                    // same files a second time.
                     let app_for_refresh = app_handle.clone();
                     thread::spawn(move || {
                         let prefs = commands::get_preferences();
@@ -501,6 +505,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                             let _ = providers::gjc::GjcProvider::new(prefs.gjc_dirs.clone()).fetch_stats();
                         }
                         update_tray_title(&app_for_refresh);
+                        let _ = app_for_refresh.emit("stats-updated", ());
                     });
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {

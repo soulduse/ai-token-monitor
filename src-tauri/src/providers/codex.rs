@@ -21,13 +21,72 @@ fn expand_tilde(path: &str) -> PathBuf {
 
 // --- Cache infrastructure (mirrors claude_code.rs patterns) ---
 
+/// Bytes of pre-resume-point content kept to detect in-place rewrites. Codex entry
+/// keys are position-based (`path\nline_index`), so resuming mid-file after a rewrite
+/// would silently misnumber lines — the fingerprint downgrades that case to a full
+/// re-parse.
+const TAIL_FINGERPRINT_LEN: usize = 16;
+
+/// Per-file parse state: identity metadata, byte-offset resume point, and the
+/// in-file parser state (line counter, session id, active model, last snapshot)
+/// needed to continue an append-only rollout file mid-stream.
+#[derive(Clone, PartialEq)]
+struct FileParseState {
+    mtime: SystemTime,
+    size: u64,
+    /// Byte offset just past the last complete line consumed.
+    parsed_offset: u64,
+    /// Number of complete lines consumed so far (continues the position-based keys).
+    lines_consumed: u32,
+    session_id: String,
+    current_model: String,
+    prev_snapshot: Option<(u64, u64, u64, u64)>,
+    /// Up to TAIL_FINGERPRINT_LEN bytes immediately before `parsed_offset`.
+    tail_fingerprint: Vec<u8>,
+}
+
+impl FileParseState {
+    fn fresh(path: &Path) -> Self {
+        Self {
+            mtime: SystemTime::UNIX_EPOCH,
+            size: 0,
+            parsed_offset: 0,
+            lines_consumed: 0,
+            session_id: path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("codex-session")
+                .to_string(),
+            current_model: String::new(),
+            prev_snapshot: None,
+            tail_fingerprint: Vec::new(),
+        }
+    }
+
+    fn matches(&self, mtime: SystemTime, size: u64) -> bool {
+        self.mtime == mtime && self.size == size
+    }
+}
+
+/// True when every current file is present in the cached states with identical
+/// (mtime, size) — i.e. nothing changed since the last parse.
+fn file_states_match(
+    states: &HashMap<PathBuf, FileParseState>,
+    current: &HashMap<PathBuf, (SystemTime, u64)>,
+) -> bool {
+    states.len() == current.len()
+        && current.iter().all(|(path, (mtime, size))| {
+            states.get(path).map_or(false, |st| st.matches(*mtime, *size))
+        })
+}
+
 struct IncrementalCache {
     stats: AllStats,
     computed_at: Instant,
-    /// Per-file parsed entries keyed by dedup key (session_id:line_index)
+    /// Per-file parsed entries keyed by dedup key (`path\nline_index`)
     entries: HashMap<String, CodexEntry>,
-    /// File metadata for mtime-based change detection
-    file_meta: HashMap<PathBuf, (SystemTime, u64)>,
+    /// Parse state per file for change detection and append-resume
+    file_states: HashMap<PathBuf, FileParseState>,
 }
 
 static STATS_CACHE: Mutex<Option<IncrementalCache>> = Mutex::new(None);
@@ -250,164 +309,234 @@ impl CodexProvider {
         meta
     }
 
-    /// Parse a single JSONL file and return entries keyed by dedup key.
-    fn parse_single_file(path: &Path) -> HashMap<String, CodexEntry> {
-        let mut entries = HashMap::new();
-        let Ok(file) = fs::File::open(path) else {
-            return entries;
+    /// Parse a JSONL rollout file, resuming from `prior` parse state when given
+    /// (append-only growth), or from the start otherwise. Returns the parsed entries
+    /// and the updated state. A trailing line without a newline (writer mid-flush) is
+    /// left unconsumed so the next parse re-reads it once complete.
+    ///
+    /// The parser is stateful across a file (session_meta id, active model from
+    /// turn_context, previous token_count snapshot), so all of that lives in
+    /// FileParseState and carries over between resumes.
+    fn parse_file_from(
+        path: &Path,
+        prior: Option<&FileParseState>,
+        mtime: SystemTime,
+        size: u64,
+    ) -> (HashMap<String, CodexEntry>, FileParseState) {
+        use std::io::{Seek, SeekFrom};
+
+        let mut state = match prior {
+            Some(st) => st.clone(),
+            None => FileParseState::fresh(path),
         };
+
+        // On open/seek failure, return the state with its PRIOR (mtime, size) so the
+        // next cycle sees a mismatch and retries — recording the new identity here
+        // would make the unparsed bytes look "already consumed" forever.
+        let mut entries = HashMap::new();
+        let Ok(mut file) = fs::File::open(path) else {
+            return (entries, state);
+        };
+        if state.parsed_offset > 0 && file.seek(SeekFrom::Start(state.parsed_offset)).is_err() {
+            return (entries, state);
+        }
+        state.mtime = mtime;
+        state.size = size;
 
         // Keep the path date as a fallback only. A single session file can span midnight,
         // so per-event timestamps are more accurate for "today" stats.
         let path_date = extract_date_from_path(path);
 
-        let mut session_id = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("codex-session")
-            .to_string();
-        let mut current_model = String::new();
-        let mut line_index: u32 = 0;
-        // Track previous snapshot for deduplication of identical consecutive token_count events
-        let mut prev_snapshot: Option<(u64, u64, u64, u64)> = None;
-
-        let reader = BufReader::with_capacity(64 * 1024, file);
-        for line in reader.lines().map_while(Result::ok) {
-            line_index += 1;
-
-            let Ok(value) = serde_json::from_str::<Value>(&line) else {
-                continue;
-            };
-
-            match value.get("type").and_then(|v| v.as_str()) {
-                Some("session_meta") => {
-                    if let Some(id) = value.pointer("/payload/id").and_then(|v| v.as_str()) {
-                        session_id = id.to_string();
+        let mut reader = BufReader::with_capacity(64 * 1024, file);
+        let mut buf: Vec<u8> = Vec::with_capacity(8 * 1024);
+        loop {
+            buf.clear();
+            match reader.read_until(b'\n', &mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    if buf.last() != Some(&b'\n') {
+                        // Partial trailing line — leave it for the next parse.
+                        break;
                     }
-                }
-                Some("turn_context") => {
-                    if let Some(model) = value.pointer("/payload/model").and_then(|v| v.as_str()) {
-                        current_model = model.to_string();
-                    }
-                }
-                Some("event_msg") => {
-                    let payload_type = value.pointer("/payload/type").and_then(|v| v.as_str());
-                    match payload_type {
-                        Some("token_count") => {
-                            let Some(info) = value.pointer("/payload/info") else {
-                                continue;
-                            };
-                            if info.is_null() {
-                                continue;
+                    state.parsed_offset += n as u64;
+                    state.lines_consumed += 1;
+                    let fp_len = n.min(TAIL_FINGERPRINT_LEN);
+                    state.tail_fingerprint = buf[n - fp_len..n].to_vec();
+
+                    let Ok(line) = std::str::from_utf8(&buf) else {
+                        continue;
+                    };
+                    let Ok(value) = serde_json::from_str::<Value>(line) else {
+                        continue;
+                    };
+
+                    match value.get("type").and_then(|v| v.as_str()) {
+                        Some("session_meta") => {
+                            if let Some(id) = value.pointer("/payload/id").and_then(|v| v.as_str()) {
+                                state.session_id = id.to_string();
                             }
-
-                            let Some((input, output, cached, total)) = extract_token_usage(info)
-                            else {
-                                continue;
-                            };
-
-                            // Skip duplicate consecutive snapshots
-                            let snap = (input, output, cached, total);
-                            if prev_snapshot.as_ref() == Some(&snap) {
-                                continue;
+                        }
+                        Some("turn_context") => {
+                            if let Some(model) = value.pointer("/payload/model").and_then(|v| v.as_str()) {
+                                state.current_model = model.to_string();
                             }
-                            prev_snapshot = Some(snap);
+                        }
+                        Some("event_msg") => {
+                            let payload_type = value.pointer("/payload/type").and_then(|v| v.as_str());
+                            match payload_type {
+                                Some("token_count") => {
+                                    let Some(info) = value.pointer("/payload/info") else {
+                                        continue;
+                                    };
+                                    if info.is_null() {
+                                        continue;
+                                    }
 
-                            if input == 0 && output == 0 && cached == 0 && total == 0 {
-                                continue;
+                                    let Some((input, output, cached, total)) = extract_token_usage(info)
+                                    else {
+                                        continue;
+                                    };
+
+                                    // Skip duplicate consecutive snapshots
+                                    let snap = (input, output, cached, total);
+                                    if state.prev_snapshot.as_ref() == Some(&snap) {
+                                        continue;
+                                    }
+                                    state.prev_snapshot = Some(snap);
+
+                                    if input == 0 && output == 0 && cached == 0 && total == 0 {
+                                        continue;
+                                    }
+
+                                    let date = resolve_entry_date(path_date.as_deref(), &value);
+
+                                    let model = if state.current_model.is_empty() {
+                                        "codex".to_string()
+                                    } else {
+                                        state.current_model.clone()
+                                    };
+
+                                    let cumulative = extract_cumulative_usage(info);
+
+                                    // Key by source file (+ line) rather than session_id so a
+                                    // session_id appearing in multiple files never lets one file's
+                                    // re-parse clobber another file's cached entries. '\n' can't
+                                    // occur in a path, so it's a safe field separator.
+                                    let key = format!("{}\n{}", path.display(), state.lines_consumed);
+                                    entries.insert(
+                                        key,
+                                        CodexEntry {
+                                            date,
+                                            model,
+                                            session_id: state.session_id.clone(),
+                                            input_tokens: input,
+                                            output_tokens: output,
+                                            cached_tokens: cached,
+                                            total_tokens: total,
+                                            cumulative,
+                                        },
+                                    );
+                                }
+                                _ => {}
                             }
-
-                            let date = resolve_entry_date(path_date.as_deref(), &value);
-
-                            let model = if current_model.is_empty() {
-                                "codex".to_string()
-                            } else {
-                                current_model.clone()
-                            };
-
-                            let cumulative = extract_cumulative_usage(info);
-
-                            // Key by source file (+ line) rather than session_id so a
-                            // session_id appearing in multiple files never lets one file's
-                            // re-parse clobber another file's cached entries. '\n' can't
-                            // occur in a path, so it's a safe field separator.
-                            let key = format!("{}\n{}", path.display(), line_index);
-                            entries.insert(
-                                key,
-                                CodexEntry {
-                                    date,
-                                    model,
-                                    session_id: session_id.clone(),
-                                    input_tokens: input,
-                                    output_tokens: output,
-                                    cached_tokens: cached,
-                                    total_tokens: total,
-                                    cumulative,
-                                },
-                            );
                         }
                         _ => {}
                     }
                 }
-                _ => {}
+                Err(_) => break,
             }
         }
 
-        entries
+        (entries, state)
     }
 
-    /// Incrementally parse only changed files.
+    /// True when the bytes immediately before the cached resume point still match the
+    /// recorded fingerprint — i.e. the growth really is an append, not a rewrite that
+    /// happens to be larger.
+    fn tail_fingerprint_matches(path: &Path, st: &FileParseState) -> bool {
+        use std::io::{Read, Seek, SeekFrom};
+
+        if st.tail_fingerprint.is_empty() {
+            return st.parsed_offset == 0;
+        }
+        let fp_len = st.tail_fingerprint.len() as u64;
+        if st.parsed_offset < fp_len {
+            return false;
+        }
+        let Ok(mut file) = fs::File::open(path) else {
+            return false;
+        };
+        let mut buf = vec![0u8; fp_len as usize];
+        file.seek(SeekFrom::Start(st.parsed_offset - fp_len)).is_ok()
+            && file.read_exact(&mut buf).is_ok()
+            && buf == st.tail_fingerprint
+    }
+
+    /// Incrementally parse only changed files. Appended-to files resume from their
+    /// previous byte offset (verified by tail fingerprint); anything else — shrink,
+    /// same-size rewrite, or a grow whose pre-resume bytes changed — is purged and
+    /// re-parsed from the start.
     fn parse_incremental(
         current_meta: &HashMap<PathBuf, (SystemTime, u64)>,
         cached_entries: &HashMap<String, CodexEntry>,
-        cached_meta: &HashMap<PathBuf, (SystemTime, u64)>,
-    ) -> HashMap<String, CodexEntry> {
-        let mut entries = cached_entries.clone();
-
-        let mut changed_files: Vec<&PathBuf> = Vec::new();
-        for (path, (mtime, size)) in current_meta {
-            match cached_meta.get(path) {
-                Some((cached_mtime, cached_size))
-                    if cached_mtime == mtime && cached_size == size => {}
-                _ => {
-                    changed_files.push(path);
-                }
-            }
-        }
-
+        cached_states: &HashMap<PathBuf, FileParseState>,
+    ) -> (HashMap<String, CodexEntry>, HashMap<PathBuf, FileParseState>) {
         // If files were deleted, do a full re-parse
-        let has_deleted = cached_meta.keys().any(|p| !current_meta.contains_key(p));
+        let has_deleted = cached_states.keys().any(|p| !current_meta.contains_key(p));
         if has_deleted {
             let mut fresh = HashMap::new();
-            for path in current_meta.keys() {
-                fresh.extend(Self::parse_single_file(path));
+            let mut states = HashMap::new();
+            for (path, (mtime, size)) in current_meta {
+                let (file_entries, st) = Self::parse_file_from(path, None, *mtime, *size);
+                fresh.extend(file_entries);
+                states.insert(path.clone(), st);
             }
-            return fresh;
+            return (fresh, states);
         }
 
-        if !changed_files.is_empty() {
-            let start = Instant::now();
-            let count = changed_files.len();
-            for path in &changed_files {
-                // Drop every cached entry that came from this file before re-merging.
-                // Keys are `"<path>\n<line_index>"` (position-based within the file): a
-                // rewrite/compaction can move an event to a new line, so its old key would
-                // otherwise survive `extend` and double-count. Purging by path prefix
-                // removes only this file's stale entries — never another file's, even when
+        let mut entries = cached_entries.clone();
+        let mut states: HashMap<PathBuf, FileParseState> = HashMap::new();
+        let mut changed_count = 0usize;
+        let start = Instant::now();
+
+        for (path, (mtime, size)) in current_meta {
+            let prior = match cached_states.get(path) {
+                Some(st) if st.matches(*mtime, *size) => {
+                    states.insert(path.clone(), st.clone());
+                    continue;
+                }
+                // Append-only growth: existing `"<path>\n<line_index>"` keys stay
+                // valid, so no purge is needed — just parse the new tail.
+                Some(st) if *size > st.size && Self::tail_fingerprint_matches(path, st) => {
+                    Some(st.clone())
+                }
+                // Shrink, same-size rewrite, or fingerprint mismatch: a rewrite can
+                // move an event to a new line, so its old position-based key would
+                // otherwise survive `extend` and double-count. Purge by path prefix —
+                // this file's stale entries only, never another file's, even when
                 // they share a session_id.
-                let prefix = format!("{}\n", path.display());
-                entries.retain(|k, _| !k.starts_with(&prefix));
-                entries.extend(Self::parse_single_file(path));
-            }
+                _ => {
+                    let prefix = format!("{}\n", path.display());
+                    entries.retain(|k, _| !k.starts_with(&prefix));
+                    None
+                }
+            };
+            let (file_entries, st) = Self::parse_file_from(path, prior.as_ref(), *mtime, *size);
+            entries.extend(file_entries);
+            states.insert(path.clone(), st);
+            changed_count += 1;
+        }
+
+        if changed_count > 0 {
             eprintln!(
                 "[PERF][Codex] Incremental parse: {} changed files in {:?} (total {} files)",
-                count,
+                changed_count,
                 start.elapsed(),
                 current_meta.len()
             );
         }
 
-        entries
+        (entries, states)
     }
 
     /// Build AllStats from parsed entries.
@@ -545,9 +674,9 @@ impl CodexProvider {
         let start = Instant::now();
         let current_meta = self.collect_file_meta();
 
-        let entries = if let Ok(cache) = STATS_CACHE.lock() {
+        let (entries, file_states) = if let Ok(cache) = STATS_CACHE.lock() {
             if let Some(ref cached) = *cache {
-                if cached.file_meta == current_meta {
+                if file_states_match(&cached.file_states, &current_meta) {
                     drop(cache);
                     let rate_limits = self.resolve_rate_limits(&current_meta);
                     if let Ok(mut cache) = STATS_CACHE.lock() {
@@ -569,7 +698,7 @@ impl CodexProvider {
                 }
 
                 // Incremental parse
-                Self::parse_incremental(&current_meta, &cached.entries, &cached.file_meta)
+                Self::parse_incremental(&current_meta, &cached.entries, &cached.file_states)
             } else {
                 // First run — full parse
                 drop(cache);
@@ -579,14 +708,17 @@ impl CodexProvider {
                 );
                 let full_start = Instant::now();
                 let mut entries = HashMap::new();
-                for path in current_meta.keys() {
-                    entries.extend(Self::parse_single_file(path));
+                let mut file_states = HashMap::new();
+                for (path, (mtime, size)) in &current_meta {
+                    let (file_entries, st) = Self::parse_file_from(path, None, *mtime, *size);
+                    entries.extend(file_entries);
+                    file_states.insert(path.clone(), st);
                 }
                 eprintln!(
                     "[PERF][Codex] Full parse completed in {:?}",
                     full_start.elapsed()
                 );
-                entries
+                (entries, file_states)
             }
         } else {
             return Err("Failed to acquire cache lock".to_string());
@@ -600,7 +732,7 @@ impl CodexProvider {
                 stats: stats.clone(),
                 computed_at: Instant::now(),
                 entries,
-                file_meta: current_meta,
+                file_states,
             });
         }
 
@@ -1529,15 +1661,17 @@ mod tests {
         let ctx_line = r#"{"type":"turn_context","payload":{"model":"gpt-5.5"}}"#;
         let token_line = r#"{"timestamp":"2026-06-20T01:00:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000,"cached_input_tokens":0,"output_tokens":500,"total_tokens":1500}}}}"#;
 
-        // Version 1: meta, ctx, token  → token at line 3 → key "sess-X:3"
+        // Version 1: meta, ctx, token  → token at line 3 → key "<path>\n3"
         fs::write(&path, format!("{}\n{}\n{}\n", meta_line, ctx_line, token_line)).unwrap();
         let v1_meta = file_meta_of(&path);
-        let cached_entries = CodexProvider::parse_single_file(&path);
+        let (cached_entries, v1_state) =
+            CodexProvider::parse_file_from(&path, None, v1_meta.0, v1_meta.1);
         assert_eq!(cached_entries.len(), 1, "v1 should have exactly one entry");
 
         // Version 2: session compacted — an extra preamble line shifts the token
-        // event down to line 4 → new key "sess-X:4" for the SAME usage. The byte
-        // length also changes, so the incremental path treats the file as changed.
+        // event down to line 4 → new key "<path>\n4" for the SAME usage. The file
+        // grew, but the bytes before the old resume point changed, so the tail
+        // fingerprint must reject the append-resume and force a purged re-parse.
         fs::write(
             &path,
             format!("{}\n{}\n{}\n{}\n", meta_line, ctx_line, "{}", token_line),
@@ -1546,13 +1680,13 @@ mod tests {
         let v2_meta = file_meta_of(&path);
         assert_ne!(v1_meta.1, v2_meta.1, "rewrite must change the byte length");
 
-        let mut cached_meta = HashMap::new();
-        cached_meta.insert(path.clone(), v1_meta);
+        let mut cached_states = HashMap::new();
+        cached_states.insert(path.clone(), v1_state);
         let mut current_meta = HashMap::new();
         current_meta.insert(path.clone(), v2_meta);
 
-        let merged =
-            CodexProvider::parse_incremental(&current_meta, &cached_entries, &cached_meta);
+        let (merged, _) =
+            CodexProvider::parse_incremental(&current_meta, &cached_entries, &cached_states);
         let stats = CodexProvider::build_stats(&merged);
         let total: u64 = stats.daily.iter().map(|d| d.input_tokens).sum();
 
@@ -1592,12 +1726,15 @@ mod tests {
         fs::write(&path_a, format!("{}\n{}\n{}\n", meta, ctx, tok(1000))).unwrap();
         fs::write(&path_b, format!("{}\n{}\n{}\n", meta, ctx, tok(2000))).unwrap();
 
-        // Initial full parse caches both files' entries.
-        let mut cached = CodexProvider::parse_single_file(&path_a);
-        cached.extend(CodexProvider::parse_single_file(&path_b));
-        let mut cached_meta = HashMap::new();
-        cached_meta.insert(path_a.clone(), file_meta_of(&path_a));
-        cached_meta.insert(path_b.clone(), file_meta_of(&path_b));
+        // Initial full parse caches both files' entries + states.
+        let a_meta = file_meta_of(&path_a);
+        let b_meta = file_meta_of(&path_b);
+        let (mut cached, a_state) = CodexProvider::parse_file_from(&path_a, None, a_meta.0, a_meta.1);
+        let (b_entries, b_state) = CodexProvider::parse_file_from(&path_b, None, b_meta.0, b_meta.1);
+        cached.extend(b_entries);
+        let mut cached_states = HashMap::new();
+        cached_states.insert(path_a.clone(), a_state);
+        cached_states.insert(path_b.clone(), b_state);
 
         // Only file A changes (a preamble line shifts its event + bumps byte length).
         fs::write(&path_a, format!("{}\n{}\n{}\n{}\n", meta, ctx, "{}", tok(1000))).unwrap();
@@ -1605,7 +1742,7 @@ mod tests {
         current_meta.insert(path_a.clone(), file_meta_of(&path_a));
         current_meta.insert(path_b.clone(), file_meta_of(&path_b));
 
-        let merged = CodexProvider::parse_incremental(&current_meta, &cached, &cached_meta);
+        let (merged, _) = CodexProvider::parse_incremental(&current_meta, &cached, &cached_states);
         let total: u64 = CodexProvider::build_stats(&merged)
             .daily
             .iter()
@@ -1625,6 +1762,67 @@ mod tests {
             m.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH),
             m.len(),
         )
+    }
+
+    /// Append-only growth must resume from the cached offset with carried parser
+    /// state: continued line numbering, the session_meta id from the prefix, and the
+    /// previous token_count snapshot (so a duplicate consecutive snapshot straddling
+    /// the resume boundary still dedups).
+    #[test]
+    fn incremental_append_resumes_with_carried_parser_state() {
+        let dir = std::env::temp_dir()
+            .join(format!("codex_test_append_resume_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("rollout-append.jsonl");
+
+        let meta = r#"{"type":"session_meta","payload":{"id":"sess-X"}}"#;
+        let ctx = r#"{"type":"turn_context","payload":{"model":"gpt-5.5"}}"#;
+        let tok = |inp: u64| {
+            format!(
+                r#"{{"timestamp":"2026-06-20T01:00:00.000Z","type":"event_msg","payload":{{"type":"token_count","info":{{"last_token_usage":{{"input_tokens":{},"cached_input_tokens":0,"output_tokens":0,"total_tokens":{}}}}}}}}}"#,
+                inp, inp
+            )
+        };
+
+        let v1 = format!("{}\n{}\n{}\n", meta, ctx, tok(1000));
+        fs::write(&path, &v1).unwrap();
+        let v1_meta = file_meta_of(&path);
+        let (cached_entries, v1_state) =
+            CodexProvider::parse_file_from(&path, None, v1_meta.0, v1_meta.1);
+        assert_eq!(cached_entries.len(), 1);
+
+        // Append: a verbatim duplicate of the last snapshot (must dedup via carried
+        // prev_snapshot) followed by a genuinely new turn.
+        let v2 = format!("{}{}\n{}\n", v1, tok(1000), tok(500));
+        fs::write(&path, &v2).unwrap();
+
+        let mut cached_states = HashMap::new();
+        cached_states.insert(path.clone(), v1_state);
+        let mut current_meta = HashMap::new();
+        current_meta.insert(path.clone(), file_meta_of(&path));
+
+        let (merged, states) =
+            CodexProvider::parse_incremental(&current_meta, &cached_entries, &cached_states);
+
+        let _ = fs::remove_dir_all(&dir);
+
+        assert_eq!(
+            merged.len(),
+            2,
+            "expected old entry + one new entry (duplicate snapshot must dedup)"
+        );
+        let total: u64 = merged.values().map(|e| e.input_tokens).sum();
+        assert_eq!(total, 1500, "1000 (cached) + 500 (appended)");
+        assert!(
+            merged.values().all(|e| e.session_id == "sess-X"),
+            "resumed tail must inherit session_meta id from the parsed prefix"
+        );
+        // New entry keeps position-based numbering: line 5 (line 4 was the dup).
+        assert!(merged.contains_key(&format!("{}\n5", path.display())));
+        let st = states.get(&path).expect("state for appended file");
+        assert_eq!(st.parsed_offset, v2.len() as u64);
+        assert_eq!(st.lines_consumed, 5);
     }
 
     fn replay_entry(
