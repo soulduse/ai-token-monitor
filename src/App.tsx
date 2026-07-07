@@ -83,6 +83,7 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<TabType>("overview");
   const [analyticsSubTab, setAnalyticsSubTab] = useState<AnalyticsSubTab>("usage");
   const [chatActivated, setChatActivated] = useState(false);
+  const [leaderboardActivated, setLeaderboardActivated] = useState(false);
   const todayStr = useToday();
   const { unreadCount } = useUnreadChat(activeTab === "chat", user?.id ?? null);
 
@@ -94,6 +95,7 @@ function AppContent() {
 
   useEffect(() => {
     if (activeTab === "chat") setChatActivated(true);
+    if (activeTab === "leaderboard") setLeaderboardActivated(true);
   }, [activeTab]);
 
   // Drive the unified chat realtime channel. Activation is gated only by
@@ -232,9 +234,13 @@ function AppContent() {
         )}
       </div>
 
-      {/* Leaderboard lazy-loads (network requests), keep conditional */}
-      {activeTab === "leaderboard" && (
-        <Leaderboard />
+      {/* Leaderboard: defers mount (and its network requests) until first visit,
+          then stays mounted behind a CSS toggle so the hooks' 30-min caches and
+          poll timers survive tab switches instead of refetching on every entry. */}
+      {leaderboardActivated && (
+        <div style={{ display: activeTab === "leaderboard" ? "contents" : "none" }}>
+          <Leaderboard />
+        </div>
       )}
 
       {/* Chat: always mounted but hidden via CSS; defers fetch until first visit */}
