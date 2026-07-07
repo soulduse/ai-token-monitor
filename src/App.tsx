@@ -77,6 +77,7 @@ function AppContent() {
     includeKimi: prefs.include_kimi,
     includeGlm: prefs.include_glm,
     includeGjc: prefs.include_gjc,
+    includeHermes: prefs.include_hermes,
   });
   const t = useI18n();
   const { user, profile } = useAuth();

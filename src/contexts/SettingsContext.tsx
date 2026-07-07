@@ -23,6 +23,7 @@ const defaultPrefs: UserPreferences = {
   include_kimi: false,
   include_glm: false,
   include_gjc: false,
+  include_hermes: false,
   theme: "github",
   color_mode: "system",
   language: "en",

@@ -15,6 +15,7 @@
   "sources.kimi": "Kimi",
   "sources.glm": "GLM",
   "sources.gjc": "GJC",
+  "sources.hermes": "Hermes",
   "sources.summary.count": "{{total}} içinden {{active}} aktif",
   "sources.open": "Kaynak menüsünü aç",
   "today.title": "Bugün",

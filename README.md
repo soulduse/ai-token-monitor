@@ -163,6 +163,7 @@ Shared data: daily token count, cost, messages/sessions. **No code or conversati
 | **Codex** | `~/.codex/sessions/**/*.jsonl` | Supports multiple roots. |
 | **OpenCode** | `~/.local/share/opencode/**/*.jsonl` | Per-model pricing from bundled registry. |
 | **GJC (Gajae Code)** | `~/.gjc/agent/sessions/**/*.jsonl` | Per-message usage (`message.usage`) with pre-computed cost; dedup by API response id. Supports multiple roots. |
+| **Hermes Agent** | `$HERMES_HOME/state.db` (default `~/.hermes/state.db`) | Per-session aggregates from the `sessions` table; uses Hermes' own actual/estimated cost. |
 
 **Network requests**: only when leaderboard/chat is opted in (sends aggregated data to Supabase) or when a webhook fires. Without these features, the app runs completely offline. AI translation keys, if set, call the provider you chose directly.
 

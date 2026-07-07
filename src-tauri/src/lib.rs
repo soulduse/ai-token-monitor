@@ -328,7 +328,15 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             0.0
         };
 
-        let today_cost = claude_cost + codex_cost + opencode_cost + kimi_cost + glm_cost + gjc_cost;
+        let hermes_cost = if prefs.include_hermes {
+            providers::hermes::get_cached_stats()
+                .and_then(|s| s.daily.iter().find(|d| d.date == today).map(|d| d.cost_usd))
+                .unwrap_or(0.0)
+        } else {
+            0.0
+        };
+
+        let today_cost = claude_cost + codex_cost + opencode_cost + kimi_cost + glm_cost + gjc_cost + hermes_cost;
         let cost_str = if today_cost >= 1.0 {
             format!("${:.0}", today_cost)
         } else {
@@ -408,6 +416,12 @@ fn get_all_watch_dirs() -> Vec<PathBuf> {
         dirs.push(default_gjc);
     }
 
+    // Hermes Agent keeps a single SQLite db in its home dir ($HERMES_HOME/~/.hermes)
+    let hermes_dir = providers::hermes::hermes_home();
+    if hermes_dir.exists() && !dirs.contains(&hermes_dir) {
+        dirs.push(hermes_dir);
+    }
+
     dirs
 }
 
@@ -420,7 +434,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                 if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
                     let dominated = event.paths.iter().any(|p| {
                         let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
-                        ext == "jsonl" || ext == "json" || ext == "db"
+                        ext == "jsonl" || ext == "json" || ext == "db" || ext == "db-wal"
                     });
                     if dominated {
                         let _ = tx.send(());
@@ -481,6 +495,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                     providers::kimi::invalidate_stats_cache();
                     providers::glm::invalidate_stats_cache();
                     providers::gjc::invalidate_stats_cache();
+                    providers::hermes::invalidate_stats_cache();
                     // Re-parse in background, then notify the frontend. Emitting only
                     // after the parse completes means the frontend's get_*_stats calls
                     // hit the warm cache instead of racing this thread and parsing the
@@ -504,6 +519,9 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                         }
                         if prefs.include_gjc {
                             let _ = providers::gjc::GjcProvider::new(prefs.gjc_dirs.clone()).fetch_stats();
+                        }
+                        if prefs.include_hermes {
+                            let _ = providers::hermes::HermesProvider::new().fetch_stats();
                         }
                         update_tray_title(&app_for_refresh);
                         let _ = app_for_refresh.emit("stats-updated", ());
@@ -529,6 +547,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                         providers::kimi::invalidate_stats_cache();
                         providers::glm::invalidate_stats_cache();
                         providers::gjc::invalidate_stats_cache();
+                        providers::hermes::invalidate_stats_cache();
                         let _ = app_handle.emit("stats-updated", ());
                     }
                     update_tray_title(&app_handle);
@@ -880,6 +899,8 @@ pub fn run() {
             commands::is_glm_available,
             commands::get_gjc_stats,
             commands::is_gjc_available,
+            commands::get_hermes_stats,
+            commands::is_hermes_available,
             commands::get_preferences,
             commands::set_preferences,
             commands::get_stable_device_id,
