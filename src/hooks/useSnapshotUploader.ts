@@ -65,6 +65,10 @@ interface RowPayload {
 function buildTodayRow(stats: AllStats, today: string): RowPayload | null {
   const todayEntry = stats.daily.find((d) => d.date === today);
   if (!todayEntry) return null;
+  // A hydrated "today" means no local activity yet on this machine — the value
+  // came from the server, so re-uploading it would register this device as a
+  // second source of the same usage.
+  if (todayEntry.hydrated) return null;
   return {
     date: today,
     total_tokens: getTotalTokens(todayEntry.tokens),
@@ -247,7 +251,9 @@ export function useSnapshotUploader({ stats, user, optedIn, provider }: UseSnaps
       const startStr = toLocalDateStr(start);
 
       const rows: RowPayload[] = stats.daily
-        .filter((d) => d.date >= startStr && d.date <= today)
+        // Hydrated days are server-sourced — echoing them back would double-count
+        // them under this device until the original device entry expires.
+        .filter((d) => d.date >= startStr && d.date <= today && !d.hydrated)
         .map((d) => ({
           date: d.date,
           total_tokens: getTotalTokens(d.tokens),

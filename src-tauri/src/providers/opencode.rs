@@ -349,6 +349,7 @@ impl OpenCodeProvider {
             let daily = daily_map
                 .entry(entry.date.clone())
                 .or_insert_with(|| DailyUsage {
+                    hydrated: false,
                     date: entry.date.clone(),
                     tokens: HashMap::new(),
                     cost_usd: 0.0,

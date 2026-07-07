@@ -89,6 +89,9 @@ function mergeStats(statsList: AllStats[]): AllStats {
         existing.output_tokens += d.output_tokens;
         existing.cache_read_tokens += d.cache_read_tokens;
         existing.cache_write_tokens += d.cache_write_tokens;
+        // A combined day counts as restored only when every contributing
+        // provider's day was restored — any local slice makes it local.
+        existing.hydrated = !!existing.hydrated && !!d.hydrated;
       } else {
         dailyMap.set(d.date, {
           date: d.date,
@@ -101,6 +104,7 @@ function mergeStats(statsList: AllStats[]): AllStats {
           output_tokens: d.output_tokens,
           cache_read_tokens: d.cache_read_tokens,
           cache_write_tokens: d.cache_write_tokens,
+          hydrated: !!d.hydrated,
         });
       }
     }

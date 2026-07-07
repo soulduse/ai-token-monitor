@@ -21,6 +21,7 @@ import { PeriodTotals } from "./components/PeriodTotals";
 import { CacheEfficiency } from "./components/CacheEfficiency";
 import { Leaderboard } from "./components/Leaderboard";
 import { LeaderboardUploader } from "./components/LeaderboardUploader";
+import { ServerHistoryRestorer } from "./components/ServerHistoryRestorer";
 import { ChatRoom } from "./components/ChatRoom";
 import { ActivityGraph } from "./components/ActivityGraph";
 import { SupportBanner } from "./components/SupportBanner";
@@ -258,6 +259,10 @@ function AppContent() {
       {/* Headless: keeps all enabled providers' snapshot history in sync
           regardless of whether the Leaderboard tab is open. */}
       <LeaderboardUploader />
+
+      {/* Pulls the signed-in user's daily history from the server so a fresh
+          install shows past usage; clears it on sign-out. */}
+      <ServerHistoryRestorer />
       <OAuthFallbackModal />
     </PopoverShell>
   );

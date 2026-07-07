@@ -9,6 +9,9 @@ export interface DailyUsage {
   output_tokens: number;
   cache_read_tokens: number;
   cache_write_tokens: number;
+  /** True when the day was restored from the server instead of parsed from
+   *  local logs. Upload/backfill paths must skip hydrated days. */
+  hydrated?: boolean;
 }
 
 export interface ModelUsage {
