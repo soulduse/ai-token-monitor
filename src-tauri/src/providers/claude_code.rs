@@ -13,14 +13,42 @@ use serde::{Deserialize, Serialize};
 use super::traits::TokenProvider;
 use super::types::{ActivityCategory, AllStats, AnalyticsData, DailyUsage, McpServerUsage, ModelUsage, ProjectUsage, ToolCount};
 
-/// Unified incremental cache: stats + per-file metadata for mtime-based change detection.
+/// Per-file parse state: identity metadata plus how far the file has been parsed.
+/// `parsed_offset` is the byte position just past the last complete line consumed,
+/// so append-only JSONL growth can resume from there instead of re-reading the file.
+#[derive(Clone, PartialEq)]
+struct FileParseState {
+    mtime: SystemTime,
+    size: u64,
+    parsed_offset: u64,
+}
+
+impl FileParseState {
+    fn matches(&self, mtime: SystemTime, size: u64) -> bool {
+        self.mtime == mtime && self.size == size
+    }
+}
+
+/// Unified incremental cache: stats + per-file parse state for change detection.
 struct IncrementalCache {
     stats: AllStats,
     computed_at: Instant,
     /// All parsed entries keyed by dedup key (message_id:request_id)
     entries: HashMap<String, SessionEntry>,
-    /// File metadata for change detection: path → (modified_time, size)
-    file_meta: HashMap<PathBuf, (SystemTime, u64)>,
+    /// Parse state per file: path → (mtime, size, parsed byte offset)
+    file_states: HashMap<PathBuf, FileParseState>,
+}
+
+/// True when every current file is present in the cached states with identical
+/// (mtime, size) — i.e. nothing changed since the last parse.
+fn file_states_match(
+    states: &HashMap<PathBuf, FileParseState>,
+    current: &HashMap<PathBuf, (SystemTime, u64)>,
+) -> bool {
+    states.len() == current.len()
+        && current.iter().all(|(path, (mtime, size))| {
+            states.get(path).map_or(false, |st| st.matches(*mtime, *size))
+        })
 }
 
 static STATS_CACHE: Mutex<Option<IncrementalCache>> = Mutex::new(None);
@@ -179,61 +207,159 @@ impl ClaudeCodeProvider {
         meta
     }
 
-    /// Parse a single JSONL file and return its entries keyed by dedup key.
-    fn parse_single_file(path: &PathBuf) -> HashMap<String, SessionEntry> {
+    /// Parse a JSONL file starting at byte `start_offset`, returning its entries keyed by
+    /// dedup key plus the byte offset just past the last complete line consumed.
+    ///
+    /// A trailing line without a newline (a writer mid-flush) is left unconsumed so the
+    /// next parse re-reads it once the writer completes it. Active session files only
+    /// ever grow, so resuming from the previous offset skips the (potentially hundreds
+    /// of MB) already-parsed prefix.
+    ///
+    /// Returns None when the file can't be opened/seeked — callers must NOT record a
+    /// parse state in that case, so the next cycle retries instead of treating the
+    /// file as consumed.
+    fn parse_file_from(path: &PathBuf, start_offset: u64) -> Option<(HashMap<String, SessionEntry>, u64)> {
+        use std::io::{Seek, SeekFrom};
+
         let mut entries = HashMap::new();
-        if let Ok(file) = fs::File::open(path) {
-            let reader = BufReader::with_capacity(64 * 1024, file);
-            for line in reader.lines().map_while(Result::ok) {
-                if let Some(entry) = parse_session_line(&line) {
-                    let key = format!("{}:{}", entry.message_id, entry.request_id);
-                    entries.insert(key, entry);
+        let mut offset = start_offset;
+        let mut file = fs::File::open(path).ok()?;
+        if start_offset > 0 {
+            file.seek(SeekFrom::Start(start_offset)).ok()?;
+        }
+        let mut reader = BufReader::with_capacity(64 * 1024, file);
+        let mut buf: Vec<u8> = Vec::with_capacity(8 * 1024);
+        loop {
+            buf.clear();
+            match reader.read_until(b'\n', &mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    if buf.last() != Some(&b'\n') {
+                        // Partial trailing line — leave it for the next parse.
+                        break;
+                    }
+                    offset += n as u64;
+                    if let Ok(line) = std::str::from_utf8(&buf) {
+                        if let Some(entry) = parse_session_line(line) {
+                            let key = format!("{}:{}", entry.message_id, entry.request_id);
+                            entries.insert(key, entry);
+                        }
+                    }
                 }
+                Err(_) => break,
             }
         }
-        entries
+        Some((entries, offset))
+    }
+
+    /// Parse an entire JSONL file (offset 0), returning entries and its parse state.
+    /// None when the file is unreadable — the caller skips recording a state so the
+    /// next cycle retries.
+    fn parse_full_file(path: &PathBuf, mtime: SystemTime, size: u64) -> Option<(HashMap<String, SessionEntry>, FileParseState)> {
+        let (entries, parsed_offset) = Self::parse_file_from(path, 0)?;
+        Some((entries, FileParseState { mtime, size, parsed_offset }))
+    }
+
+    /// Byte offset just past the last newline in the file — the safe resume point for
+    /// a file whose content we skip parsing. JSONL files virtually always end with a
+    /// newline, so this is a single 1-byte read; a file that ends mid-line (writer
+    /// crashed without a trailing flush) is scanned backwards until the last newline,
+    /// so the incomplete line is re-read if the file is ever appended to again.
+    fn last_complete_line_offset(path: &PathBuf, size: u64) -> u64 {
+        use std::io::{Read, Seek, SeekFrom};
+
+        if size == 0 {
+            return 0;
+        }
+        let Ok(mut file) = fs::File::open(path) else {
+            return 0;
+        };
+
+        // Fast path: check only the final byte.
+        let mut last = [0u8; 1];
+        if file.seek(SeekFrom::Start(size - 1)).is_err() || file.read_exact(&mut last).is_err() {
+            return 0;
+        }
+        if last[0] == b'\n' {
+            return size;
+        }
+
+        // Rare path: scan backwards in chunks for the last newline.
+        const CHUNK: u64 = 64 * 1024;
+        let mut end = size;
+        let mut buf = vec![0u8; CHUNK as usize];
+        while end > 0 {
+            let start = end.saturating_sub(CHUNK);
+            let len = (end - start) as usize;
+            if file.seek(SeekFrom::Start(start)).is_err()
+                || file.read_exact(&mut buf[..len]).is_err()
+            {
+                return 0;
+            }
+            if let Some(pos) = buf[..len].iter().rposition(|&b| b == b'\n') {
+                return start + pos as u64 + 1;
+            }
+            end = start;
+        }
+        0
     }
 
     /// Incrementally parse only changed files, reusing cached entries for unchanged files.
+    /// Appended-to files resume from their previous byte offset; shrunk or rewritten
+    /// files are re-parsed from the start.
     fn parse_incremental(
         current_meta: &HashMap<PathBuf, (SystemTime, u64)>,
         cached_entries: &HashMap<String, SessionEntry>,
-        cached_meta: &HashMap<PathBuf, (SystemTime, u64)>,
-    ) -> HashMap<String, SessionEntry> {
-        let mut entries = cached_entries.clone();
-
-        let mut changed_files: Vec<&PathBuf> = Vec::new();
-        for (path, (mtime, size)) in current_meta {
-            match cached_meta.get(path) {
-                Some((cached_mtime, cached_size)) if cached_mtime == mtime && cached_size == size => {}
-                _ => { changed_files.push(path); }
-            }
-        }
-
+        cached_states: &HashMap<PathBuf, FileParseState>,
+    ) -> (HashMap<String, SessionEntry>, HashMap<PathBuf, FileParseState>) {
         // If files were deleted, do a full re-parse (can't selectively remove entries per file)
-        let has_deleted = cached_meta.keys().any(|p| !current_meta.contains_key(p));
+        let has_deleted = cached_states.keys().any(|p| !current_meta.contains_key(p));
         if has_deleted {
             let mut fresh = HashMap::new();
-            for path in current_meta.keys() {
-                fresh.extend(Self::parse_single_file(path));
+            let mut states = HashMap::new();
+            for (path, (mtime, size)) in current_meta {
+                let Some((file_entries, state)) = Self::parse_full_file(path, *mtime, *size) else {
+                    continue; // unreadable — no state recorded, retried next cycle
+                };
+                fresh.extend(file_entries);
+                states.insert(path.clone(), state);
             }
-            return fresh;
+            return (fresh, states);
         }
 
-        let changed_count = changed_files.len();
+        let mut entries = cached_entries.clone();
+        let mut states: HashMap<PathBuf, FileParseState> = HashMap::new();
+        let mut changed_count = 0usize;
+        let start = Instant::now();
+
+        for (path, (mtime, size)) in current_meta {
+            let resume_offset = match cached_states.get(path) {
+                Some(st) if st.matches(*mtime, *size) => {
+                    // Unchanged — keep the cached state as-is.
+                    states.insert(path.clone(), st.clone());
+                    continue;
+                }
+                // Grew (append-only session log): resume after the last complete line.
+                Some(st) if *size > st.size => st.parsed_offset,
+                // Shrunk or same-size rewrite: start over.
+                _ => 0,
+            };
+            let Some((file_entries, parsed_offset)) = Self::parse_file_from(path, resume_offset) else {
+                continue; // unreadable — no state recorded, retried next cycle
+            };
+            entries.extend(file_entries);
+            states.insert(path.clone(), FileParseState { mtime: *mtime, size: *size, parsed_offset });
+            changed_count += 1;
+        }
+
         if changed_count > 0 {
-            let start = Instant::now();
-            for path in &changed_files {
-                let file_entries = Self::parse_single_file(path);
-                entries.extend(file_entries);
-            }
             eprintln!(
                 "[PERF] Incremental parse: {} changed files in {:?} (total {} files)",
                 changed_count, start.elapsed(), current_meta.len()
             );
         }
 
-        entries
+        (entries, states)
     }
 
     /// Build AllStats from parsed entries, merging with disk cache for historical months.
@@ -799,9 +925,9 @@ impl ClaudeCodeProvider {
         let current_meta = self.collect_file_meta();
 
         // Check if any files actually changed since last computation
-        let entries = if let Ok(cache) = STATS_CACHE.lock() {
+        let (entries, file_states) = if let Ok(cache) = STATS_CACHE.lock() {
             if let Some(ref cached) = *cache {
-                if cached.file_meta == current_meta {
+                if file_states_match(&cached.file_states, &current_meta) {
                     // No files changed — refresh timestamp and return cached stats
                     drop(cache);
                     if let Ok(mut cache) = STATS_CACHE.lock() {
@@ -819,7 +945,7 @@ impl ClaudeCodeProvider {
                 }
 
                 // Incremental parse — only changed files
-                Self::parse_incremental(&current_meta, &cached.entries, &cached.file_meta)
+                Self::parse_incremental(&current_meta, &cached.entries, &cached.file_states)
             } else {
                 // First run — full parse
                 drop(cache);
@@ -840,24 +966,39 @@ impl ClaudeCodeProvider {
                 let prev_month = prev_month_str();
                 let only_current = has_historical && disk_cache.months.contains_key(&prev_month);
 
+                let mut file_states: HashMap<PathBuf, FileParseState> = HashMap::new();
+
                 if only_current {
                     // Fast path: disk cache is complete — only parse current-month files
-                    for (path, (_, _)) in &current_meta {
-                        if let Ok(metadata) = fs::metadata(path) {
-                            if let Ok(modified) = metadata.modified() {
-                                let modified_date: chrono::DateTime<chrono::Local> = modified.into();
-                                let file_month = modified_date.format("%Y-%m").to_string();
-                                if file_month < current_month {
-                                    continue;
-                                }
-                            }
+                    for (path, (mtime, size)) in &current_meta {
+                        let modified_date: chrono::DateTime<chrono::Local> = (*mtime).into();
+                        let file_month = modified_date.format("%Y-%m").to_string();
+                        if file_month < current_month {
+                            // Historical file covered by the disk cache — record where its
+                            // complete lines end (not the raw size: a file that stopped on
+                            // a partial line must not have that line skipped if it is ever
+                            // appended to again).
+                            let parsed_offset = Self::last_complete_line_offset(path, *size);
+                            file_states.insert(
+                                path.clone(),
+                                FileParseState { mtime: *mtime, size: *size, parsed_offset },
+                            );
+                            continue;
                         }
-                        entries.extend(Self::parse_single_file(path));
+                        let Some((file_entries, state)) = Self::parse_full_file(path, *mtime, *size) else {
+                            continue; // unreadable — no state recorded, retried next cycle
+                        };
+                        entries.extend(file_entries);
+                        file_states.insert(path.clone(), state);
                     }
                 } else {
                     // Full parse: either no cache yet, or the cache is missing some months
-                    for path in current_meta.keys() {
-                        entries.extend(Self::parse_single_file(path));
+                    for (path, (mtime, size)) in &current_meta {
+                        let Some((file_entries, state)) = Self::parse_full_file(path, *mtime, *size) else {
+                            continue; // unreadable — no state recorded, retried next cycle
+                        };
+                        entries.extend(file_entries);
+                        file_states.insert(path.clone(), state);
                     }
 
                     // Split off historical entries, persist any months missing from cache
@@ -891,7 +1032,7 @@ impl ClaudeCodeProvider {
                 }
 
                 eprintln!("[PERF] Full parse completed in {:?}", full_start.elapsed());
-                entries
+                (entries, file_states)
             }
         } else {
             return Err("Failed to acquire cache lock".to_string());
@@ -899,13 +1040,13 @@ impl ClaudeCodeProvider {
 
         let stats = self.build_stats(&entries);
 
-        // Update cache with entries + file metadata
+        // Update cache with entries + per-file parse state
         if let Ok(mut cache) = STATS_CACHE.lock() {
             *cache = Some(IncrementalCache {
                 stats: stats.clone(),
                 computed_at: Instant::now(),
                 entries,
-                file_meta: current_meta,
+                file_states,
             });
         }
 
@@ -1091,5 +1232,93 @@ mod tests {
         assert_eq!(entry.cwd, "/home/user/project");
         assert_eq!(entry.tool_names, vec!["Read", "Bash"]);
         assert_eq!(entry.bash_commands, vec!["git", "npm"]);
+    }
+
+    fn temp_jsonl(name: &str, content: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "atm-offset-test-{}-{}.jsonl",
+            std::process::id(),
+            name
+        ));
+        fs::write(&path, content).expect("write temp jsonl");
+        path
+    }
+
+    #[test]
+    fn parse_file_from_consumes_complete_lines_and_reports_offset() {
+        let content = format!("{}\n{}\n", sample_jsonl_line(), sample_jsonl_line_with_cache_ttl());
+        let path = temp_jsonl("complete", &content);
+
+        let (entries, offset) = ClaudeCodeProvider::parse_file_from(&path, 0).expect("parse");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(offset, content.len() as u64);
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn parse_file_from_leaves_partial_trailing_line_unconsumed() {
+        let complete = format!("{}\n", sample_jsonl_line());
+        let partial = &sample_jsonl_line_with_cache_ttl()[..40]; // no trailing newline
+        let path = temp_jsonl("partial", &format!("{}{}", complete, partial));
+
+        let (entries, offset) = ClaudeCodeProvider::parse_file_from(&path, 0).expect("parse");
+        assert_eq!(entries.len(), 1, "partial line must not produce an entry");
+        assert_eq!(offset, complete.len() as u64, "offset must stop before the partial line");
+
+        // Writer completes the partial line — resuming from the offset picks it up.
+        let full = format!("{}{}\n", complete, sample_jsonl_line_with_cache_ttl());
+        fs::write(&path, &full).expect("rewrite temp jsonl");
+        let (tail_entries, new_offset) = ClaudeCodeProvider::parse_file_from(&path, offset).expect("parse");
+        assert_eq!(tail_entries.len(), 1);
+        assert!(tail_entries.contains_key("msg-2:req-2"));
+        assert_eq!(new_offset, full.len() as u64);
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn last_complete_line_offset_handles_trailing_states() {
+        // Ends with newline → full size.
+        let complete = format!("{}\n", sample_jsonl_line());
+        let path = temp_jsonl("llo-complete", &complete);
+        assert_eq!(
+            ClaudeCodeProvider::last_complete_line_offset(&path, complete.len() as u64),
+            complete.len() as u64
+        );
+        let _ = fs::remove_file(&path);
+
+        // Ends mid-line → offset after the last newline.
+        let partial = format!("{}\n{{\"trunc", sample_jsonl_line());
+        let path = temp_jsonl("llo-partial", &partial);
+        assert_eq!(
+            ClaudeCodeProvider::last_complete_line_offset(&path, partial.len() as u64),
+            (sample_jsonl_line().len() + 1) as u64
+        );
+        let _ = fs::remove_file(&path);
+
+        // No newline at all → 0.
+        let path = temp_jsonl("llo-none", "{\"no-newline");
+        assert_eq!(ClaudeCodeProvider::last_complete_line_offset(&path, 12), 0);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn parse_file_from_resumes_after_append_without_rereading_prefix() {
+        let first = format!("{}\n", sample_jsonl_line());
+        let path = temp_jsonl("append", &first);
+
+        let (entries, offset) = ClaudeCodeProvider::parse_file_from(&path, 0).expect("parse");
+        assert_eq!(entries.len(), 1);
+
+        // Append a second line and resume from the previous offset.
+        let appended = format!("{}{}\n", first, sample_jsonl_line_with_web_search());
+        fs::write(&path, &appended).expect("append temp jsonl");
+        let (tail_entries, new_offset) = ClaudeCodeProvider::parse_file_from(&path, offset).expect("parse");
+        assert_eq!(tail_entries.len(), 1, "only the appended line should be parsed");
+        assert!(tail_entries.contains_key("msg-3:req-3"));
+        assert_eq!(new_offset, appended.len() as u64);
+
+        let _ = fs::remove_file(&path);
     }
 }
