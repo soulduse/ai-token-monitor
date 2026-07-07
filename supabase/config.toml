@@ -17,6 +17,11 @@ extra_search_path = ["public", "extensions"]
 # for accidental or malicious requests.
 max_rows = 1000
 
+[functions.badge]
+# Badge SVGs are embedded in GitHub READMEs, which fetch without any auth header —
+# JWT verification must stay off or every embed 401s at the gateway.
+verify_jwt = false
+
 [api.tls]
 # Enable HTTPS endpoints locally using a self-signed certificate.
 enabled = false
