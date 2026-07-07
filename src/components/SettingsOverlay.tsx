@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useSettings } from "../contexts/SettingsContext";
 import { useAuth } from "../hooks/useAuth";
+import { restoreServerHistory } from "../lib/serverHistory";
 import { useI18n, LANGUAGE_OPTIONS } from "../i18n/I18nContext";
 import { InfoTooltip } from "./InfoTooltip";
 import type { Locale } from "../i18n/I18nContext";
@@ -359,6 +360,20 @@ function AccountTab({
   leaderboardAvailable: boolean;
 }) {
   const t = useI18n();
+  const [restoreState, setRestoreState] = useState<"idle" | "running" | "done" | "error">("idle");
+  const [restoredCount, setRestoredCount] = useState(0);
+
+  const handleRestore = async () => {
+    if (!user || restoreState === "running") return;
+    setRestoreState("running");
+    try {
+      const n = await restoreServerHistory(user.id);
+      setRestoredCount(n);
+      setRestoreState("done");
+    } catch {
+      setRestoreState("error");
+    }
+  };
 
   return (
     <div>
@@ -410,6 +425,7 @@ function AccountTab({
           </SettingRow>
 
           {user ? (
+            <>
             <div style={{
               display: "flex",
               alignItems: "center",
@@ -448,6 +464,42 @@ function AccountTab({
                 {t("settings.signOut")}
               </button>
             </div>
+
+            {/* Restore daily history uploaded from other devices */}
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "6px 0",
+              gap: 8,
+            }}>
+              <span style={{ fontSize: 11, color: restoreState === "error" ? "var(--accent-red, #e5484d)" : "var(--text-secondary)" }}>
+                {restoreState === "done"
+                  ? t("settings.restoreHistoryDone", { count: restoredCount })
+                  : restoreState === "error"
+                    ? t("settings.restoreHistoryError")
+                    : t("settings.restoreHistory")}
+              </span>
+              <button
+                onClick={handleRestore}
+                disabled={restoreState === "running"}
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  padding: "3px 8px",
+                  borderRadius: 4,
+                  border: "none",
+                  cursor: restoreState === "running" ? "default" : "pointer",
+                  background: "var(--heat-0)",
+                  color: "var(--text-secondary)",
+                  opacity: restoreState === "running" ? 0.6 : 1,
+                  flexShrink: 0,
+                }}
+              >
+                {restoreState === "running" ? "…" : t("settings.restoreHistoryBtn")}
+              </button>
+            </div>
+            </>
           ) : (
             <>
               <button

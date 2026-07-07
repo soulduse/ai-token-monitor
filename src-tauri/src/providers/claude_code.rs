@@ -390,6 +390,7 @@ impl ClaudeCodeProvider {
                 date: entry.date.clone(), tokens: HashMap::new(), cost_usd: 0.0,
                 messages: 0, sessions: 0, tool_calls: 0,
                 input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0,
+                hydrated: false,
             });
             *daily.tokens.entry(entry.model.clone()).or_insert(0) += total_tokens;
             daily.cost_usd += cost;
@@ -820,6 +821,7 @@ fn aggregate_entries(
             + entry.cache_read_input_tokens + entry.cache_creation_input_tokens;
 
         let daily = daily_map.entry(entry.date.clone()).or_insert_with(|| DailyUsage {
+            hydrated: false,
             date: entry.date.clone(), tokens: HashMap::new(), cost_usd: 0.0,
             messages: 0, sessions: 0, tool_calls: 0,
             input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0,

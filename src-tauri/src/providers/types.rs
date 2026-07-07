@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DailyUsage {
     pub date: String,
     pub tokens: HashMap<String, u64>,
@@ -13,6 +13,11 @@ pub struct DailyUsage {
     pub output_tokens: u64,
     pub cache_read_tokens: u64,
     pub cache_write_tokens: u64,
+    /// True when this day was restored from the server (daily_snapshots) instead of
+    /// parsed from local logs. Upload/backfill paths must skip hydrated days so
+    /// server-derived totals are never echoed back as a new device's data.
+    #[serde(default)]
+    pub hydrated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

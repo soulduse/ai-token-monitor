@@ -41,10 +41,14 @@ pub async fn get_all_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
     .await
     .map_err(|e| e.to_string())?;
 
-    if result.is_ok() {
-        crate::update_tray_title(&app);
+    match result {
+        Ok(mut stats) => {
+            crate::hydration::apply(&mut stats, "claude");
+            crate::update_tray_title(&app);
+            Ok(stats)
+        }
+        Err(e) => Err(e),
     }
-    result
 }
 
 #[tauri::command]
@@ -60,10 +64,14 @@ pub async fn get_codex_stats(app: tauri::AppHandle) -> Result<AllStats, String> 
     .await
     .map_err(|e| e.to_string())?;
 
-    if result.is_ok() {
-        crate::update_tray_title(&app);
+    match result {
+        Ok(mut stats) => {
+            crate::hydration::apply(&mut stats, "codex");
+            crate::update_tray_title(&app);
+            Ok(stats)
+        }
+        Err(e) => Err(e),
     }
-    result
 }
 
 #[tauri::command]
@@ -84,10 +92,14 @@ pub async fn get_opencode_stats(app: tauri::AppHandle) -> Result<AllStats, Strin
     .await
     .map_err(|e| e.to_string())?;
 
-    if result.is_ok() {
-        crate::update_tray_title(&app);
+    match result {
+        Ok(mut stats) => {
+            crate::hydration::apply(&mut stats, "opencode");
+            crate::update_tray_title(&app);
+            Ok(stats)
+        }
+        Err(e) => Err(e),
     }
-    result
 }
 
 #[tauri::command]
@@ -107,10 +119,14 @@ pub async fn get_kimi_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
     .await
     .map_err(|e| e.to_string())?;
 
-    if result.is_ok() {
-        crate::update_tray_title(&app);
+    match result {
+        Ok(mut stats) => {
+            crate::hydration::apply(&mut stats, "kimi");
+            crate::update_tray_title(&app);
+            Ok(stats)
+        }
+        Err(e) => Err(e),
     }
-    result
 }
 
 #[tauri::command]
@@ -130,10 +146,14 @@ pub async fn get_glm_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
     .await
     .map_err(|e| e.to_string())?;
 
-    if result.is_ok() {
-        crate::update_tray_title(&app);
+    match result {
+        Ok(mut stats) => {
+            crate::hydration::apply(&mut stats, "glm");
+            crate::update_tray_title(&app);
+            Ok(stats)
+        }
+        Err(e) => Err(e),
     }
-    result
 }
 
 #[tauri::command]
@@ -155,10 +175,14 @@ pub async fn get_gjc_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
     .await
     .map_err(|e| e.to_string())?;
 
-    if result.is_ok() {
-        crate::update_tray_title(&app);
+    match result {
+        Ok(mut stats) => {
+            crate::hydration::apply(&mut stats, "gjc");
+            crate::update_tray_title(&app);
+            Ok(stats)
+        }
+        Err(e) => Err(e),
     }
-    result
 }
 
 #[tauri::command]
@@ -799,4 +823,23 @@ pub async fn enable_usage_tracking(app: tauri::AppHandle) -> Result<(), String> 
 pub async fn test_webhook(platform: String) -> Result<String, String> {
     let secrets = load_ai_keys().ok_or("No webhook credentials configured")?;
     crate::webhooks::test_webhook_endpoint(&platform, &secrets).await
+}
+
+#[tauri::command]
+pub fn set_server_history(
+    app: tauri::AppHandle,
+    store: crate::hydration::HydrationStore,
+) -> Result<usize, String> {
+    let count = store.providers.values().map(|v| v.len()).sum();
+    crate::hydration::set_store(store)?;
+    // Nudge every stats consumer to refetch so restored days appear immediately.
+    let _ = app.emit("stats-updated", ());
+    Ok(count)
+}
+
+#[tauri::command]
+pub fn clear_server_history(app: tauri::AppHandle) -> Result<(), String> {
+    crate::hydration::clear_store()?;
+    let _ = app.emit("stats-updated", ());
+    Ok(())
 }

@@ -1,5 +1,6 @@
 mod ai_translate;
 mod commands;
+mod hydration;
 mod oauth_usage;
 mod providers;
 mod url_metadata;
@@ -882,6 +883,8 @@ pub fn run() {
             commands::get_preferences,
             commands::set_preferences,
             commands::get_stable_device_id,
+            commands::set_server_history,
+            commands::clear_server_history,
             commands::detect_claude_dirs,
             commands::validate_claude_dir,
             commands::detect_codex_dirs,
