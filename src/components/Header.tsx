@@ -396,6 +396,7 @@ export function Header({ stats, updater }: Props) {
 
       {/* Settings button */}
       <button
+        data-tour="settings-button"
         onClick={() => setShowSettings(!showSettings)}
         title={t("header.settings")}
         style={{

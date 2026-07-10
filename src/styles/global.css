@@ -191,6 +191,16 @@ body {
   to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
+@keyframes star-prompt-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes tour-card-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 @keyframes typingDot {
   0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); }
   30% { opacity: 1; transform: scale(1.1); }

@@ -110,7 +110,7 @@ export function Heatmap({ daily, weeks: WEEKS = DEFAULT_WEEKS }: Props) {
   }, [daily, WEEKS]);
 
   return (
-    <div style={{
+    <div data-tour="heatmap" style={{
       background: "var(--bg-card)",
       borderRadius: "var(--radius-lg)",
       padding: 16,
