@@ -45,7 +45,7 @@ export function TodaySummary({ today, weekAvg }: Props) {
     : 0;
 
   return (
-    <div style={{
+    <div data-tour="today-summary" style={{
       background: "var(--bg-card)",
       borderRadius: "var(--radius-lg)",
       padding: 16,

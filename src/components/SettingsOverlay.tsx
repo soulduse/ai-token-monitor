@@ -3,6 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useSettings } from "../contexts/SettingsContext";
+import { useOnboarding } from "../contexts/OnboardingContext";
 import { useAuth } from "../hooks/useAuth";
 import { restoreServerHistory } from "../lib/serverHistory";
 import { useI18n, LANGUAGE_OPTIONS } from "../i18n/I18nContext";
@@ -20,6 +21,7 @@ interface Props {
 
 export function SettingsOverlay({ visible, onClose, initialTab, centered }: Props) {
   const { prefs, updatePrefs } = useSettings();
+  const { start: startOnboarding } = useOnboarding();
   const { user, profile, signIn, signOut, showOauthFallback, available: leaderboardAvailable } = useAuth();
   const [appVersion, setAppVersion] = useState("");
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? "general");
@@ -139,7 +141,14 @@ export function SettingsOverlay({ visible, onClose, initialTab, centered }: Prop
         {/* Tab content */}
         <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
           {activeTab === "general" && (
-            <GeneralTab prefs={prefs} updatePrefs={updatePrefs} />
+            <GeneralTab
+              prefs={prefs}
+              updatePrefs={updatePrefs}
+              onReplayOnboarding={() => {
+                onClose();
+                startOnboarding();
+              }}
+            />
           )}
           {activeTab === "account" && (
             <AccountTab
@@ -241,9 +250,11 @@ export function SettingsOverlay({ visible, onClose, initialTab, centered }: Prop
 function GeneralTab({
   prefs,
   updatePrefs,
+  onReplayOnboarding,
 }: {
   prefs: ReturnType<typeof useSettings>["prefs"];
   updatePrefs: ReturnType<typeof useSettings>["updatePrefs"];
+  onReplayOnboarding: () => void;
 }) {
   return (
     <div>
@@ -334,6 +345,24 @@ function GeneralTab({
           />
         </SettingRow>
       )}
+
+      <SettingRow label={useI18n()("settings.replayOnboarding")}>
+        <button
+          onClick={onReplayOnboarding}
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            padding: "4px 12px",
+            borderRadius: 6,
+            border: "none",
+            background: "rgba(124, 92, 252, 0.1)",
+            color: "var(--accent-purple)",
+            cursor: "pointer",
+          }}
+        >
+          {useI18n()("settings.replayOnboarding.button")}
+        </button>
+      </SettingRow>
     </div>
   );
 }

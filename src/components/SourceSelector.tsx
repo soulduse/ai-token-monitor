@@ -117,7 +117,7 @@ export function SourceSelector() {
   });
 
   return (
-    <div style={{
+    <div data-tour="source-selector" style={{
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",

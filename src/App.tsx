@@ -30,6 +30,9 @@ import { SalaryComparator } from "./components/SalaryComparator";
 import { UsageAlertBar } from "./components/UsageAlertBar";
 import { MiniProfile } from "./components/MiniProfile";
 import { OAuthFallbackModal } from "./components/OAuthFallbackModal";
+import { StarPromptToast } from "./components/StarPromptToast";
+import { OnboardingOverlay } from "./components/OnboardingOverlay";
+import { OnboardingProvider } from "./contexts/OnboardingContext";
 import { AnalyticsSubTabs } from "./components/AnalyticsSubTabs";
 import type { AnalyticsSubTab } from "./components/AnalyticsSubTabs";
 import { ProjectBreakdown } from "./components/ProjectBreakdown";
@@ -264,6 +267,11 @@ function AppContent() {
           install shows past usage; clears it on sign-out. */}
       <ServerHistoryRestorer />
       <OAuthFallbackModal />
+      {/* Occasional GitHub star ask; useStarPrompt gates how rarely it shows. */}
+      <StarPromptToast daily={stats.daily} />
+
+      {/* First-run feature tour; auto-shows only its opt-in welcome card. */}
+      <OnboardingOverlay activeTab={activeTab} onRequestTab={setActiveTab} />
     </PopoverShell>
   );
 }
@@ -283,7 +291,9 @@ function App() {
       <I18nBridge>
         <AuthProvider>
           <MiniProfileProvider>
-            <AppContent />
+            <OnboardingProvider>
+              <AppContent />
+            </OnboardingProvider>
           </MiniProfileProvider>
         </AuthProvider>
       </I18nBridge>

@@ -28,12 +28,14 @@ export function TabBar({ activeTab, onChange, chatBadge }: Props) {
         label={t("tab.analytics")}
         active={activeTab === "analytics"}
         onClick={() => onChange("analytics")}
+        dataTour="tab-analytics"
       />
       <TabButton
         label={t("tab.leaderboard")}
         active={activeTab === "leaderboard"}
         onClick={() => onChange("leaderboard")}
         icon="🏆"
+        dataTour="tab-leaderboard"
       />
       <TabButton
         label={t("tab.chat")}
@@ -41,6 +43,7 @@ export function TabBar({ activeTab, onChange, chatBadge }: Props) {
         onClick={() => onChange("chat")}
         icon="💬"
         badge={chatBadge}
+        dataTour="tab-chat"
       />
     </div>
   );
@@ -52,16 +55,19 @@ function TabButton({
   onClick,
   icon,
   badge,
+  dataTour,
 }: {
   label: string;
   active: boolean;
   onClick: () => void;
   icon?: string;
   badge?: number;
+  dataTour?: string;
 }) {
   return (
     <button
       onClick={onClick}
+      data-tour={dataTour}
       style={{
         flex: 1,
         padding: "6px 8px",
