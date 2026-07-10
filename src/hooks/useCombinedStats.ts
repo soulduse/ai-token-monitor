@@ -9,15 +9,17 @@ interface UseCombinedStatsProps {
   includeKimi: boolean;
   includeGlm: boolean;
   includeGjc: boolean;
+  includeHermes: boolean;
 }
 
-export function useCombinedStats({ includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc }: UseCombinedStatsProps) {
+export function useCombinedStats({ includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc, includeHermes }: UseCombinedStatsProps) {
   const claude = useTokenStats("claude");
   const codex = useTokenStats("codex");
   const opencode = useTokenStats("opencode");
   const kimi = useTokenStats("kimi");
   const glm = useTokenStats("glm");
   const gjc = useTokenStats("gjc");
+  const hermes = useTokenStats("hermes");
 
   const stats = useMemo<AllStats | null>(() => {
     const sources: (AllStats | null)[] = [];
@@ -27,6 +29,7 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
     if (includeKimi) sources.push(kimi.stats);
     if (includeGlm) sources.push(glm.stats);
     if (includeGjc) sources.push(gjc.stats);
+    if (includeHermes) sources.push(hermes.stats);
 
     const validStats = sources.filter((s): s is AllStats => s !== null);
     if (validStats.length === 0) {
@@ -36,14 +39,15 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
       if (includeKimi) return kimi.stats;
       if (includeGlm) return glm.stats;
       if (includeGjc) return gjc.stats;
+      if (includeHermes) return hermes.stats;
       return null;
     }
     if (validStats.length === 1) return validStats[0];
 
     return mergeStats(validStats);
-  }, [claude.stats, codex.stats, opencode.stats, kimi.stats, glm.stats, gjc.stats, includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc]);
+  }, [claude.stats, codex.stats, opencode.stats, kimi.stats, glm.stats, gjc.stats, hermes.stats, includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc, includeHermes]);
 
-  const loading = (includeClaude && claude.loading) || (includeCodex && codex.loading) || (includeOpencode && opencode.loading) || (includeKimi && kimi.loading) || (includeGlm && glm.loading) || (includeGjc && gjc.loading);
+  const loading = (includeClaude && claude.loading) || (includeCodex && codex.loading) || (includeOpencode && opencode.loading) || (includeKimi && kimi.loading) || (includeGlm && glm.loading) || (includeGjc && gjc.loading) || (includeHermes && hermes.loading);
   const error = useMemo(() => {
     if (stats) return null;
 
@@ -53,9 +57,10 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
     if (includeKimi && kimi.error) return kimi.error;
     if (includeGlm && glm.error) return glm.error;
     if (includeGjc && gjc.error) return gjc.error;
+    if (includeHermes && hermes.error) return hermes.error;
 
     return null;
-  }, [stats, includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc, claude.error, codex.error, opencode.error, kimi.error, glm.error, gjc.error]);
+  }, [stats, includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc, includeHermes, claude.error, codex.error, opencode.error, kimi.error, glm.error, gjc.error, hermes.error]);
 
   return { stats, loading, error };
 }

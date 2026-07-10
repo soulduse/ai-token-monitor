@@ -11,6 +11,7 @@ use crate::providers::claude_code::ClaudeCodeProvider;
 use crate::providers::codex::CodexProvider;
 use crate::providers::gjc::GjcProvider;
 use crate::providers::glm::GlmProvider;
+use crate::providers::hermes::HermesProvider;
 use crate::providers::kimi::KimiProvider;
 use crate::providers::opencode::OpenCodeProvider;
 use crate::providers::pricing;
@@ -183,6 +184,33 @@ pub async fn get_gjc_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
         }
         Err(e) => Err(e),
     }
+}
+
+#[tauri::command]
+pub async fn get_hermes_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
+    let result = tauri::async_runtime::spawn_blocking(|| {
+        let provider = HermesProvider::new();
+        if !provider.is_available() {
+            return Err("Hermes stats not available".to_string());
+        }
+        provider.fetch_stats()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    match result {
+        Ok(mut stats) => {
+            crate::hydration::apply(&mut stats, "hermes");
+            crate::update_tray_title(&app);
+            Ok(stats)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+#[tauri::command]
+pub fn is_hermes_available() -> bool {
+    HermesProvider::new().is_available()
 }
 
 #[tauri::command]
