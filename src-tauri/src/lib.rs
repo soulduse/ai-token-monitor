@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::Mutex;
+use std::sync::OnceLock;
 use std::thread;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -24,6 +25,10 @@ static LAST_SHOWN_MS: AtomicU64 = AtomicU64::new(0);
 /// no beat arrives shortly after, the webview's content process is dead
 /// (WKWebView renders solid white and all JS stops) — we then reload it.
 static WEBVIEW_HEARTBEAT_MS: AtomicU64 = AtomicU64::new(0);
+
+/// Process start time — the watchdog never reloads during the cold-start
+/// window, when heavy first-parse CPU contention can delay ping round-trips.
+static PROCESS_START: OnceLock<Instant> = OnceLock::new();
 
 /// Stores a deep-link URL that arrived before the frontend was ready (cold start).
 /// The frontend can retrieve it via the `get_pending_deep_link` command.
@@ -839,16 +844,35 @@ fn heartbeat() {
 /// visibilitychange is not guaranteed to fire across native orderOut/
 /// orderFrontRegardless transitions, so the frontend's own beats can lag.
 fn watchdog_check_after_show(window: tauri::WebviewWindow, shown_at_ms: u64) {
+    // Cold-start grace: the first full JSONL parse can saturate CPU for
+    // minutes on heavy corpora, delaying ping round-trips far past any fixed
+    // window — and a content process that died this early is practically
+    // impossible. Reloading here would restart the frontend's stats fetches
+    // mid-parse and make startup dramatically slower, not faster.
+    let in_cold_start = PROCESS_START
+        .get()
+        .map_or(true, |s| s.elapsed() < std::time::Duration::from_secs(180));
+    if in_cold_start {
+        return;
+    }
     // Safety: eval() runs a fixed compile-time constant in our own webview —
     // no user or external input is interpolated into the script.
     let _ = window.eval("window.__heartbeat && window.__heartbeat()");
     std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(1500));
-        if !window.is_visible().unwrap_or(false) {
-            return;
-        }
-        if WEBVIEW_HEARTBEAT_MS.load(Ordering::SeqCst) >= shown_at_ms {
-            return;
+        // Two strikes before reloading: a single ping can lose the race
+        // against momentary CPU saturation (large JSONL re-parses); a
+        // genuinely dead content process fails both.
+        for attempt in 0..2 {
+            std::thread::sleep(std::time::Duration::from_millis(3000));
+            if !window.is_visible().unwrap_or(false) {
+                return;
+            }
+            if WEBVIEW_HEARTBEAT_MS.load(Ordering::SeqCst) >= shown_at_ms {
+                return;
+            }
+            if attempt == 0 {
+                let _ = window.eval("window.__heartbeat && window.__heartbeat()");
+            }
         }
         eprintln!("[WATCHDOG] no heartbeat after show — reloading dead webview");
         let _ = window.reload();
@@ -1137,6 +1161,8 @@ pub fn run() {
                     _ => {}
                 }
             });
+
+            let _ = PROCESS_START.set(Instant::now());
 
             // Initial tray cost update
             update_tray_title(&app.handle());
