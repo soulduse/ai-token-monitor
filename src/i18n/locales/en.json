@@ -242,6 +242,7 @@
   "update.restartBtn": "Restart",
   "update.error": "Update failed",
   "update.restartManual": "Please restart manually",
+  "update.whatsNew": "What's new in v{{version}}",
   "settings.usageAlerts": "Usage Alerts",
   "settings.usageTracking": "Usage Tracking",
   "usageAlert.title": "Usage",

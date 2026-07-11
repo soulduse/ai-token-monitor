@@ -242,6 +242,7 @@
   "update.restartBtn": "재시작",
   "update.error": "업데이트 실패",
   "update.restartManual": "수동으로 재시작해주세요",
+  "update.whatsNew": "v{{version}} 업데이트 내용",
   "settings.usageAlerts": "사용량 알림",
   "settings.usageTracking": "사용량 추적",
   "usageAlert.title": "사용량",

@@ -236,6 +236,7 @@
   "update.restartBtn": "Neustarten",
   "update.error": "Update fehlgeschlagen",
   "update.restartManual": "Bitte manuell neu starten",
+  "update.whatsNew": "Neu in v{{version}}",
   "settings.usageAlerts": "Nutzungswarnungen",
   "settings.usageTracking": "Nutzungsverfolgung",
   "usageAlert.title": "Nutzung",

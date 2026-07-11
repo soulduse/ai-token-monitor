@@ -6,6 +6,8 @@ import { invoke } from "@tauri-apps/api/core";
 export interface UpdaterState {
   updateAvailable: boolean;
   version: string;
+  /** Release-notes markdown from latest.json (empty when the manifest has none). */
+  notes: string;
   downloading: boolean;
   downloaded: boolean;
   progress: number;
@@ -18,6 +20,7 @@ export interface UpdaterState {
 export function useUpdater(): UpdaterState {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [version, setVersion] = useState("");
+  const [notes, setNotes] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -36,6 +39,7 @@ export function useUpdater(): UpdaterState {
         if (update) {
           updateRef.current = update;
           setVersion(update.version);
+          setNotes(update.body ?? "");
           setUpdateAvailable(true);
         }
       } catch (e) {
@@ -107,6 +111,7 @@ export function useUpdater(): UpdaterState {
   return {
     updateAvailable,
     version,
+    notes,
     downloading,
     downloaded,
     progress,

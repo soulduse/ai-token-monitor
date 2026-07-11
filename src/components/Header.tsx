@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import { parseReleaseNotes, categoryEmoji } from "../lib/releaseNotes";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -481,7 +482,24 @@ const indicatorWrapStyle: React.CSSProperties = {
 };
 
 function UpdateIndicator({ updater, t }: { updater: UpdaterState; t: ReturnType<typeof useI18n> }) {
-  const { version, downloading, downloaded, progress, error, restartFailed, download, install } = updater;
+  const { version, notes, downloading, downloaded, progress, error, restartFailed, download, install } = updater;
+  const [showNotes, setShowNotes] = useState(false);
+  const noteItems = parseReleaseNotes(notes);
+
+  // Close the what's-new popover on Escape without hiding the window
+  // (capture + preventDefault, the app-wide modal convention).
+  useEffect(() => {
+    if (!showNotes) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setShowNotes(false);
+      }
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [showNotes]);
 
   const stopDrag = (e: React.MouseEvent) => e.stopPropagation();
 
@@ -527,11 +545,94 @@ function UpdateIndicator({ updater, t }: { updater: UpdaterState; t: ReturnType<
   }
 
   return (
-    <div style={indicatorWrapStyle} onMouseDown={stopDrag}>
-      <span style={{ color: "var(--accent, #3b82f6)" }}>
-        {t("update.available", { version })}
-      </span>
+    <div style={{ ...indicatorWrapStyle, position: "relative" }} onMouseDown={stopDrag}>
+      {noteItems.length > 0 ? (
+        <button
+          onClick={() => setShowNotes((v) => !v)}
+          title={t("update.whatsNew", { version })}
+          style={{
+            background: "none",
+            border: "none",
+            padding: 0,
+            font: "inherit",
+            color: "var(--accent, #3b82f6)",
+            cursor: "pointer",
+            textDecoration: "underline dotted",
+            textUnderlineOffset: 3,
+          }}
+        >
+          {t("update.available", { version })}
+        </button>
+      ) : (
+        <span style={{ color: "var(--accent, #3b82f6)" }}>
+          {t("update.available", { version })}
+        </span>
+      )}
       <button onClick={download} style={indicatorBtnStyle}>{t("update.download")}</button>
+
+      {showNotes && noteItems.length > 0 && (
+        <>
+          {/* click-away backdrop */}
+          <div
+            style={{ position: "fixed", inset: 0, zIndex: 99 }}
+            onClick={() => setShowNotes(false)}
+          />
+          <div style={{
+            position: "absolute",
+            top: "100%",
+            // Anchored to the indicator's left edge: the indicator sits near
+            // the window's left side, so centering (translateX(-50%)) would
+            // push the card past PopoverShell's overflow:hidden boundary.
+            left: 0,
+            marginTop: 8,
+            width: 270,
+            padding: "12px 14px",
+            borderRadius: "var(--radius-md)",
+            background: "var(--bg-card)",
+            color: "var(--text-primary)",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.25)",
+            border: "1px solid rgba(124, 92, 252, 0.15)",
+            zIndex: 100,
+            animation: "toast-in 0.2s ease",
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            cursor: "default",
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 800 }}>
+              {t("update.whatsNew", { version })}
+            </div>
+            <ul style={{
+              margin: 0,
+              padding: 0,
+              listStyle: "none",
+              display: "flex",
+              flexDirection: "column",
+              gap: 5,
+              maxHeight: 180,
+              overflowY: "auto",
+              fontSize: 11,
+              lineHeight: 1.45,
+              color: "var(--text-secondary)",
+              textAlign: "left",
+              fontWeight: 500,
+            }}>
+              {noteItems.map((item, i) => (
+                <li key={i} style={{ display: "flex", gap: 6 }}>
+                  <span style={{ flexShrink: 0 }}>{categoryEmoji(item.category)}</span>
+                  <span>{item.text}</span>
+                </li>
+              ))}
+            </ul>
+            <button
+              onClick={() => { setShowNotes(false); download(); }}
+              style={{ ...indicatorBtnStyle, padding: "6px 0", fontSize: 11, width: "100%" }}
+            >
+              {t("update.download")}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

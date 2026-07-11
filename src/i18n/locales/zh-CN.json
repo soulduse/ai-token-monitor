@@ -236,6 +236,7 @@
   "update.restartBtn": "重启",
   "update.error": "更新失败",
   "update.restartManual": "请手动重启",
+  "update.whatsNew": "v{{version}} 更新内容",
   "settings.usageAlerts": "用量提醒",
   "settings.usageTracking": "用量追踪",
   "usageAlert.title": "用量",
