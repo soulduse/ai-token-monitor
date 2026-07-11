@@ -33,6 +33,7 @@ static PENDING_DEEP_LINK: Mutex<Option<String>> = Mutex::new(None);
 /// so the setup block doesn't store a duplicate into PENDING_DEEP_LINK.
 static DEEP_LINK_EMITTED: AtomicBool = AtomicBool::new(false);
 use notify::{Event, EventKind, RecursiveMode, Watcher};
+use serde::{Deserialize, Serialize};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager};
 
@@ -275,6 +276,38 @@ fn check_and_fire_alerts(app_handle: &tauri::AppHandle) {
 }
 
 
+/// Last tray cost persisted to disk so a fresh launch can show it instantly.
+/// Display-only: it never feeds back into any aggregation — the real number
+/// is always recomputed from the JSONL logs, so tokens spent while the app
+/// was closed or during the cold-start parse are fully counted the moment
+/// the first parse lands.
+#[derive(Serialize, Deserialize)]
+struct TrayCostSnapshot {
+    date: String,
+    cost: f64,
+}
+
+fn tray_snapshot_path() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_default()
+        .join(".claude")
+        .join("ai-token-monitor-tray-cost.json")
+}
+
+fn load_tray_snapshot(today: &str) -> Option<f64> {
+    let snap: TrayCostSnapshot =
+        serde_json::from_str(&std::fs::read_to_string(tray_snapshot_path()).ok()?).ok()?;
+    // Yesterday's snapshot is not an estimate for today — today starts at $0.
+    (snap.date == today).then_some(snap.cost)
+}
+
+fn save_tray_snapshot(today: &str, cost: f64) {
+    let snap = TrayCostSnapshot { date: today.to_string(), cost };
+    if let Ok(json) = serde_json::to_string(&snap) {
+        let _ = std::fs::write(tray_snapshot_path(), json);
+    }
+}
+
 pub fn update_tray_title(app_handle: &tauri::AppHandle) {
     let prefs_path = dirs::home_dir()
         .unwrap_or_default()
@@ -290,51 +323,68 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
     } else {
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
 
-        let claude_cost = providers::claude_code::get_cached_stats()
-            .and_then(|s| s.daily.iter().find(|d| d.date == today).map(|d| d.cost_usd))
-            .unwrap_or(0.0);
-
-        let codex_cost = if prefs.include_codex {
-            providers::codex::get_cached_stats()
+        fn today_cost_of(stats: &Option<providers::types::AllStats>, today: &str) -> f64 {
+            stats
+                .as_ref()
                 .and_then(|s| s.daily.iter().find(|d| d.date == today).map(|d| d.cost_usd))
                 .unwrap_or(0.0)
+        }
+
+        // (warm, cost) per provider — a disabled provider counts as warm so it
+        // never blocks the snapshot handoff below.
+        let claude_stats = providers::claude_code::get_cached_stats();
+        let (claude_warm, claude_cost) = (claude_stats.is_some(), today_cost_of(&claude_stats, &today));
+
+        let (codex_warm, codex_cost) = if prefs.include_codex {
+            let s = providers::codex::get_cached_stats();
+            (s.is_some(), today_cost_of(&s, &today))
         } else {
-            0.0
+            (true, 0.0)
         };
 
-        let opencode_cost = if prefs.include_opencode {
-            providers::opencode::get_cached_stats()
-                .and_then(|s| s.daily.iter().find(|d| d.date == today).map(|d| d.cost_usd))
-                .unwrap_or(0.0)
+        let (opencode_warm, opencode_cost) = if prefs.include_opencode {
+            let s = providers::opencode::get_cached_stats();
+            (s.is_some(), today_cost_of(&s, &today))
         } else {
-            0.0
+            (true, 0.0)
         };
 
-        let kimi_cost = if prefs.include_kimi {
-            providers::kimi::get_cached_stats()
-                .and_then(|s| s.daily.iter().find(|d| d.date == today).map(|d| d.cost_usd))
-                .unwrap_or(0.0)
+        let (kimi_warm, kimi_cost) = if prefs.include_kimi {
+            let s = providers::kimi::get_cached_stats();
+            (s.is_some(), today_cost_of(&s, &today))
         } else {
-            0.0
+            (true, 0.0)
         };
 
-        let glm_cost = if prefs.include_glm {
-            providers::glm::get_cached_stats()
-                .and_then(|s| s.daily.iter().find(|d| d.date == today).map(|d| d.cost_usd))
-                .unwrap_or(0.0)
+        let (glm_warm, glm_cost) = if prefs.include_glm {
+            let s = providers::glm::get_cached_stats();
+            (s.is_some(), today_cost_of(&s, &today))
         } else {
-            0.0
+            (true, 0.0)
         };
 
-        let gjc_cost = if prefs.include_gjc {
-            providers::gjc::get_cached_stats()
-                .and_then(|s| s.daily.iter().find(|d| d.date == today).map(|d| d.cost_usd))
-                .unwrap_or(0.0)
+        let (gjc_warm, gjc_cost) = if prefs.include_gjc {
+            let s = providers::gjc::get_cached_stats();
+            (s.is_some(), today_cost_of(&s, &today))
         } else {
-            0.0
+            (true, 0.0)
         };
 
-        let today_cost = claude_cost + codex_cost + opencode_cost + kimi_cost + glm_cost + gjc_cost;
+        let computed = claude_cost + codex_cost + opencode_cost + kimi_cost + glm_cost + gjc_cost;
+        let warm = claude_warm && codex_warm && opencode_warm && kimi_warm && glm_warm && gjc_warm;
+
+        let today_cost = if warm {
+            // Every enabled provider has parsed — this is the real number.
+            // Persist it so the next launch never shows $0.00.
+            save_tray_snapshot(&today, computed);
+            computed
+        } else {
+            // Cold/partial start: the JSONL parse hasn't finished, so `computed`
+            // is an undercount. A day's cost only grows, so the better estimate
+            // is whichever is larger: the partial sum or the last persisted
+            // value from earlier today. Display-only — never saved.
+            computed.max(load_tray_snapshot(&today).unwrap_or(0.0))
+        };
         let cost_str = if today_cost >= 1.0 {
             format!("${:.0}", today_cost)
         } else {
