@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useCombinedStats } from "./hooks/useCombinedStats";
 import { useToday } from "./hooks/useToday";
 import { useUnreadChat } from "./hooks/useUnreadChat";
@@ -60,18 +59,9 @@ function AnalyticsEmptyState({ message }: { message: string }) {
 }
 
 function AppContent() {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // Only hide the window if no overlay/modal has already handled this Escape press
-      if (e.key === "Escape" && !e.defaultPrevented) {
-        invoke("hide_window").catch(() => {});
-      }
-    };
-    // Use capture=false so modal keydown handlers (which run first) can call
-    // e.preventDefault() to stop this from also closing the window.
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  // Escape → hide-window handling lives in main.tsx (module level) so it
+  // survives React crashes; modal handlers still preempt it via capture-phase
+  // preventDefault.
   const { prefs } = useSettings();
   const { stats, error, loading } = useCombinedStats({
     includeClaude: prefs.include_claude,

@@ -291,6 +291,8 @@
   "chat.typing.many": "{{name}} ve diğer {{count}} kişi yazıyor...",
   "chat.notification.mention": "{{name}} sizden bahsetti",
   "chat.notification.reply": "{{name}} mesajınızı yanıtladı",
+  "chat.reactedBy.you": "Siz",
+  "chat.reactedBy.more": "{{names}} ve {{count}} kişi daha",
   "settings.aiTranslation": "AI Çeviri",
   "settings.aiKeyGemini": "Gemini API Anahtarı",
   "settings.aiKeyOpenAI": "OpenAI API Anahtarı",

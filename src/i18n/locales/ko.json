@@ -297,6 +297,8 @@
   "chat.typing.many": "{{name}}님 외 {{count}}명이 입력 중...",
   "chat.notification.mention": "{{name}}님이 회원님을 멘션했습니다",
   "chat.notification.reply": "{{name}}님이 회원님의 메시지에 답글을 달았습니다",
+  "chat.reactedBy.you": "나",
+  "chat.reactedBy.more": "{{names}} 외 {{count}}명",
   "settings.aiTranslation": "AI 번역",
   "settings.aiKeyGemini": "Gemini API 키",
   "settings.aiKeyOpenAI": "OpenAI API 키",

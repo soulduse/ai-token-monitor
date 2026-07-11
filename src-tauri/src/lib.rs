@@ -19,6 +19,12 @@ static DIALOG_OPEN: AtomicBool = AtomicBool::new(false);
 /// Timestamp (ms) when the window was last shown — prevents immediate focus-loss hide.
 static LAST_SHOWN_MS: AtomicU64 = AtomicU64::new(0);
 
+/// Timestamp (ms) of the last frontend heartbeat. The frontend beats on an
+/// interval and on every visibilitychange→visible. If the window is shown and
+/// no beat arrives shortly after, the webview's content process is dead
+/// (WKWebView renders solid white and all JS stops) — we then reload it.
+static WEBVIEW_HEARTBEAT_MS: AtomicU64 = AtomicU64::new(0);
+
 /// Stores a deep-link URL that arrived before the frontend was ready (cold start).
 /// The frontend can retrieve it via the `get_pending_deep_link` command.
 static PENDING_DEEP_LINK: Mutex<Option<String>> = Mutex::new(None);
@@ -766,6 +772,40 @@ fn hide_window(window: tauri::WebviewWindow) {
 }
 
 #[tauri::command]
+fn heartbeat() {
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    WEBVIEW_HEARTBEAT_MS.store(now_ms, Ordering::SeqCst);
+}
+
+/// After showing the window, verify the webview is actually alive by pinging
+/// it directly: eval() runs in the page and answers with a heartbeat within
+/// milliseconds, while a dead content process silently drops the eval. If no
+/// beat lands within the wait window, reload (native WKWebView reload
+/// re-spawns the process; a dead page can never recover on its own and leaves
+/// an uncloseable blank white popover). The ping is deliberate — macOS
+/// visibilitychange is not guaranteed to fire across native orderOut/
+/// orderFrontRegardless transitions, so the frontend's own beats can lag.
+fn watchdog_check_after_show(window: tauri::WebviewWindow, shown_at_ms: u64) {
+    // Safety: eval() runs a fixed compile-time constant in our own webview —
+    // no user or external input is interpolated into the script.
+    let _ = window.eval("window.__heartbeat && window.__heartbeat()");
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        if !window.is_visible().unwrap_or(false) {
+            return;
+        }
+        if WEBVIEW_HEARTBEAT_MS.load(Ordering::SeqCst) >= shown_at_ms {
+            return;
+        }
+        eprintln!("[WATCHDOG] no heartbeat after show — reloading dead webview");
+        let _ = window.reload();
+    });
+}
+
+#[tauri::command]
 fn show_window(window: tauri::WebviewWindow) {
     eprintln!("[CMD] show_window called");
     let _ = window.show();
@@ -892,6 +932,7 @@ pub fn run() {
             get_home_dir,
             set_dialog_open,
             hide_window,
+            heartbeat,
             show_window,
             get_pending_deep_link,
             quit_app,
@@ -950,6 +991,8 @@ pub fn run() {
                                     let _ = window.show();
                                     let _ = window.set_focus();
                                 }
+
+                                watchdog_check_after_show(window.clone(), now_ms);
                             }
                         }
                     }

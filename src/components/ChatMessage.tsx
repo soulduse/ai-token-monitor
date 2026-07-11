@@ -4,6 +4,8 @@ import type { ChatMessage as ChatMessageData, ReactionMap, ReactionType } from "
 import { useMiniProfile } from "../contexts/MiniProfileContext";
 import { useI18n } from "../i18n/I18nContext";
 import { RichMessageContent } from "./RichMessageContent";
+import { getOrFetchProfile } from "../lib/profileCache";
+import { supabase } from "../lib/supabase";
 
 export function ReplyIcon({ size = 12 }: { size?: number }) {
   return (
@@ -72,6 +74,127 @@ const REACTION_EMOJIS: { type: ReactionType; emoji: string }[] = [
   { type: "dislike", emoji: "👎" },
 ];
 
+/** How many reactor names the hover tooltip spells out before collapsing the
+ *  rest into "and N more" — keeps a 100-like message readable. */
+const MAX_REACTOR_NAMES = 3;
+
+function fetchReactorProfile(uid: string) {
+  return getOrFetchProfile(uid, async () => {
+    if (!supabase) return { nickname: "Unknown", avatar_url: null };
+    const { data } = await supabase
+      .from("profiles")
+      .select("nickname, avatar_url")
+      .eq("id", uid)
+      .single();
+    return {
+      nickname: data?.nickname ?? "Unknown",
+      avatar_url: data?.avatar_url ?? null,
+    };
+  });
+}
+
+/** One reaction button with a hover tooltip naming who reacted ("나, Alice,
+ *  Bob 외 97명"). Names resolve through the shared profile cache, so repeat
+ *  hovers are instant and only the displayed few are ever fetched. */
+function ReactionChip({
+  emoji,
+  reactorIds,
+  isMine,
+  myUserId,
+  align,
+  onClick,
+}: {
+  emoji: string;
+  reactorIds: string[];
+  isMine: boolean;
+  myUserId?: string;
+  align: "left" | "right";
+  onClick: () => void;
+}) {
+  const t = useI18n();
+  const [showTip, setShowTip] = useState(false);
+  const [tip, setTip] = useState<string | null>(null);
+  const hoverSeq = useRef(0);
+  const count = reactorIds.length;
+
+  const onEnter = () => {
+    if (count === 0) return;
+    setTip(null); // drop the previous hover's names while fresh ones resolve
+    setShowTip(true);
+    const seq = ++hoverSeq.current;
+    // Put myself first (like most chat apps), then the rest in stored order.
+    const ordered = isMine && myUserId
+      ? [myUserId, ...reactorIds.filter((id) => id !== myUserId)]
+      : reactorIds;
+    const shown = ordered.slice(0, MAX_REACTOR_NAMES);
+    Promise.all(
+      shown.map((id) =>
+        id === myUserId
+          ? Promise.resolve(t("chat.reactedBy.you"))
+          : fetchReactorProfile(id).then((p) => p.nickname),
+      ),
+    ).then((names) => {
+      if (hoverSeq.current !== seq) return; // hover moved on
+      const extra = ordered.length - shown.length;
+      setTip(
+        extra > 0
+          ? t("chat.reactedBy.more", { names: names.join(", "), count: extra })
+          : names.join(", "),
+      );
+    });
+  };
+
+  return (
+    <span
+      style={{ position: "relative", display: "inline-flex" }}
+      onMouseEnter={onEnter}
+      onMouseLeave={() => setShowTip(false)}
+    >
+      <button
+        onClick={onClick}
+        style={{
+          background: isMine ? "rgba(124, 92, 252, 0.15)" : "transparent",
+          border: isMine ? "1px solid rgba(124, 92, 252, 0.3)" : "1px solid transparent",
+          borderRadius: 10,
+          padding: "1px 5px",
+          fontSize: 10,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 2,
+          color: "var(--text-secondary)",
+          lineHeight: 1.4,
+        }}
+      >
+        <span style={{ fontSize: 9 }}>{emoji}</span>
+        {count > 0 && <span style={{ fontSize: 8, fontWeight: 700 }}>{count}</span>}
+      </button>
+      {showTip && tip && count > 0 && (
+        <span style={{
+          position: "absolute",
+          bottom: "calc(100% + 4px)",
+          ...(align === "right" ? { right: 0 } : { left: 0 }),
+          background: "var(--text-primary)",
+          color: "var(--bg-primary)",
+          padding: "3px 8px",
+          borderRadius: 6,
+          fontSize: 9,
+          fontWeight: 600,
+          whiteSpace: "nowrap",
+          maxWidth: 240,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          pointerEvents: "none",
+          zIndex: 30,
+          boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+        }}>
+          {tip}
+        </span>
+      )}
+    </span>
+  );
+}
+
 /** Combined reaction + action toolbar below each bubble. Fixed height to prevent layout shift. */
 function BubbleToolbar({
   reactions,
@@ -133,30 +256,19 @@ function BubbleToolbar({
     }}>
       {/* Reactions */}
       {showReactions && REACTION_EMOJIS.map(({ type, emoji }) => {
-        const count = reactions?.[type]?.length ?? 0;
-        const isMine = reactions?.[type]?.includes(userId!) ?? false;
-        if (count === 0 && !hovered) return null;
+        const ids = reactions?.[type] ?? [];
+        const isMine = userId ? ids.includes(userId) : false;
+        if (ids.length === 0 && !hovered) return null;
         return (
-          <button
+          <ReactionChip
             key={type}
+            emoji={emoji}
+            reactorIds={ids}
+            isMine={isMine}
+            myUserId={userId}
+            align={align}
             onClick={() => onReact!(messageId, type)}
-            style={{
-              background: isMine ? "rgba(124, 92, 252, 0.15)" : "transparent",
-              border: isMine ? "1px solid rgba(124, 92, 252, 0.3)" : "1px solid transparent",
-              borderRadius: 10,
-              padding: "1px 5px",
-              fontSize: 10,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: 2,
-              color: "var(--text-secondary)",
-              lineHeight: 1.4,
-            }}
-          >
-            <span style={{ fontSize: 9 }}>{emoji}</span>
-            {count > 0 && <span style={{ fontSize: 8, fontWeight: 700 }}>{count}</span>}
-          </button>
+          />
         );
       })}
 

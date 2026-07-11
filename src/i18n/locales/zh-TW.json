@@ -291,6 +291,8 @@
   "chat.typing.many": "{{name}}和其他{{count}}人正在輸入...",
   "chat.notification.mention": "{{name}}提到了你",
   "chat.notification.reply": "{{name}}回覆了你的訊息",
+  "chat.reactedBy.you": "我",
+  "chat.reactedBy.more": "{{names}} 及其他 {{count}} 人",
   "settings.aiTranslation": "AI翻譯",
   "settings.aiKeyGemini": "Gemini API金鑰",
   "settings.aiKeyOpenAI": "OpenAI API金鑰",
