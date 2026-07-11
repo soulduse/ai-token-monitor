@@ -560,6 +560,50 @@ mod tests {
         assert!((p.input - 2.50).abs() < 0.001);
     }
 
+    // Regression guard: the GPT-5.6 tiers (Sol/Terra/Luna, GA 2026-07-09) must
+    // each match their own entry instead of falling through the substring chain
+    // to bare "gpt-5" ($1.25/$10) — Sol would be under-billed 4x, Luna
+    // over-billed on input.
+    #[test]
+    fn codex_gpt56_sol_pricing() {
+        let p = get_codex_pricing("gpt-5.6-sol");
+        assert!((p.input - 5.00).abs() < 0.001, "gpt-5.6-sol input must be $5/MTok, got ${}", p.input);
+        assert!((p.output - 30.00).abs() < 0.001, "gpt-5.6-sol output must be $30/MTok, got ${}", p.output);
+        assert!((p.cached_input - 0.50).abs() < 0.001);
+    }
+
+    #[test]
+    fn codex_gpt56_terra_pricing() {
+        let p = get_codex_pricing("gpt-5.6-terra");
+        assert!((p.input - 2.50).abs() < 0.001, "gpt-5.6-terra input must be $2.5/MTok, got ${}", p.input);
+        assert!((p.output - 15.00).abs() < 0.001);
+        assert!((p.cached_input - 0.25).abs() < 0.001);
+    }
+
+    #[test]
+    fn codex_gpt56_luna_pricing() {
+        let p = get_codex_pricing("gpt-5.6-luna");
+        assert!((p.input - 1.00).abs() < 0.001, "gpt-5.6-luna input must be $1/MTok, got ${}", p.input);
+        assert!((p.output - 6.00).abs() < 0.001);
+        assert!((p.cached_input - 0.10).abs() < 0.001);
+    }
+
+    // Bare "gpt-5.6" (no tier suffix) is priced at the flagship Sol rate and
+    // must not fall through to the bare "gpt-5" entry.
+    #[test]
+    fn codex_gpt56_bare_not_billed_as_gpt5() {
+        let p = get_codex_pricing("gpt-5.6");
+        assert!((p.input - 5.00).abs() < 0.001, "gpt-5.6 input must be $5/MTok, got ${}", p.input);
+        assert!((p.output - 30.00).abs() < 0.001);
+    }
+
+    #[test]
+    fn opencode_gpt56_terra_pricing() {
+        let p = get_opencode_pricing("openai/gpt-5.6-terra");
+        assert!((p.input - 2.50).abs() < 0.001, "opencode gpt-5.6-terra input must be $2.5/MTok, got ${}", p.input);
+        assert!((p.output - 15.00).abs() < 0.001);
+    }
+
     // Regression guard: "gpt-5-codex" (the default Codex CLI model) must match
     // its own entry, not fall through to the gpt-5.4 default and get billed at
     // $2.50/$15 instead of the correct $1.25/$10 (~1.9x overcharge). Reporter saw
