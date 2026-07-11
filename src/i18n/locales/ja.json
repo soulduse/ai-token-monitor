@@ -291,6 +291,8 @@
   "chat.typing.many": "{{name}}さん他{{count}}人が入力中...",
   "chat.notification.mention": "{{name}}さんがあなたをメンションしました",
   "chat.notification.reply": "{{name}}さんがあなたのメッセージに返信しました",
+  "chat.reactedBy.you": "自分",
+  "chat.reactedBy.more": "{{names}} 他{{count}}人",
   "settings.aiTranslation": "AI翻訳",
   "settings.aiKeyGemini": "Gemini APIキー",
   "settings.aiKeyOpenAI": "OpenAI APIキー",

@@ -291,6 +291,8 @@
   "chat.typing.many": "{{name}} y {{count}} más están escribiendo...",
   "chat.notification.mention": "{{name}} te mencionó",
   "chat.notification.reply": "{{name}} respondió a tu mensaje",
+  "chat.reactedBy.you": "Tú",
+  "chat.reactedBy.more": "{{names}} y {{count}} más",
   "settings.aiTranslation": "Traducción IA",
   "settings.aiKeyGemini": "Clave API de Gemini",
   "settings.aiKeyOpenAI": "Clave API de OpenAI",
