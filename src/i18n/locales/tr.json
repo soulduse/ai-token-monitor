@@ -236,6 +236,7 @@
   "update.restartBtn": "Yeniden Başlat",
   "update.error": "Güncelleme başarısız",
   "update.restartManual": "Lütfen manuel olarak yeniden başlatın",
+  "update.whatsNew": "v{{version}} yenilikleri",
   "settings.usageAlerts": "Kullanım Uyarıları",
   "settings.usageTracking": "Kullanım Takibi",
   "usageAlert.title": "Kullanım",

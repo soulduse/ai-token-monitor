@@ -236,6 +236,7 @@
   "update.restartBtn": "Riavvia",
   "update.error": "Aggiornamento fallito",
   "update.restartManual": "Riavvia manualmente",
+  "update.whatsNew": "Novità della v{{version}}",
   "settings.usageAlerts": "Avvisi di utilizzo",
   "settings.usageTracking": "Monitoraggio utilizzo",
   "usageAlert.title": "Utilizzo",

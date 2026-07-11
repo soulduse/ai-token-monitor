@@ -236,6 +236,7 @@
   "update.restartBtn": "Reiniciar",
   "update.error": "Error de actualización",
   "update.restartManual": "Reinicie manualmente",
+  "update.whatsNew": "Novedades de la v{{version}}",
   "settings.usageAlerts": "Alertas de uso",
   "settings.usageTracking": "Seguimiento de uso",
   "usageAlert.title": "Uso",
