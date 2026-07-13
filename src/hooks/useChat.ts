@@ -347,7 +347,9 @@ export function useChat(userId: string | null, enabled: boolean = true, visible:
   const sendMessage = useCallback(async (content: string, replyTo?: string, imageUrl?: string): Promise<{ error?: string }> => {
     if (!supabase || !userId) return { error: "Not authenticated" };
 
-    const trimmed = content.trim();
+    // NFC-normalize so decomposed Hangul (NFD from some IMEs/paste sources)
+    // is stored precomposed and renders identically for every reader.
+    const trimmed = content.trim().normalize("NFC");
     if (!trimmed && !imageUrl) return { error: "Invalid message" };
     if (trimmed.length > 500) return { error: "Invalid message" };
 
