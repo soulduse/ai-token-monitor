@@ -258,11 +258,17 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
   }, [input, sending, sendMessage, replyingTo, translatingReply, pendingImage, uploadingImage, userId, stopTyping]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // A composing Enter is the IME committing the current syllable, not a
+    // command — keep it away from BOTH the mention autocomplete (which would
+    // insert the highlighted suggestion) and the send path. Arrow keys etc.
+    // still reach the mention dropdown while composing.
+    const composingEnter = e.key === "Enter" && e.nativeEvent.isComposing;
     // Delegate to mention autocomplete first
-    if (mentionState && mentionRef.current?.handleKeyDown(e)) {
+    if (mentionState && !composingEnter && mentionRef.current?.handleKeyDown(e)) {
       return;
     }
     if (e.key === "Enter" && !e.shiftKey) {
+      if (composingEnter) return;
       e.preventDefault();
       handleSend();
     }

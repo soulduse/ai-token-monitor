@@ -600,10 +600,10 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
     });
 }
 
-/// Bring the app to the foreground so WKWebView renders.
+/// Bring the app to the foreground so WKWebView renders and input methods
+/// (Korean/CJK IME composition) work — both require an active app.
 /// Required on macOS 26 Tahoe where the app runs as Accessory policy
 /// and won't auto-activate — without this the window appears but content is white.
-/// Skipped in fullscreen Spaces to avoid Space-switching.
 #[cfg(target_os = "macos")]
 fn activate_app() {
     #[allow(deprecated)]
@@ -792,10 +792,14 @@ fn show_window_native(window: &tauri::WebviewWindow) {
 
             let in_fullscreen = is_fullscreen_space();
             if in_fullscreen {
-                // In fullscreen: skip activateIgnoringOtherApps to avoid
-                // Space-switching. The window is already visible via
-                // orderFrontRegardless + CanJoinAllSpaces + FullScreenAuxiliary.
-                // Try to accept keyboard input without full activation.
+                // The panel is already frontmost on the fullscreen Space via
+                // orderFrontRegardless + CanJoinAllSpaces + FullScreenAuxiliary,
+                // so activating the app here does not reorder windows into
+                // another Space. Activation is REQUIRED for text input: macOS
+                // input methods only compose inside the active app — without
+                // it, Korean typing in chat degrades to raw compatibility jamo
+                // ("자모 분리", user report 2026-07-13).
+                activate_app();
                 let _: () = msg_send![ns_win, makeKeyWindow];
             } else {
                 // Normal desktop: activate app (needed for WKWebView on Tahoe)
