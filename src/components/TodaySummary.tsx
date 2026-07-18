@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { DailyUsage } from "../lib/types";
 import type { DateNav } from "../hooks/useDateNav";
@@ -6,6 +6,7 @@ import { formatTokens, formatCost, formatNavDate, getTotalTokens, getDayCacheTok
 import { useSettings } from "../contexts/SettingsContext";
 import { InfoTooltip } from "./InfoTooltip";
 import { DateNavArrows } from "./DateNavigator";
+import { DateNavCalendar } from "./DateNavCalendar";
 import { useI18n } from "../i18n/I18nContext";
 
 interface PricingRow {
@@ -27,12 +28,17 @@ interface Props {
   today: DailyUsage | null;
   weekAvg: number;
   nav: DateNav;
+  dailyTokens: Record<string, number>;
 }
 
-export function TodaySummary({ today, weekAvg, nav }: Props) {
+export function TodaySummary({ today, weekAvg, nav, dailyTokens }: Props) {
   const { prefs } = useSettings();
   const t = useI18n();
   const [pricing, setPricing] = useState<PricingTable | null>(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const calendarAnchorRef = useRef<HTMLButtonElement>(null);
+  // No selectable range without data — don't offer a fully-disabled picker.
+  const pickable = nav.minDate !== null;
   const totalTokens = today ? getTotalTokens(today.tokens) : 0;
   const cacheTokens = today ? getDayCacheTokens(today) : 0;
   const cost = today?.cost_usd ?? 0;
@@ -55,26 +61,53 @@ export function TodaySummary({ today, weekAvg, nav }: Props) {
       boxShadow: "var(--shadow-card)",
     }}>
       <div style={{
+        position: "relative",
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
         marginBottom: 8,
       }}>
-        <span
-          onClick={nav.isToday ? undefined : nav.goToday}
-          title={nav.isToday ? undefined : t("dateNav.backToToday")}
+        <button
+          ref={calendarAnchorRef}
+          onClick={pickable ? () => setCalendarOpen((v) => !v) : undefined}
+          disabled={!pickable}
+          title={pickable ? t("dateNav.openCalendar") : undefined}
+          aria-label={pickable ? t("dateNav.openCalendar") : undefined}
+          aria-haspopup={pickable ? "dialog" : undefined}
+          aria-expanded={pickable ? calendarOpen : undefined}
           style={{
             fontSize: 11,
             fontWeight: 700,
+            border: "none",
+            background: "transparent",
+            padding: 0,
             color: "var(--text-secondary)",
             textTransform: "uppercase",
             letterSpacing: "0.5px",
-            cursor: nav.isToday ? "default" : "pointer",
+            cursor: pickable ? "pointer" : "default",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
           }}
         >
           {nav.isToday ? t("today.title") : formatNavDate(nav.date, prefs.language)}
-        </span>
+          {pickable && (
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6 }}>
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          )}
+        </button>
         <DateNavArrows nav={nav} />
+
+        {calendarOpen && (
+          <DateNavCalendar
+            nav={nav}
+            dailyTokens={dailyTokens}
+            align="left"
+            anchorRef={calendarAnchorRef}
+            onClose={() => setCalendarOpen(false)}
+          />
+        )}
       </div>
 
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>

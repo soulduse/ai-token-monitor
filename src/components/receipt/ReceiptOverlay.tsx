@@ -7,7 +7,7 @@ import { useShareImage } from "../../hooks/useShareImage";
 import { useToday } from "../../hooks/useToday";
 import { useDateNav } from "../../hooks/useDateNav";
 import { useSettings } from "../../contexts/SettingsContext";
-import { formatNavDate } from "../../lib/format";
+import { formatNavDate, getTotalTokens } from "../../lib/format";
 import { DateNavigator } from "../DateNavigator";
 import { Receipt } from "./Receipt";
 
@@ -38,6 +38,11 @@ export function ReceiptOverlay({ visible, onClose, stats }: Props) {
     return stats.daily.reduce((min, d) => (d.date < min ? d.date : min), stats.daily[0].date);
   }, [stats.daily]);
   const dateNav = useDateNav(todayStr, minDate);
+  const dailyTokens = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const d of stats.daily) map[d.date] = getTotalTokens(d.tokens);
+    return map;
+  }, [stats.daily]);
 
   useEffect(() => {
     getVersion().then(setAppVersion);
@@ -135,6 +140,7 @@ export function ReceiptOverlay({ visible, onClose, stats }: Props) {
               nav={dateNav}
               label={dateNav.isToday ? t("receipt.today") : formatNavDate(dateNav.date, prefs.language)}
               tone="overlay"
+              dailyTokens={dailyTokens}
             />
           </div>
         )}

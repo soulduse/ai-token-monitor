@@ -4,12 +4,18 @@ import { toLocalDateStr } from "../lib/format";
 export interface DateNav {
   /** Selected local date (YYYY-MM-DD); equals `todayStr` while following today. */
   date: string;
+  /** The actual local today (upper navigation bound). */
+  today: string;
+  /** Earliest date with data (lower navigation bound); null when no data. */
+  minDate: string | null;
   isToday: boolean;
   canPrev: boolean;
   canNext: boolean;
   goPrev: () => void;
   goNext: () => void;
   goToday: () => void;
+  /** Jump to an arbitrary date, clamped to [minDate, today]. */
+  goTo: (date: string) => void;
 }
 
 function shiftDate(dateStr: string, days: number): string {
@@ -64,5 +70,24 @@ export function useDateNav(todayStr: string, minDate: string | null): DateNav {
 
   const goToday = useCallback(() => setSelected(null), []);
 
-  return { date, isToday, canPrev, canNext, goPrev, goNext, goToday };
+  const goTo = useCallback(
+    (target: string) => {
+      const next = clamp(target);
+      setSelected(next === todayStr ? null : next);
+    },
+    [clamp, todayStr],
+  );
+
+  return {
+    date,
+    today: todayStr,
+    minDate,
+    isToday,
+    canPrev,
+    canNext,
+    goPrev,
+    goNext,
+    goToday,
+    goTo,
+  };
 }

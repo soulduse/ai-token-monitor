@@ -18,9 +18,11 @@ import { BadgeOverlay } from "./badge/BadgeOverlay";
 interface LeaderboardProps {
   /** Earliest local date with data — lower bound for Today day navigation. */
   minDate?: string | null;
+  /** Local per-day token totals — powers the calendar picker cells. */
+  dailyTokens?: Record<string, number>;
 }
 
-export function Leaderboard({ minDate = null }: LeaderboardProps) {
+export function Leaderboard({ minDate = null, dailyTokens = {} }: LeaderboardProps) {
   const { user, loading: authLoading, signIn, available } = useAuth();
   const { prefs } = useSettings();
   const t = useI18n();
@@ -53,7 +55,7 @@ export function Leaderboard({ minDate = null }: LeaderboardProps) {
     />;
   }
 
-  return <LeaderboardContent user={user} minDate={minDate} />;
+  return <LeaderboardContent user={user} minDate={minDate} dailyTokens={dailyTokens} />;
 }
 
 function LeaderboardCTA({
@@ -143,7 +145,7 @@ function LeaderboardCTA({
   );
 }
 
-function LeaderboardContent({ user, minDate }: { user: User; minDate: string | null }) {
+function LeaderboardContent({ user, minDate, dailyTokens }: { user: User; minDate: string | null; dailyTokens: Record<string, number> }) {
   const t = useI18n();
   const { prefs } = useSettings();
   const [provider, setProvider] = useState<LeaderboardProvider>("claude");
@@ -208,6 +210,7 @@ function LeaderboardContent({ user, minDate }: { user: User; minDate: string | n
         provider={activeProvider}
         user={user}
         minDate={minDate}
+        dailyTokens={dailyTokens}
       />
 
       <BackfillButton backfill={backfill} t={t} />
@@ -290,10 +293,12 @@ function ProviderLeaderboard({
   provider,
   user,
   minDate,
+  dailyTokens,
 }: {
   provider: LeaderboardProvider;
   user: User;
   minDate: string | null;
+  dailyTokens: Record<string, number>;
 }) {
   const t = useI18n();
   const { prefs } = useSettings();
@@ -380,6 +385,7 @@ function ProviderLeaderboard({
           <DateNavigator
             nav={dateNav}
             label={dateNav.isToday ? t("leaderboard.today") : formatNavDate(dateNav.date, prefs.language)}
+            dailyTokens={dailyTokens}
           />
         </div>
       ) : (

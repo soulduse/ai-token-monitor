@@ -111,6 +111,13 @@ function AppContent() {
     return stats.daily.reduce((min, d) => (d.date < min ? d.date : min), stats.daily[0].date);
   }, [stats]);
 
+  // Per-day token totals shared by every date-navigation calendar.
+  const dailyTokens = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const d of stats?.daily ?? []) map[d.date] = getTotalTokens(d.tokens);
+    return map;
+  }, [stats]);
+
   const dateNav = useDateNav(todayStr, minDataDate);
   const selectedDate = dateNav.date;
 
@@ -196,7 +203,7 @@ function AppContent() {
 
       {/* Keep mounted tabs alive to avoid remount/recalculation on switch */}
       <div style={{ display: activeTab === "overview" ? "contents" : "none" }}>
-        <TodaySummary today={today} weekAvg={weekAvg} nav={dateNav} />
+        <TodaySummary today={today} weekAvg={weekAvg} nav={dateNav} dailyTokens={dailyTokens} />
         <UsageAlertBar />
         <SalaryComparator stats={stats} />
         <DailyChart daily={stats.daily} days={7} />
@@ -245,7 +252,7 @@ function AppContent() {
           poll timers survive tab switches instead of refetching on every entry. */}
       {leaderboardActivated && (
         <div style={{ display: activeTab === "leaderboard" ? "contents" : "none" }}>
-          <Leaderboard minDate={minDataDate} />
+          <Leaderboard minDate={minDataDate} dailyTokens={dailyTokens} />
         </div>
       )}
 
