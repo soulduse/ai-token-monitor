@@ -4,6 +4,14 @@ import { invoke } from "@tauri-apps/api/core";
 import App from "./App";
 import "./styles/global.css";
 
+// Dev-only browser QA harness: mocks the Tauri IPC layer so the UI renders
+// with fixture data outside the Tauri shell. Statically eliminated from
+// release builds via the `import.meta.env.DEV` guard.
+if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("mockTauri") === "1") {
+  const { installMockTauri } = await import("./dev/mockTauri");
+  installMockTauri();
+}
+
 // Disable default browser context menu so custom menus work
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 
