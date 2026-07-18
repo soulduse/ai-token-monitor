@@ -14,17 +14,31 @@ export function formatCost(usd: number): string {
   return `$${usd.toFixed(4)}`;
 }
 
+// Map app locale codes to BCP 47 tags
+const LOCALE_MAP: Record<string, string> = {
+  "zh-CN": "zh-Hans",
+  "zh-TW": "zh-Hant",
+};
+
+function toBcp47(locale?: string): string | undefined {
+  return locale ? (LOCALE_MAP[locale] ?? locale) : undefined;
+}
+
 export function formatDate(dateStr: string, locale?: string): string {
   const date = new Date(dateStr + "T00:00:00");
-  // Map app locale codes to BCP 47 tags
-  const localeMap: Record<string, string> = {
-    "zh-CN": "zh-Hans",
-    "zh-TW": "zh-Hant",
-  };
-  const bcp47 = locale ? (localeMap[locale] ?? locale) : undefined;
-  return date.toLocaleDateString(bcp47, {
+  return date.toLocaleDateString(toBcp47(locale), {
     month: "short",
     day: "numeric",
+  });
+}
+
+/** Date label for day navigation — includes the weekday (e.g. "Sat, Jul 18") */
+export function formatNavDate(dateStr: string, locale?: string): string {
+  const date = new Date(dateStr + "T00:00:00");
+  return date.toLocaleDateString(toBcp47(locale), {
+    month: "short",
+    day: "numeric",
+    weekday: "short",
   });
 }
 

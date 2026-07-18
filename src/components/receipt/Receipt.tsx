@@ -15,6 +15,9 @@ import { useI18n } from "../../i18n/I18nContext";
 interface Props {
   stats: AllStats;
   period: Period;
+  /** Anchor date (YYYY-MM-DD) for the `today` period — renders the receipt
+   *  for that day instead of the actual today. */
+  date?: string;
   appVersion: string;
 }
 
@@ -32,11 +35,13 @@ const C = {
 };
 
 export const Receipt = forwardRef<HTMLDivElement, Props>(
-  ({ stats, period, appVersion }, ref) => {
+  ({ stats, period, date, appVersion }, ref) => {
     const t = useI18n();
 
     const data = useMemo(() => {
-      const filtered = filterByPeriod(stats.daily, period);
+      const filtered = period === "today" && date
+        ? stats.daily.filter((d) => d.date === date)
+        : filterByPeriod(stats.daily, period);
       const totalCost = computeTotalCost(filtered);
       const totalTokens = computeTotalTokens(filtered);
       const cacheSavings = computeCacheSavings(filtered);
@@ -71,11 +76,11 @@ export const Receipt = forwardRef<HTMLDivElement, Props>(
         .sort((a, b) => b.cost - a.cost);
 
       return { totalCost, totalTokens, cacheSavings, messages, sessions, toolCalls, models, streaks };
-    }, [stats, period]);
+    }, [stats, period, date]);
 
-    const now = new Date();
+    const anchor = period === "today" && date ? new Date(date + "T00:00:00") : new Date();
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} (${dayNames[now.getDay()]})`;
+    const dateStr = `${anchor.getFullYear()}-${String(anchor.getMonth() + 1).padStart(2, "0")}-${String(anchor.getDate()).padStart(2, "0")} (${dayNames[anchor.getDay()]})`;
 
     return (
       <div

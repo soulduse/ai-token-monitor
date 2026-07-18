@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { DailyUsage } from "../lib/types";
-import { formatTokens, formatCost, getTotalTokens, getDayCacheTokens } from "../lib/format";
+import type { DateNav } from "../hooks/useDateNav";
+import { formatTokens, formatCost, formatNavDate, getTotalTokens, getDayCacheTokens } from "../lib/format";
 import { useSettings } from "../contexts/SettingsContext";
 import { InfoTooltip } from "./InfoTooltip";
+import { DateNavArrows } from "./DateNavigator";
 import { useI18n } from "../i18n/I18nContext";
 
 interface PricingRow {
@@ -24,9 +26,10 @@ interface PricingTable {
 interface Props {
   today: DailyUsage | null;
   weekAvg: number;
+  nav: DateNav;
 }
 
-export function TodaySummary({ today, weekAvg }: Props) {
+export function TodaySummary({ today, weekAvg, nav }: Props) {
   const { prefs } = useSettings();
   const t = useI18n();
   const [pricing, setPricing] = useState<PricingTable | null>(null);
@@ -52,14 +55,26 @@ export function TodaySummary({ today, weekAvg }: Props) {
       boxShadow: "var(--shadow-card)",
     }}>
       <div style={{
-        fontSize: 11,
-        fontWeight: 700,
-        color: "var(--text-secondary)",
-        textTransform: "uppercase",
-        letterSpacing: "0.5px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
         marginBottom: 8,
       }}>
-        {t("today.title")}
+        <span
+          onClick={nav.isToday ? undefined : nav.goToday}
+          title={nav.isToday ? undefined : t("dateNav.backToToday")}
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: "var(--text-secondary)",
+            textTransform: "uppercase",
+            letterSpacing: "0.5px",
+            cursor: nav.isToday ? "default" : "pointer",
+          }}
+        >
+          {nav.isToday ? t("today.title") : formatNavDate(nav.date, prefs.language)}
+        </span>
+        <DateNavArrows nav={nav} />
       </div>
 
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>

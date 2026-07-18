@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useCombinedStats } from "./hooks/useCombinedStats";
 import { useToday } from "./hooks/useToday";
+import { useDateNav } from "./hooks/useDateNav";
 import { useUnreadChat } from "./hooks/useUnreadChat";
 import { useChatNotification } from "./hooks/useChatNotification";
 import { getTotalTokens } from "./lib/format";
@@ -104,14 +105,25 @@ function AppContent() {
     activateChatChannel(!!user);
   }, [user]);
 
+  // Earliest local date with data — the lower bound for day navigation.
+  const minDataDate = useMemo(() => {
+    if (!stats || stats.daily.length === 0) return null;
+    return stats.daily.reduce((min, d) => (d.date < min ? d.date : min), stats.daily[0].date);
+  }, [stats]);
+
+  const dateNav = useDateNav(todayStr, minDataDate);
+  const selectedDate = dateNav.date;
+
   const { today, weekAvg } = useMemo(() => {
     if (!stats) return { today: null, weekAvg: 0 };
 
-    const today = stats.daily.find((d) => d.date === todayStr) ?? null;
+    const today = stats.daily.find((d) => d.date === selectedDate) ?? null;
 
+    // 7 days preceding the selected date, so the "vs 7d" chip stays meaningful
+    // while browsing past days.
     const last7 = stats.daily
       .filter((d) => {
-        const diff = (new Date(todayStr).getTime() - new Date(d.date).getTime()) / 86400000;
+        const diff = (new Date(selectedDate).getTime() - new Date(d.date).getTime()) / 86400000;
         return diff >= 1 && diff <= 7;
       })
       .map((d) => getTotalTokens(d.tokens));
@@ -121,7 +133,7 @@ function AppContent() {
       : 0;
 
     return { today, weekAvg };
-  }, [stats, todayStr]);
+  }, [stats, selectedDate]);
 
   if (loading && !stats) {
     return (
@@ -184,7 +196,7 @@ function AppContent() {
 
       {/* Keep mounted tabs alive to avoid remount/recalculation on switch */}
       <div style={{ display: activeTab === "overview" ? "contents" : "none" }}>
-        <TodaySummary today={today} weekAvg={weekAvg} />
+        <TodaySummary today={today} weekAvg={weekAvg} nav={dateNav} />
         <UsageAlertBar />
         <SalaryComparator stats={stats} />
         <DailyChart daily={stats.daily} days={7} />
@@ -233,7 +245,7 @@ function AppContent() {
           poll timers survive tab switches instead of refetching on every entry. */}
       {leaderboardActivated && (
         <div style={{ display: activeTab === "leaderboard" ? "contents" : "none" }}>
-          <Leaderboard />
+          <Leaderboard minDate={minDataDate} />
         </div>
       )}
 

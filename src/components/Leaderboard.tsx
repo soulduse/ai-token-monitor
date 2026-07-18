@@ -3,15 +3,24 @@ import { useAuth } from "../hooks/useAuth";
 import { useLeaderboardSync, type LeaderboardPeriod } from "../hooks/useLeaderboardSync";
 import { useLeaderboardGrid } from "../hooks/useLeaderboardGrid";
 import { useBackfill } from "../hooks/useBackfill";
+import { useToday } from "../hooks/useToday";
+import { useDateNav } from "../hooks/useDateNav";
 import type { LeaderboardProvider } from "../lib/types";
 import type { User } from "@supabase/supabase-js";
 import { useSettings } from "../contexts/SettingsContext";
+import { formatNavDate } from "../lib/format";
 import { LeaderboardRow } from "./LeaderboardRow";
 import { LeaderboardGrid } from "./LeaderboardGrid";
+import { DateNavigator } from "./DateNavigator";
 import { useI18n } from "../i18n/I18nContext";
 import { BadgeOverlay } from "./badge/BadgeOverlay";
 
-export function Leaderboard() {
+interface LeaderboardProps {
+  /** Earliest local date with data — lower bound for Today day navigation. */
+  minDate?: string | null;
+}
+
+export function Leaderboard({ minDate = null }: LeaderboardProps) {
   const { user, loading: authLoading, signIn, available } = useAuth();
   const { prefs } = useSettings();
   const t = useI18n();
@@ -44,7 +53,7 @@ export function Leaderboard() {
     />;
   }
 
-  return <LeaderboardContent user={user} />;
+  return <LeaderboardContent user={user} minDate={minDate} />;
 }
 
 function LeaderboardCTA({
@@ -134,7 +143,7 @@ function LeaderboardCTA({
   );
 }
 
-function LeaderboardContent({ user }: { user: User }) {
+function LeaderboardContent({ user, minDate }: { user: User; minDate: string | null }) {
   const t = useI18n();
   const { prefs } = useSettings();
   const [provider, setProvider] = useState<LeaderboardProvider>("claude");
@@ -198,6 +207,7 @@ function LeaderboardContent({ user }: { user: User }) {
       <ProviderLeaderboard
         provider={activeProvider}
         user={user}
+        minDate={minDate}
       />
 
       <BackfillButton backfill={backfill} t={t} />
@@ -279,12 +289,17 @@ const PAGE_SIZE = 20;
 function ProviderLeaderboard({
   provider,
   user,
+  minDate,
 }: {
   provider: LeaderboardProvider;
   user: User;
+  minDate: string | null;
 }) {
   const t = useI18n();
+  const { prefs } = useSettings();
   const [period, setPeriod] = useState<LeaderboardPeriod>("today");
+  const todayStr = useToday();
+  const dateNav = useDateNav(todayStr, minDate);
   const {
     gridData,
     loading: gridLoading,
@@ -298,6 +313,7 @@ function ProviderLeaderboard({
     provider,
     period,
     userId: user.id,
+    anchorDate: period === "today" ? dateNav.date : undefined,
   });
 
   const [page, setPage] = useState(0);
@@ -305,8 +321,8 @@ function ProviderLeaderboard({
   const totalPages = Math.max(1, Math.ceil(leaderboard.length / PAGE_SIZE));
   const myRank = leaderboard.findIndex((e) => e.user_id === user.id) + 1;
 
-  // Reset to page 0 when period or provider changes
-  useEffect(() => { setPage(0); }, [period, provider]);
+  // Reset to page 0 when period, provider, or the browsed date changes
+  useEffect(() => { setPage(0); }, [period, provider, dateNav.date]);
 
   // Clamp page if data shrinks
   useEffect(() => {
@@ -358,8 +374,15 @@ function ProviderLeaderboard({
         ))}
       </div>
 
-      {/* Period date range */}
-      {period !== "today" && (
+      {/* Period date range / day navigation */}
+      {period === "today" ? (
+        <div style={{ marginTop: -8 }}>
+          <DateNavigator
+            nav={dateNav}
+            label={dateNav.isToday ? t("leaderboard.today") : formatNavDate(dateNav.date, prefs.language)}
+          />
+        </div>
+      ) : (
         <div style={{ textAlign: "center", fontSize: 10, color: "var(--text-tertiary)", marginTop: -6 }}>
           {period === "grid"
             ? t("leaderboard.gridSubtitle")
