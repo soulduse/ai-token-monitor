@@ -1,10 +1,12 @@
 /**
  * Dev-only Tauri IPC mock so the UI can run in a plain browser for QA:
  *
- *   npm run dev  →  http://localhost:5173/?mockTauri=1
+ *   npm run dev  →  http://localhost:1420/?mockTauri=1
  *
  * Installed exclusively from main.tsx behind `import.meta.env.DEV` + the
  * `mockTauri` query flag, so it is dead-code-eliminated from release builds.
+ * Sets `window.__TAURI_MOCK__` so server-write paths (snapshot upload /
+ * backfill) refuse to send fixture data to production Supabase.
  */
 import type { AllStats, DailyUsage, UserPreferences } from "../lib/types";
 import { toLocalDateStr } from "../lib/format";
@@ -76,6 +78,9 @@ const mockPrefs: UserPreferences = {
 export function installMockTauri(): void {
   const stats = fixtureStats();
   let callbackId = 0;
+
+  // Flag checked by isMockTauriSession() to block server writes in QA mode.
+  (window as unknown as Record<string, unknown>).__TAURI_MOCK__ = true;
 
   const handlers: Record<string, (args?: unknown) => unknown> = {
     get_all_stats: () => stats,

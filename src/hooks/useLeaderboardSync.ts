@@ -48,6 +48,10 @@ export function useLeaderboardSync({ provider, period, userId, anchorDate }: Use
     // Grid view uses a separate hook (useLeaderboardGrid); skip list fetch.
     if (period === "grid") return;
 
+    // Every fetch attempt — including a cache hit — supersedes older in-flight
+    // requests, so a stale response can't overwrite a fresher cached view.
+    const seq = ++requestSeqRef.current;
+
     // Return cached data if still fresh and period+provider+anchor match
     if (
       !forceRefresh &&
@@ -61,7 +65,6 @@ export function useLeaderboardSync({ provider, period, userId, anchorDate }: Use
       return;
     }
 
-    const seq = ++requestSeqRef.current;
     setLoading(true);
 
     try {
@@ -139,6 +142,17 @@ export function useLeaderboardSync({ provider, period, userId, anchorDate }: Use
           sessions: detail.sessions,
         };
         next.sort((a, b) => b.total_tokens - a.total_tokens);
+        // Mirror the patch into the matching cache entry so a visibility
+        // refresh within the TTL doesn't restore pre-upload totals.
+        // (Idempotent — safe under StrictMode double-invocation.)
+        if (
+          cacheRef.current &&
+          cacheRef.current.period === period &&
+          cacheRef.current.provider === provider &&
+          cacheRef.current.anchorDate === anchorDate
+        ) {
+          cacheRef.current = { ...cacheRef.current, data: next };
+        }
         return next;
       });
     };

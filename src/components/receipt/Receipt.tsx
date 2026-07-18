@@ -1,6 +1,6 @@
 import { useMemo, forwardRef } from "react";
 import type { AllStats } from "../../lib/types";
-import { formatTokens, formatCost } from "../../lib/format";
+import { formatTokens, formatCost, toLocalDateStr } from "../../lib/format";
 import {
   filterByPeriod,
   computeTotalCost,
@@ -81,6 +81,10 @@ export const Receipt = forwardRef<HTMLDivElement, Props>(
     const anchor = period === "today" && date ? new Date(date + "T00:00:00") : new Date();
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const dateStr = `${anchor.getFullYear()}-${String(anchor.getMonth() + 1).padStart(2, "0")}-${String(anchor.getDate()).padStart(2, "0")} (${dayNames[anchor.getDay()]})`;
+    // The streak badge is anchored to the actual today — hide it on a
+    // historical daily receipt so the shared image can't pair a past date
+    // with a streak that includes later activity.
+    const isHistoricalDay = period === "today" && !!date && date !== toLocalDateStr(new Date());
 
     return (
       <div
@@ -172,7 +176,7 @@ export const Receipt = forwardRef<HTMLDivElement, Props>(
         </div>
 
         {/* Streak */}
-        {data.streaks.currentStreak > 0 && (
+        {!isHistoricalDay && data.streaks.currentStreak > 0 && (
           <>
             <div style={{ height: 8 }} />
             <div style={{
