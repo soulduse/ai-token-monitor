@@ -241,6 +241,17 @@ async fn fetch_and_cache_usage_inner() -> Option<OAuthUsage> {
                     fetched_at: Instant::now(),
                 });
             }
+            // Attribute this fetch to whichever account is signed in right now,
+            // so the per-account view accumulates one snapshot per account.
+            // record_snapshot does file I/O (reads .claude.json, writes the
+            // snapshot store), and this future also runs on tokio workers via
+            // the refresh/enable commands — keep the blocking work off them.
+            // Awaited so a manual refresh reads back an up-to-date store.
+            let snapshot_usage = usage.clone();
+            let _ = tauri::async_runtime::spawn_blocking(move || {
+                crate::account_usage::record_snapshot(&snapshot_usage);
+            })
+            .await;
             Some(usage)
         }
         Err(e) => {

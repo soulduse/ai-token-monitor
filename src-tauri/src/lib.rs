@@ -1,3 +1,4 @@
+mod account_usage;
 mod ai_translate;
 mod commands;
 mod hydration;
@@ -1023,6 +1024,8 @@ pub fn run() {
             commands::get_oauth_usage_status,
             commands::get_oauth_rate_limit_remaining,
             commands::refresh_oauth_usage,
+            commands::get_account_usage_snapshots,
+            commands::remove_account_usage_snapshot,
             commands::enable_usage_tracking,
             commands::get_ai_keys,
             commands::test_webhook,

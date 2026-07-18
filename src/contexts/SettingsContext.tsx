@@ -32,6 +32,7 @@ const defaultPrefs: UserPreferences = {
   salary_enabled: false,
   usage_alerts_enabled: true,
   usage_tracking_enabled: false,
+  account_breakdown_enabled: false,
   autostart_enabled: false,
   quick_action_items: [],
 };

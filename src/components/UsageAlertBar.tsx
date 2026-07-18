@@ -6,7 +6,7 @@ import { useTokenStats } from "../hooks/useTokenStats";
 import { useToday } from "../hooks/useToday";
 import { useSettings } from "../contexts/SettingsContext";
 import { useI18n } from "../i18n/I18nContext";
-import type { AllStats, RateLimitWindow } from "../lib/types";
+import type { AccountSnapshot, AllStats, OAuthUsage, RateLimitWindow } from "../lib/types";
 import { formatCost, formatTokens, getTotalTokens } from "../lib/format";
 
 const REFRESH_COOLDOWN_SECONDS = 30;
@@ -40,6 +40,28 @@ function formatResetTime(resetsAt: string | null | undefined, t: (key: string, p
 
 function formatUnixResetTime(resetsAt: number, t: (key: string, params?: Record<string, string>) => string): string {
   return formatResetTime(new Date(resetsAt * 1000).toISOString(), t);
+}
+
+// "5m" / "3h" / "2d" age of an inactive account's snapshot, so the split view
+// is honest about how old each non-active account's numbers are.
+function formatSnapshotAge(updatedAt: string, t: (key: string, params?: Record<string, string>) => string): string {
+  const then = new Date(updatedAt).getTime();
+  if (Number.isNaN(then)) return "";
+  const diffMin = Math.floor((Date.now() - then) / 60000);
+  if (diffMin < 1) return t("usageAlert.justNow");
+  const time =
+    diffMin < 60
+      ? `${diffMin}m`
+      : diffMin < 1440
+      ? `${Math.floor(diffMin / 60)}h`
+      : `${Math.floor(diffMin / 1440)}d`;
+  return t("usageAlert.lastChecked", { time });
+}
+
+// Display label for an account. Email wins over display name — two accounts
+// owned by the same person often share a display name but never an email.
+function accountLabel(snapshot: AccountSnapshot): string {
+  return snapshot.email || snapshot.display_name || `${snapshot.account_uuid.slice(0, 8)}…`;
 }
 
 function formatCodexWindowLabel(
@@ -149,6 +171,210 @@ function UsageRow({
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+// The Claude limit gauges (session / weekly / per-model / extra usage) for one
+// usage payload. Shared between the default single-account card and each
+// section of the split-account view.
+function ClaudeUsageWindows({ usage }: { usage: OAuthUsage }) {
+  const t = useI18n();
+  // Per-model weekly windows (e.g. Fable). The backend already filters these to
+  // the active, model-scoped limits, so we render whatever it sends. This makes
+  // newly introduced or removed model limits appear/disappear on their own —
+  // Fable, for instance, may be temporary and will simply stop rendering.
+  const modelWindows = usage.seven_day_models ?? [];
+
+  return (
+    <>
+      {usage.five_hour && (
+        <UsageRow
+          label={t("usageAlert.session")}
+          utilization={usage.five_hour.utilization}
+          subtitle={formatResetTime(usage.five_hour.resets_at, t)}
+        />
+      )}
+      {usage.seven_day && (
+        <UsageRow
+          label={t("usageAlert.weekly")}
+          utilization={usage.seven_day.utilization}
+          subtitle={formatResetTime(usage.seven_day.resets_at, t)}
+        />
+      )}
+      {modelWindows.map((m) => (
+        <UsageRow
+          key={m.model}
+          label={t("usageAlert.weeklyModel", { model: m.model })}
+          utilization={m.utilization}
+          subtitle={formatResetTime(m.resets_at, t)}
+        />
+      ))}
+      {usage.extra_usage && usage.extra_usage.is_enabled && (
+        <UsageRow
+          label={t("usageAlert.extraUsage")}
+          utilization={usage.extra_usage.utilization}
+          subtitle={`$${usage.extra_usage.used_credits.toFixed(2)} / $${usage.extra_usage.monthly_limit.toFixed(2)}`}
+        />
+      )}
+    </>
+  );
+}
+
+// Toggles the split-account view. Only rendered once two or more accounts have
+// been observed, so single-account users never see it.
+function AccountViewToggle({
+  active,
+  onToggle,
+}: {
+  active: boolean;
+  onToggle: () => void;
+}) {
+  const t = useI18n();
+  const title = active ? t("usageAlert.accountViewOff") : t("usageAlert.accountView");
+
+  return (
+    <button
+      onClick={onToggle}
+      title={title}
+      aria-label={title}
+      aria-pressed={active}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 18,
+        height: 18,
+        padding: 0,
+        background: "transparent",
+        border: "none",
+        borderRadius: 3,
+        color: active ? "var(--accent-purple)" : "var(--text-muted)",
+        cursor: "pointer",
+        opacity: active ? 1 : 0.8,
+        transition: "opacity 0.2s ease, color 0.2s ease",
+      }}
+      onMouseEnter={(e) => {
+        if (!active) e.currentTarget.style.color = "var(--text-primary)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.color = active ? "var(--accent-purple)" : "var(--text-muted)";
+      }}
+    >
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </svg>
+    </button>
+  );
+}
+
+// One account's block in the split view. Active account shows a badge; the
+// others show how old their last snapshot is plus a remove affordance (an
+// account that comes back gets re-recorded on its next fetch anyway).
+function AccountUsageSection({
+  snapshot,
+  isActive,
+  onRemove,
+}: {
+  snapshot: AccountSnapshot;
+  isActive: boolean;
+  onRemove: (accountUuid: string) => void;
+}) {
+  const t = useI18n();
+
+  return (
+    <div style={{ marginBottom: 4 }}>
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginBottom: 6,
+      }}>
+        <span
+          title={snapshot.account_uuid}
+          style={{
+            fontSize: 10,
+            fontWeight: 600,
+            color: "var(--text-secondary)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {accountLabel(snapshot)}
+        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+          {isActive ? (
+            <span style={{
+              fontSize: 9,
+              fontWeight: 700,
+              color: "#22c55e",
+            }}>
+              {t("usageAlert.activeAccount")}
+            </span>
+          ) : (
+            <>
+              <span style={{ fontSize: 9, fontWeight: 600, color: "var(--text-muted)" }}>
+                {formatSnapshotAge(snapshot.updated_at, t)}
+              </span>
+              <button
+                onClick={() => onRemove(snapshot.account_uuid)}
+                title={t("usageAlert.removeAccount")}
+                aria-label={t("usageAlert.removeAccount")}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 14,
+                  height: 14,
+                  padding: 0,
+                  background: "transparent",
+                  border: "none",
+                  borderRadius: 3,
+                  color: "var(--text-muted)",
+                  cursor: "pointer",
+                  opacity: 0.6,
+                  transition: "opacity 0.2s ease, color 0.2s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = "#ef4444";
+                  e.currentTarget.style.opacity = "1";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = "var(--text-muted)";
+                  e.currentTarget.style.opacity = "0.6";
+                }}
+              >
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                >
+                  <path d="M18 6 6 18" />
+                  <path d="m6 6 12 12" />
+                </svg>
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+      <ClaudeUsageWindows usage={snapshot.usage} />
     </div>
   );
 }
@@ -426,8 +652,16 @@ function ClaudeTrackingPrompt({
 }
 
 export function UsageAlertBar() {
-  const { prefs, refreshPrefs } = useSettings();
-  const { usage, status: oauthStatus, refreshing, rateLimitRemaining, refresh } = useOAuthUsage();
+  const { prefs, refreshPrefs, updatePrefs } = useSettings();
+  const {
+    usage,
+    status: oauthStatus,
+    refreshing,
+    rateLimitRemaining,
+    refresh,
+    accounts,
+    removeAccount,
+  } = useOAuthUsage();
   const { stats: codexStats } = useTokenStats("codex");
   const todayStr = useToday();
   const t = useI18n();
@@ -544,14 +778,18 @@ export function UsageAlertBar() {
 
   const { five_hour, seven_day, seven_day_models, extra_usage, is_stale } = usage ?? {};
 
-  // Per-model weekly windows (e.g. Fable). The backend already filters these to
-  // the active, model-scoped limits, so we render whatever it sends. This makes
-  // newly introduced or removed model limits appear/disappear on their own —
-  // Fable, for instance, may be temporary and will simply stop rendering.
   const modelWindows = seven_day_models ?? [];
 
   const hasClaudeData =
     showClaude && (!!five_hour || !!seven_day || modelWindows.length > 0 || !!extra_usage);
+  // Split-account view: opt-in, and only meaningful once at least two accounts
+  // have been observed. Snapshots are attributed at fetch time, so each block
+  // is guaranteed to show numbers that belonged to that account — the default
+  // (combined) view below stays exactly as before.
+  const claudeAccounts = accounts?.accounts ?? [];
+  const canSplitAccounts =
+    showClaude && prefs.usage_tracking_enabled && claudeAccounts.length >= 2;
+  const splitAccounts = canSplitAccounts && prefs.account_breakdown_enabled;
   const showClaudePrompt = showClaude && !prefs.usage_tracking_enabled;
   // Only surface the "unavailable" message when the backend reports that OAuth
   // credentials exist but no usage is cached yet (first poll pending or a failed
@@ -562,8 +800,11 @@ export function UsageAlertBar() {
     showClaude &&
     prefs.usage_tracking_enabled &&
     !hasClaudeData &&
+    !splitAccounts &&
     oauthStatus === "unavailable";
-  if (!hasClaudeData && !showClaudePrompt && !showClaudeUnavailable && !hasCodexData) return null;
+  if (!hasClaudeData && !showClaudePrompt && !showClaudeUnavailable && !hasCodexData && !splitAccounts) {
+    return null;
+  }
 
   return (
     <div style={{
@@ -587,48 +828,41 @@ export function UsageAlertBar() {
         </span>
       </div>
 
-      {hasClaudeData && (
+      {(hasClaudeData || splitAccounts) && (
         <div>
           <ProviderHeader
             label={t("usageAlert.claude")}
             stale={is_stale}
             rateLimitRemaining={rateLimitRemaining}
             refreshButton={(
-              <RefreshButton
-                refreshing={refreshing}
-                cooldown={cooldown}
-                onRefresh={handleRefresh}
-              />
+              <>
+                {canSplitAccounts && (
+                  <AccountViewToggle
+                    active={splitAccounts}
+                    onToggle={() =>
+                      updatePrefs({ account_breakdown_enabled: !prefs.account_breakdown_enabled })
+                    }
+                  />
+                )}
+                <RefreshButton
+                  refreshing={refreshing}
+                  cooldown={cooldown}
+                  onRefresh={handleRefresh}
+                />
+              </>
             )}
           />
-          {five_hour && (
-            <UsageRow
-              label={t("usageAlert.session")}
-              utilization={five_hour.utilization}
-              subtitle={formatResetTime(five_hour.resets_at, t)}
-            />
-          )}
-          {seven_day && (
-            <UsageRow
-              label={t("usageAlert.weekly")}
-              utilization={seven_day.utilization}
-              subtitle={formatResetTime(seven_day.resets_at, t)}
-            />
-          )}
-          {modelWindows.map((m) => (
-            <UsageRow
-              key={m.model}
-              label={t("usageAlert.weeklyModel", { model: m.model })}
-              utilization={m.utilization}
-              subtitle={formatResetTime(m.resets_at, t)}
-            />
-          ))}
-          {extra_usage && extra_usage.is_enabled && (
-            <UsageRow
-              label={t("usageAlert.extraUsage")}
-              utilization={extra_usage.utilization}
-              subtitle={`$${extra_usage.used_credits.toFixed(2)} / $${extra_usage.monthly_limit.toFixed(2)}`}
-            />
+          {splitAccounts ? (
+            claudeAccounts.map((snapshot) => (
+              <AccountUsageSection
+                key={snapshot.account_uuid}
+                snapshot={snapshot}
+                isActive={snapshot.account_uuid === accounts?.active_account_uuid}
+                onRemove={removeAccount}
+              />
+            ))
+          ) : (
+            usage && <ClaudeUsageWindows usage={usage} />
           )}
         </div>
       )}
@@ -662,7 +896,7 @@ export function UsageAlertBar() {
         </div>
       )}
 
-      {(hasClaudeData || showClaudePrompt || showClaudeUnavailable) && hasCodexData && (
+      {(hasClaudeData || splitAccounts || showClaudePrompt || showClaudeUnavailable) && hasCodexData && (
         <div style={{
           height: 1,
           background: "rgba(255,255,255,0.08)",

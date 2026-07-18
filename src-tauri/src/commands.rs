@@ -801,6 +801,18 @@ pub fn get_oauth_rate_limit_remaining() -> Option<u64> {
     crate::oauth_usage::rate_limit_remaining_secs()
 }
 
+/// Last known usage per Claude account, for the opt-in split-account view.
+/// Local display only — nothing here feeds any upload path.
+#[tauri::command]
+pub fn get_account_usage_snapshots() -> crate::account_usage::AccountUsageSnapshots {
+    crate::account_usage::get_snapshots()
+}
+
+#[tauri::command]
+pub fn remove_account_usage_snapshot(account_uuid: String) -> bool {
+    crate::account_usage::remove_snapshot(&account_uuid)
+}
+
 #[tauri::command]
 pub fn get_pricing_table() -> pricing::PricingTable {
     pricing::get_pricing_table()

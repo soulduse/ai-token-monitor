@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { OAuthUsage, OAuthUsageStatus } from "../lib/types";
+import type { AccountUsageSnapshots, OAuthUsage, OAuthUsageStatus } from "../lib/types";
 
 export function useOAuthUsage() {
   const [usage, setUsage] = useState<OAuthUsage | null>(null);
@@ -11,25 +11,40 @@ export function useOAuthUsage() {
   // Seconds remaining in a 429 back-off window, or null when refresh is
   // unthrottled. Surfaced so the badge can explain an inert refresh button.
   const [rateLimitRemaining, setRateLimitRemaining] = useState<number | null>(null);
+  // Per-account snapshots for the opt-in split-account view. Kept alongside
+  // the live usage so both refresh on the same "usage-updated" events.
+  const [accounts, setAccounts] = useState<AccountUsageSnapshots | null>(null);
   const requestIdRef = useRef(0);
 
   const fetchUsage = useCallback(async () => {
     const requestId = ++requestIdRef.current;
     try {
-      const [data, nextStatus, rateLimit] = await Promise.all([
+      const [data, nextStatus, rateLimit, snapshots] = await Promise.all([
         invoke<OAuthUsage | null>("get_oauth_usage"),
         invoke<OAuthUsageStatus>("get_oauth_usage_status").catch(() => null),
         invoke<number | null>("get_oauth_rate_limit_remaining").catch(() => null),
+        invoke<AccountUsageSnapshots>("get_account_usage_snapshots").catch(() => null),
       ]);
       if (requestId === requestIdRef.current) {
         setUsage(data);
         if (nextStatus) setStatus(nextStatus);
         setRateLimitRemaining(rateLimit ?? null);
+        if (snapshots) setAccounts(snapshots);
       }
     } catch {
       // Ignore errors silently
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const removeAccount = useCallback(async (accountUuid: string) => {
+    try {
+      await invoke<boolean>("remove_account_usage_snapshot", { accountUuid });
+      const snapshots = await invoke<AccountUsageSnapshots>("get_account_usage_snapshots");
+      setAccounts(snapshots);
+    } catch {
+      // Ignore errors silently
     }
   }, []);
 
@@ -45,12 +60,17 @@ export function useOAuthUsage() {
       const data = await invoke<OAuthUsage | null>("refresh_oauth_usage");
       const nextStatus = await invoke<OAuthUsageStatus>("get_oauth_usage_status").catch(() => null);
       const rateLimit = await invoke<number | null>("get_oauth_rate_limit_remaining").catch(() => null);
+      // A successful refresh also records a new per-account snapshot, and the
+      // "usage-updated" emit is skipped while rate-limited — re-read here so
+      // the split-account view never lags behind the live card.
+      const snapshots = await invoke<AccountUsageSnapshots>("get_account_usage_snapshots").catch(() => null);
       // Only adopt the result if no newer request has started; otherwise keep
       // the more recent data. The spinner state is reset unconditionally below.
       if (requestId === requestIdRef.current) {
         setUsage(data);
         if (nextStatus) setStatus(nextStatus);
         setRateLimitRemaining(rateLimit ?? null);
+        if (snapshots) setAccounts(snapshots);
       }
     } catch {
       // Ignore errors silently
@@ -76,5 +96,5 @@ export function useOAuthUsage() {
     };
   }, [fetchUsage]);
 
-  return { usage, status, loading, refreshing, rateLimitRemaining, refresh };
+  return { usage, status, loading, refreshing, rateLimitRemaining, refresh, accounts, removeAccount };
 }

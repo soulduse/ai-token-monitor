@@ -103,6 +103,9 @@ export interface UserPreferences {
   monthly_salary?: number;
   usage_alerts_enabled: boolean;
   usage_tracking_enabled: boolean;
+  // Opt-in: split the Claude usage card by account. Off by default — the card
+  // then behaves exactly as before (active account only).
+  account_breakdown_enabled: boolean;
   ai_keys?: {
     gemini?: string;
     openai?: string;
@@ -168,6 +171,25 @@ export interface OAuthUsage {
   extra_usage: ExtraUsage | null;
   fetched_at: string;
   is_stale: boolean;
+}
+
+// Last known usage for one Claude account. Snapshots are recorded whenever a
+// usage fetch succeeds, keyed by the account that was signed in at that
+// moment, so users rotating between accounts accumulate one entry each.
+// Identity fields are local-display only and never feed any upload path.
+export interface AccountSnapshot {
+  account_uuid: string;
+  email: string | null;
+  display_name: string | null;
+  usage: OAuthUsage;
+  // RFC3339 timestamp of the fetch that produced this snapshot; the UI derives
+  // "checked N ago" staleness from it for inactive accounts.
+  updated_at: string;
+}
+
+export interface AccountUsageSnapshots {
+  accounts: AccountSnapshot[];
+  active_account_uuid: string | null;
 }
 
 // Mirrors the Rust OAuthUsageStatus enum (serde rename_all = "snake_case").

@@ -144,6 +144,10 @@ pub struct UserPreferences {
     pub usage_tracking_enabled: bool,
     #[serde(default)]
     pub usage_tracking_migrated: bool,
+    /// Opt-in: split the Claude usage card by account instead of showing only
+    /// the active account. Off by default — single-account users never see it.
+    #[serde(default)]
+    pub account_breakdown_enabled: bool,
     #[serde(default)]
     pub ai_keys: Option<AiKeys>,
     #[serde(default)]
@@ -300,6 +304,7 @@ impl Default for UserPreferences {
             usage_alerts_enabled: true,
             usage_tracking_enabled: false,
             usage_tracking_migrated: false,
+            account_breakdown_enabled: false,
             ai_keys: None,
             ai_model: None,
             webhook_config: None,
