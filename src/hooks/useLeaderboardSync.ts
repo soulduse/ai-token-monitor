@@ -62,6 +62,9 @@ export function useLeaderboardSync({ provider, period, userId, anchorDate }: Use
       Date.now() - cacheRef.current.fetchedAt < LEADERBOARD_CACHE_TTL
     ) {
       setLeaderboard(cacheRef.current.data);
+      // The invalidated in-flight request can no longer clear the spinner —
+      // this cache hit is the freshest state, so loading is over.
+      setLoading(false);
       return;
     }
 
@@ -130,6 +133,10 @@ export function useLeaderboardSync({ provider, period, userId, anchorDate }: Use
       // list when that exact day is the one being viewed.
       const viewed = anchorDate ?? toLocalDateStr(new Date());
       if (detail.today !== viewed) return;
+      // Discard any RPC that started before this upload — its pre-upload rows
+      // would overwrite the fresher patch. The next poll reconciles fully.
+      requestSeqRef.current++;
+      setLoading(false);
       setLeaderboard((prev) => {
         const idx = prev.findIndex((entry) => entry.user_id === userId);
         if (idx < 0) return prev;

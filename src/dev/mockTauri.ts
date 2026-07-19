@@ -7,6 +7,11 @@
  * `mockTauri` query flag, so it is dead-code-eliminated from release builds.
  * Sets `window.__TAURI_MOCK__` so server-write paths (snapshot upload /
  * backfill) refuse to send fixture data to production Supabase.
+ *
+ * Scope note: only the Tauri IPC layer is mocked — Supabase itself stays
+ * live. Signing in during a mock session performs the user's own real,
+ * authenticated actions (profile upsert, chat). Fixture *stats* are blocked
+ * from upload; don't treat the rest of the session as a sandbox.
  */
 import type { AllStats, DailyUsage, UserPreferences } from "../lib/types";
 import { toLocalDateStr } from "../lib/format";
