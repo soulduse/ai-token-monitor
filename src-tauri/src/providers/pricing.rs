@@ -452,6 +452,48 @@ mod tests {
         assert!((p.cache_write_1h - 20.0).abs() < 0.001);
     }
 
+    // Regression guard: "claude-opus-5" must resolve to its own "Opus 5" entry.
+    // Its price ($5/$25) coincides with the generic "opus" fallback, so the
+    // label is the signal that the match landed on the right entry — without a
+    // dedicated entry the tooltip/breakdown would mislabel it "Opus 4.8/4.7/4.6/4.5".
+    #[test]
+    fn claude_opus_5_matches_own_entry() {
+        let p = get_claude_pricing("claude-opus-5");
+        assert!((p.input - 5.0).abs() < 0.001, "Opus 5 input must be $5/MTok, got ${}", p.input);
+        assert!((p.output - 25.0).abs() < 0.001, "Opus 5 output must be $25/MTok, got ${}", p.output);
+        assert!((p.cache_read - 0.50).abs() < 0.001);
+        assert!((p.cache_write_5m - 6.25).abs() < 0.001);
+        assert!((p.cache_write_1h - 10.0).abs() < 0.001);
+
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let entry = find_pricing(&cfg.claude, "claude-opus-5");
+        assert_eq!(entry.label, "Opus 5", "claude-opus-5 must match its own entry, not the generic opus fallback");
+    }
+
+    // "opus-5" must not shadow the opus-4-x entries ("claude-opus-4-5..." does
+    // not contain "opus-5"), and 1M-context variants like "claude-opus-5[1m]"
+    // must still land on the Opus 5 entry.
+    #[test]
+    fn claude_opus_5_ordering_is_safe() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let opus45 = find_pricing(&cfg.claude, "claude-opus-4-5-20251101");
+        assert_eq!(opus45.label, "Opus 4.8/4.7/4.6/4.5");
+        let opus5_1m = find_pricing(&cfg.claude, "claude-opus-5[1m]");
+        assert_eq!(opus5_1m.label, "Opus 5");
+    }
+
+    #[test]
+    fn opencode_opus_5_pricing() {
+        let p = get_opencode_pricing("anthropic/claude-opus-5");
+        assert!((p.input - 5.0).abs() < 0.001, "Opencode Opus 5 input must be $5/MTok, got ${}", p.input);
+        assert!((p.output - 25.0).abs() < 0.001);
+
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let oc = cfg.opencode.as_ref().expect("opencode config present");
+        let entry = find_pricing(oc, "anthropic/claude-opus-5");
+        assert_eq!(entry.label, "Claude Opus 5");
+    }
+
     #[test]
     fn claude_sonnet_pricing() {
         let p = get_claude_pricing("claude-sonnet-4-6-20260320");
