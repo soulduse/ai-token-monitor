@@ -8,11 +8,12 @@ interface Props {
 }
 
 function shortModelName(name: string): string {
-  // Extract family and version: "claude-opus-4-6" → "Opus 4.6"
-  const match = name.match(/(opus|sonnet|haiku)-(\d+)-(\d+)/);
+  // Extract family and version: "claude-opus-4-6" → "Opus 4.6", "claude-opus-5" → "Opus 5".
+  // Version digits are capped at 2 so date suffixes ("-20260320") never read as versions.
+  const match = name.match(/(opus|sonnet|haiku|fable|mythos)-(\d{1,2})(?:-(\d{1,2}))?(?!\d)/);
   if (match) {
     const family = match[1].charAt(0).toUpperCase() + match[1].slice(1);
-    return `${family} ${match[2]}.${match[3]}`;
+    return match[3] ? `${family} ${match[2]}.${match[3]}` : `${family} ${match[2]}`;
   }
   if (name.includes("opus")) return "Opus";
   if (name.includes("sonnet")) return "Sonnet";
