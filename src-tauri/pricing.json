@@ -1,6 +1,6 @@
 {
-  "version": "1.8.0",
-  "last_updated": "2026-07-11",
+  "version": "1.9.0",
+  "last_updated": "2026-07-25",
   "sources": {
     "claude": "https://platform.claude.com/docs/en/about-claude/pricing",
     "codex": "https://developers.openai.com/api/docs/pricing"
@@ -12,6 +12,7 @@
       { "match": "fable",     "label": "Fable 5",              "input": 10.0, "output": 50.0,  "cache_read": 1.00, "cache_write": 12.5,  "cache_write_1h": 20.0  },
       { "match": "mythos-5",  "label": "Mythos 5",             "input": 10.0, "output": 50.0,  "cache_read": 1.00, "cache_write": 12.5,  "cache_write_1h": 20.0  },
       { "match": "mythos",    "label": "Mythos 5",             "input": 10.0, "output": 50.0,  "cache_read": 1.00, "cache_write": 12.5,  "cache_write_1h": 20.0  },
+      { "match": "opus-5",    "label": "Opus 5",               "input": 5.0,  "output": 25.0,  "cache_read": 0.50, "cache_write": 6.25,  "cache_write_1h": 10.0  },
       { "match": "opus-4-8",  "label": "Opus 4.8/4.7/4.6/4.5", "input": 5.0,  "output": 25.0,  "cache_read": 0.50, "cache_write": 6.25,  "cache_write_1h": 10.0  },
       { "match": "opus-4-7",  "label": "Opus 4.8/4.7/4.6/4.5", "input": 5.0,  "output": 25.0,  "cache_read": 0.50, "cache_write": 6.25,  "cache_write_1h": 10.0  },
       { "match": "opus-4-6",  "label": "Opus 4.8/4.7/4.6/4.5", "input": 5.0,  "output": 25.0,  "cache_read": 0.50, "cache_write": 6.25,  "cache_write_1h": 10.0  },
@@ -71,6 +72,7 @@
       { "match": "fable",             "label": "Claude Fable 5",               "input": 10.0,  "output": 50.0,   "cache_read": 1.00,  "cache_write": 12.5   },
       { "match": "mythos-5",          "label": "Claude Mythos 5",              "input": 10.0,  "output": 50.0,   "cache_read": 1.00,  "cache_write": 12.5   },
       { "match": "mythos",            "label": "Claude Mythos 5",              "input": 10.0,  "output": 50.0,   "cache_read": 1.00,  "cache_write": 12.5   },
+      { "match": "opus-5",            "label": "Claude Opus 5",                "input": 5.0,   "output": 25.0,   "cache_read": 0.50,  "cache_write": 6.25   },
       { "match": "opus-4-8",          "label": "Claude Opus 4.8/4.7/4.6/4.5", "input": 5.0,   "output": 25.0,   "cache_read": 0.50,  "cache_write": 6.25   },
       { "match": "opus-4-7",          "label": "Claude Opus 4.8/4.7/4.6/4.5", "input": 5.0,   "output": 25.0,   "cache_read": 0.50,  "cache_write": 6.25   },
       { "match": "opus-4-6",          "label": "Claude Opus 4.8/4.7/4.6/4.5", "input": 5.0,   "output": 25.0,   "cache_read": 0.50,  "cache_write": 6.25   },
