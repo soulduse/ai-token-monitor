@@ -375,8 +375,22 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             (true, 0.0)
         };
 
-        let computed = claude_cost + codex_cost + opencode_cost + kimi_cost + glm_cost + gjc_cost;
-        let warm = claude_warm && codex_warm && opencode_warm && kimi_warm && glm_warm && gjc_warm;
+        let (grok_warm, grok_cost) = if prefs.include_grok {
+            let s = providers::grok::get_cached_stats();
+            (s.is_some(), today_cost_of(&s, &today))
+        } else {
+            (true, 0.0)
+        };
+
+        let computed =
+            claude_cost + codex_cost + opencode_cost + kimi_cost + glm_cost + gjc_cost + grok_cost;
+        let warm = claude_warm
+            && codex_warm
+            && opencode_warm
+            && kimi_warm
+            && glm_warm
+            && gjc_warm
+            && grok_warm;
 
         let today_cost = if warm {
             // Every enabled provider has parsed — this is the real number.
@@ -445,6 +459,13 @@ fn get_all_watch_dirs() -> Vec<PathBuf> {
     let kimi_sessions = home.join(".kimi").join("sessions");
     if kimi_sessions.exists() {
         dirs.push(kimi_sessions);
+    }
+
+    // Add Grok's rolling usage log directory. Watching `logs` rather than
+    // `sessions` — token counts only ever land in logs/unified.jsonl.
+    let grok_logs = home.join(".grok").join("logs");
+    if grok_logs.exists() {
+        dirs.push(grok_logs);
     }
 
     // Add GLM session directories (future)
@@ -542,6 +563,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                     providers::kimi::invalidate_stats_cache();
                     providers::glm::invalidate_stats_cache();
                     providers::gjc::invalidate_stats_cache();
+                    providers::grok::invalidate_stats_cache();
                     // Re-parse in background, then notify the frontend. Emitting only
                     // after the parse completes means the frontend's get_*_stats calls
                     // hit the warm cache instead of racing this thread and parsing the
@@ -565,6 +587,9 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                         }
                         if prefs.include_gjc {
                             let _ = providers::gjc::GjcProvider::new(prefs.gjc_dirs.clone()).fetch_stats();
+                        }
+                        if prefs.include_grok {
+                            let _ = providers::grok::GrokProvider::new().fetch_stats();
                         }
                         update_tray_title(&app_for_refresh);
                         let _ = app_for_refresh.emit("stats-updated", ());
@@ -590,6 +615,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                         providers::kimi::invalidate_stats_cache();
                         providers::glm::invalidate_stats_cache();
                         providers::gjc::invalidate_stats_cache();
+                        providers::grok::invalidate_stats_cache();
                         let _ = app_handle.emit("stats-updated", ());
                     }
                     update_tray_title(&app_handle);
@@ -994,6 +1020,8 @@ pub fn run() {
             commands::is_opencode_available,
             commands::get_kimi_stats,
             commands::is_kimi_available,
+            commands::get_grok_stats,
+            commands::is_grok_available,
             commands::get_glm_stats,
             commands::is_glm_available,
             commands::get_gjc_stats,

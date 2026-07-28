@@ -11,6 +11,7 @@ use crate::providers::claude_code::ClaudeCodeProvider;
 use crate::providers::codex::CodexProvider;
 use crate::providers::gjc::GjcProvider;
 use crate::providers::glm::GlmProvider;
+use crate::providers::grok::GrokProvider;
 use crate::providers::kimi::KimiProvider;
 use crate::providers::opencode::OpenCodeProvider;
 use crate::providers::pricing;
@@ -132,6 +133,33 @@ pub async fn get_kimi_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
 #[tauri::command]
 pub fn is_kimi_available() -> bool {
     KimiProvider::new().is_available()
+}
+
+#[tauri::command]
+pub async fn get_grok_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
+    let result = tauri::async_runtime::spawn_blocking(|| {
+        let provider = GrokProvider::new();
+        if !provider.is_available() {
+            return Err("Grok stats not available".to_string());
+        }
+        provider.fetch_stats()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    match result {
+        Ok(mut stats) => {
+            crate::hydration::apply(&mut stats, "grok");
+            crate::update_tray_title(&app);
+            Ok(stats)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+#[tauri::command]
+pub fn is_grok_available() -> bool {
+    GrokProvider::new().is_available()
 }
 
 #[tauri::command]
