@@ -125,7 +125,7 @@ jobs:
             BODY="No notable changes."
           fi
 
-          CHANGELOG="## AI Token Monitor ${{ steps.bump.outputs.version }}\n\n${BODY}### Download\n- macOS (Apple Silicon): \`.dmg\` 파일을 다운로드하세요.\n- Windows: \`.exe\` 인스톨러를 다운로드하세요."
+          CHANGELOG="## AI Token Monitor ${{ steps.bump.outputs.version }}\n\n${BODY}### Download\n- macOS (Apple Silicon): \`aarch64.dmg\` 파일을 다운로드하세요.\n- macOS (Intel): \`x64.dmg\` 파일을 다운로드하세요.\n- Windows: \`.exe\` 인스톨러를 다운로드하세요."
 
           {
             echo "changelog<<CHANGELOG_EOF"
@@ -164,8 +164,26 @@ jobs:
   build-macos:
     needs: bump-version
     if: needs.bump-version.outputs.build_macos == 'true'
-    runs-on: macos-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
+    strategy:
+      # Sequential: both arches upload to the same release, and tauri-action
+      # updates latest.json by read-modify-write (it downloads the existing
+      # manifest and merges its `platforms` map). Concurrent uploads race that
+      # cycle and can drop a platform key, silently breaking auto-update.
+      max-parallel: 1
+      # One arch failing must not delete the other's uploaded assets.
+      fail-fast: false
+      matrix:
+        include:
+          - arch: aarch64
+            target: aarch64-apple-darwin
+            runner: macos-latest
+          # Last x86_64 image GitHub offers (supported until Aug 2027).
+          # macos-13 was retired; macos-*-large are billed on public repos.
+          - arch: x86_64
+            target: x86_64-apple-darwin
+            runner: macos-15-intel
     steps:
       - uses: actions/checkout@v4
         with:
@@ -177,10 +195,10 @@ jobs:
           node-version: 20
           cache: npm
 
-      - name: Install Rust stable (aarch64)
+      - name: Install Rust stable (${{ matrix.arch }})
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin
+          targets: ${{ matrix.target }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -208,7 +226,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "" $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
 
-      - name: Build Tauri app (Apple Silicon only)
+      - name: Build Tauri app (macOS ${{ matrix.arch }})
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -224,11 +242,18 @@ jobs:
           releaseBody: ${{ needs.bump-version.outputs.changelog }}
           releaseDraft: false
           prerelease: false
-          args: --target aarch64-apple-darwin
+          args: --target ${{ matrix.target }}
 
   build-windows:
-    needs: bump-version
-    if: needs.bump-version.outputs.build_windows == 'true'
+    # Also waits on build-macos (not just bump-version): every tauri-action
+    # upload rewrites latest.json by read-modify-write, so concurrent jobs can
+    # drop each other's platform keys and silently break auto-update. `always()`
+    # keeps Windows building even if macOS is skipped or fails.
+    needs: [bump-version, build-macos]
+    if: |
+      always() &&
+      needs.bump-version.result == 'success' &&
+      needs.bump-version.outputs.build_windows == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:

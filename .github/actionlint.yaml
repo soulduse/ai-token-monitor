@@ -1,0 +1,7 @@
+# actionlint ships a hardcoded runner-label list that still predates GitHub's
+# Intel-image migration: it accepts the retired `macos-13` and rejects the
+# current `macos-15-intel`. Declare the labels we actually use so linting
+# reflects the real runner catalog.
+self-hosted-runner:
+  labels:
+    - macos-15-intel
