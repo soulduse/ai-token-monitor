@@ -32,16 +32,9 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
     if (includeGrok) sources.push(grok.stats);
 
     const validStats = sources.filter((s): s is AllStats => s !== null);
-    if (validStats.length === 0) {
-      if (includeClaude) return claude.stats;
-      if (includeCodex) return codex.stats;
-      if (includeOpencode) return opencode.stats;
-      if (includeKimi) return kimi.stats;
-      if (includeGlm) return glm.stats;
-      if (includeGjc) return gjc.stats;
-      if (includeGrok) return grok.stats;
-      return null;
-    }
+    // Every pushed source was null, so any per-provider fallback here would just
+    // hand back one of those same nulls.
+    if (validStats.length === 0) return null;
     if (validStats.length === 1) return validStats[0];
 
     return mergeStats(validStats);
