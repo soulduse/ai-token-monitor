@@ -59,8 +59,10 @@ const UNKNOWN_MODEL: &str = "grok";
 ///   would surface the whole path as the project name.
 ///
 /// Reporting unavailable is better than surfacing a toggle that silently shows
-/// zero. Lift this once the Windows layout is confirmed on a real machine.
-const fn platform_supported() -> bool {
+/// zero. Lift this once the Windows layout is confirmed on a real machine —
+/// public so the file watcher gates on the same definition instead of repeating
+/// the `cfg!`, which would leave the watcher off after the gate is lifted.
+pub const fn platform_supported() -> bool {
     cfg!(target_os = "macos")
 }
 
@@ -187,6 +189,34 @@ struct LogRecord {
     prompt_tokens: u64,
     cached_prompt_tokens: u64,
     completion_tokens: u64,
+}
+
+/// Borrowed ordering key. Matches `Cursor`'s field order, whose derived `Ord`
+/// compares in declaration order — so the two sort identically without the
+/// String allocation a `Cursor` costs on every comparison.
+fn order_key(record: &LogRecord) -> (i64, &str, i64) {
+    (record.ts_ms, record.sid.as_str(), record.loop_index)
+}
+
+fn cursor_key(cursor: &Cursor) -> (i64, &str, i64) {
+    (cursor.ts_ms, cursor.sid.as_str(), cursor.loop_index)
+}
+
+/// Records the cursor has not absorbed yet, oldest first.
+///
+/// Shared by the fold and by the session-metadata lookup that feeds it — when
+/// these two disagree, records still fold but without their model, and usage
+/// lands silently under [`UNKNOWN_MODEL`] with no error anywhere.
+fn fresh_records<'a>(cursor: Option<&Cursor>, records: &'a [LogRecord]) -> Vec<&'a LogRecord> {
+    let mut fresh: Vec<&LogRecord> = match cursor {
+        Some(c) => records
+            .iter()
+            .filter(|r| order_key(r) > cursor_key(c))
+            .collect(),
+        None => records.iter().collect(),
+    };
+    fresh.sort_by(|a, b| order_key(a).cmp(&order_key(b)));
+    fresh
 }
 
 impl LogRecord {
@@ -378,14 +408,10 @@ impl GrokProvider {
         records: &[LogRecord],
         meta: &HashMap<String, SessionMeta>,
     ) -> bool {
-        let mut fresh: Vec<&LogRecord> = match &history.cursor {
-            Some(cursor) => records.iter().filter(|r| r.cursor() > *cursor).collect(),
-            None => records.iter().collect(),
-        };
+        let fresh = fresh_records(history.cursor.as_ref(), records);
         if fresh.is_empty() {
             return false;
         }
-        fresh.sort_by_key(|r| r.cursor());
 
         for record in &fresh {
             let session = meta.get(&record.sid);
@@ -521,10 +547,13 @@ impl GrokProvider {
 
         // Nothing new in the log — the snapshot cannot have changed either. This
         // holds for a missing log too (both sides None): once Grok is gone, only
-        // the snapshot remains and nothing can add to it.
-        if let Ok(cache) = STATS_CACHE.lock() {
-            if let Some(ref cached) = *cache {
+        // the snapshot remains and nothing can add to it. Refresh computed_at on
+        // the way out (as codex.rs does) so the TTL check keeps absorbing calls
+        // instead of routing every one of them back through here.
+        if let Ok(mut cache) = STATS_CACHE.lock() {
+            if let Some(ref mut cached) = *cache {
                 if cached.log_meta == current_meta {
+                    cached.computed_at = Instant::now();
                     return Ok(cached.stats.clone());
                 }
             }
@@ -538,10 +567,8 @@ impl GrokProvider {
         };
 
         if !records.is_empty() {
-            let cursor = history.cursor.clone();
-            let wanted: HashSet<String> = records
-                .iter()
-                .filter(|r| cursor.as_ref().is_none_or(|c| r.cursor() > *c))
+            let wanted: HashSet<String> = fresh_records(history.cursor.as_ref(), &records)
+                .into_iter()
                 .map(|r| r.sid.clone())
                 .filter(|s| !s.is_empty())
                 .collect();
@@ -617,8 +644,12 @@ impl TokenProvider for GrokProvider {
         // Gate on an actual data source, not just on ~/.grok existing: a Grok
         // install with no usage log would otherwise surface the toggle and then
         // report a bare "0 tokens". The snapshot alone counts too, since the log
-        // may have rolled off entirely since the last run.
-        platform_supported() && (self.log_path().exists() || history_path().exists())
+        // may have rolled off entirely since the last run — but only while Grok
+        // is still installed. Without the grok_dir check, one written snapshot
+        // would keep the toggle visible forever, with no way to get rid of it.
+        platform_supported()
+            && self.grok_dir.exists()
+            && (self.log_path().exists() || history_path().exists())
     }
 }
 
@@ -737,6 +768,29 @@ mod tests {
         assert_eq!(m.input_tokens, 600 + 1_500);
         assert_eq!(m.cache_read_tokens, 400 + 500);
         assert_eq!(m.output_tokens, 300);
+    }
+
+    #[test]
+    fn fresh_records_selects_the_same_set_the_fold_absorbs() {
+        // The metadata lookup and the fold both narrow by cursor. If they ever
+        // disagree, records still fold but without their model, landing under
+        // UNKNOWN_MODEL with no error — so they must share this one filter.
+        let records = vec![
+            rec(1_000, "2026-07-24", "s1", 100, 0, 10),
+            rec(2_000, "2026-07-24", "s2", 200, 0, 20),
+            rec(3_000, "2026-07-24", "s3", 300, 0, 30),
+        ];
+
+        assert_eq!(fresh_records(None, &records).len(), 3);
+
+        let cursor = records[0].cursor();
+        let fresh = fresh_records(Some(&cursor), &records);
+        assert_eq!(fresh.len(), 2);
+        assert_eq!(fresh[0].sid, "s2", "oldest first");
+        assert_eq!(fresh[1].sid, "s3");
+
+        let newest = records[2].cursor();
+        assert!(fresh_records(Some(&newest), &records).is_empty());
     }
 
     #[test]

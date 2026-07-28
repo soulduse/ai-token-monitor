@@ -462,9 +462,14 @@ fn get_all_watch_dirs() -> Vec<PathBuf> {
     }
 
     // Add Grok's rolling usage log directory. Watching `logs` rather than
-    // `sessions` — token counts only ever land in logs/unified.jsonl. Skipped
-    // off macOS, matching the provider's own platform gate.
-    if cfg!(target_os = "macos") {
+    // `sessions` — token counts only ever land in logs/unified.jsonl.
+    //
+    // Gated on include_grok, unlike the session-based providers above: Grok's
+    // log is mostly trace chatter (~92% of lines carry no tokens) written tens
+    // of times a minute while the CLI runs. Watching it when the source is off
+    // would fire the debounced refresh — which invalidates and re-parses *every*
+    // provider, including Codex's ~175k session files — for nothing.
+    if providers::grok::platform_supported() && prefs.include_grok {
         let grok_logs = home.join(".grok").join("logs");
         if grok_logs.exists() {
             dirs.push(grok_logs);
