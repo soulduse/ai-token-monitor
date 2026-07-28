@@ -663,6 +663,20 @@ mod tests {
         path
     }
 
+    /// A parsed record fixture. `loop_index` is fixed at 1 — record ordering is
+    /// decided by `ts_ms` here, so varying it would add noise without coverage.
+    fn rec(ts_ms: i64, date: &str, sid: &str, prompt: u64, cached: u64, completion: u64) -> LogRecord {
+        LogRecord {
+            ts_ms,
+            date: date.to_string(),
+            sid: sid.to_string(),
+            loop_index: 1,
+            prompt_tokens: prompt,
+            cached_prompt_tokens: cached,
+            completion_tokens: completion,
+        }
+    }
+
     fn meta_for(sid: &str, model: &str, project: &str) -> HashMap<String, SessionMeta> {
         HashMap::from([(
             sid.to_string(),
@@ -707,24 +721,8 @@ mod tests {
     #[test]
     fn folds_each_record_once_across_repeated_runs() {
         let records = vec![
-            LogRecord {
-                ts_ms: 1_000,
-                date: "2026-07-24".to_string(),
-                sid: "s1".to_string(),
-                loop_index: 1,
-                prompt_tokens: 1_000,
-                cached_prompt_tokens: 400,
-                completion_tokens: 100,
-            },
-            LogRecord {
-                ts_ms: 2_000,
-                date: "2026-07-24".to_string(),
-                sid: "s1".to_string(),
-                loop_index: 2,
-                prompt_tokens: 2_000,
-                cached_prompt_tokens: 500,
-                completion_tokens: 200,
-            },
+            rec(1_000, "2026-07-24", "s1", 1_000, 400, 100),
+            rec(2_000, "2026-07-24", "s1", 2_000, 500, 200),
         ];
         let meta = meta_for("s1", "grok-4.5", "proj");
 
@@ -743,24 +741,8 @@ mod tests {
 
     #[test]
     fn keeps_totals_when_the_log_rolls_off_the_front() {
-        let older = LogRecord {
-            ts_ms: 1_000,
-            date: "2026-07-24".to_string(),
-            sid: "s1".to_string(),
-            loop_index: 1,
-            prompt_tokens: 1_000,
-            cached_prompt_tokens: 0,
-            completion_tokens: 100,
-        };
-        let newer = LogRecord {
-            ts_ms: 2_000,
-            date: "2026-07-25".to_string(),
-            sid: "s1".to_string(),
-            loop_index: 1,
-            prompt_tokens: 2_000,
-            cached_prompt_tokens: 0,
-            completion_tokens: 200,
-        };
+        let older = rec(1_000, "2026-07-24", "s1", 1_000, 0, 100);
+        let newer = rec(2_000, "2026-07-25", "s1", 2_000, 0, 200);
         let meta = meta_for("s1", "grok-4.5", "proj");
 
         let mut history = GrokHistory::default();
@@ -808,24 +790,8 @@ mod tests {
     #[test]
     fn counts_sessions_and_projects_per_day() {
         let records = vec![
-            LogRecord {
-                ts_ms: 1_000,
-                date: "2026-07-24".to_string(),
-                sid: "s1".to_string(),
-                loop_index: 1,
-                prompt_tokens: 1_000,
-                cached_prompt_tokens: 0,
-                completion_tokens: 100,
-            },
-            LogRecord {
-                ts_ms: 2_000,
-                date: "2026-07-24".to_string(),
-                sid: "s2".to_string(),
-                loop_index: 1,
-                prompt_tokens: 500,
-                cached_prompt_tokens: 0,
-                completion_tokens: 50,
-            },
+            rec(1_000, "2026-07-24", "s1", 1_000, 0, 100),
+            rec(2_000, "2026-07-24", "s2", 500, 0, 50),
         ];
         let mut meta = meta_for("s1", "grok-4.5", "alpha");
         meta.insert(
@@ -849,15 +815,7 @@ mod tests {
 
     #[test]
     fn falls_back_to_a_generic_model_when_the_session_is_gone() {
-        let records = vec![LogRecord {
-            ts_ms: 1_000,
-            date: "2026-07-24".to_string(),
-            sid: "vanished".to_string(),
-            loop_index: 1,
-            prompt_tokens: 1_000,
-            cached_prompt_tokens: 0,
-            completion_tokens: 100,
-        }];
+        let records = vec![rec(1_000, "2026-07-24", "vanished", 1_000, 0, 100)];
 
         let mut history = GrokHistory::default();
         GrokProvider::fold_into_history(&mut history, &records, &HashMap::new());
@@ -866,15 +824,7 @@ mod tests {
 
     #[test]
     fn survives_a_save_load_round_trip() {
-        let records = vec![LogRecord {
-            ts_ms: 1_000,
-            date: "2026-07-24".to_string(),
-            sid: "s1".to_string(),
-            loop_index: 1,
-            prompt_tokens: 250_000,
-            cached_prompt_tokens: 200_000,
-            completion_tokens: 400,
-        }];
+        let records = vec![rec(1_000, "2026-07-24", "s1", 250_000, 200_000, 400)];
         let mut history = GrokHistory::default();
         GrokProvider::fold_into_history(&mut history, &records, &meta_for("s1", "grok-4.5", "proj"));
 
