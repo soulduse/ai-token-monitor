@@ -149,7 +149,7 @@ Paylaşılan veriler: günlük toplam token sayısı, maliyet, mesaj/oturum say�
 | **Claude Code** | `~/.claude/projects/**/*.jsonl` | `~/.claude/stats-cache.json` üzerinden oturum/araç çağrı sayıları. Birden fazla kök dizin desteklenir. |
 | **Codex** | `~/.codex/sessions/**/*.jsonl` | Birden fazla kök dizin desteklenir. |
 | **OpenCode** | `~/.local/share/opencode/**/*.jsonl` | Yerleşik fiyatlandırma kaydına dayalı model bazlı maliyet hesaplaması. |
-| **Grok** | `~/.grok/logs/unified.jsonl` | `shell.turn.inference_done` kaydından istek başına gerçek token; model ve proje `~/.grok/sessions` ile eşleştirilir. Grok bu döngüsel günlüğün başını kırptığı için günlük toplamlar yerel bir anlık görüntüde biriktirilir. |
+| **Grok** | `~/.grok/logs/unified.jsonl` | `shell.turn.inference_done` kaydından istek başına gerçek token; model ve proje `~/.grok/sessions` ile eşleştirilir. Grok bu döngüsel günlüğün başını kırptığı için günlük toplamlar yerel bir anlık görüntüde biriktirilir. Şimdilik yalnızca macOS — Windows günlük yapısı doğrulanmadı. |
 
 **Ağ istekleri**: yalnızca liderlik tablosu/sohbet etkinleştirildiğinde (Supabase'e toplu veri gönderilir) veya bir webhook tetiklendiğinde gerçekleşir. Bu özellikler kullanılmadığında uygulama tamamen çevrimdışı çalışır. Yapay zeka çeviri anahtarı ayarlandıysa, yalnızca seçtiğiniz sağlayıcıya doğrudan istek gönderilir.
 

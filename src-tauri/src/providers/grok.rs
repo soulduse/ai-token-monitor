@@ -14,6 +14,8 @@
 //!
 //! The log carries no model or project name; both come from joining each record's
 //! `sid` against `~/.grok/sessions/*/{sid}/summary.json`.
+//!
+//! **macOS only for now** — see [`platform_supported`].
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -46,6 +48,21 @@ const CACHE_TTL: Duration = Duration::from_secs(30);
 
 /// Fallback model name for records whose session metadata is gone.
 const UNKNOWN_MODEL: &str = "grok";
+
+/// Whether this build's platform is supported. Grok is gated to macOS because
+/// nothing here has been verified on Windows, and two things would likely break:
+///
+/// - It is unconfirmed that the Windows Grok CLI writes the same
+///   `~/.grok/logs/unified.jsonl` layout and `shell.turn.inference_done` fields.
+///   If it does not, parsing yields nothing regardless of path handling.
+/// - [`project_name_from_cwd`] splits on `/` only, so a `C:\Users\me\proj` cwd
+///   would surface the whole path as the project name.
+///
+/// Reporting unavailable is better than surfacing a toggle that silently shows
+/// zero. Lift this once the Windows layout is confirmed on a real machine.
+const fn platform_supported() -> bool {
+    cfg!(target_os = "macos")
+}
 
 /// Invalidate cache — called by file watcher on ~/.grok/ changes.
 pub fn invalidate_stats_cache() {
@@ -601,12 +618,14 @@ impl TokenProvider for GrokProvider {
         // install with no usage log would otherwise surface the toggle and then
         // report a bare "0 tokens". The snapshot alone counts too, since the log
         // may have rolled off entirely since the last run.
-        self.log_path().exists() || history_path().exists()
+        platform_supported() && (self.log_path().exists() || history_path().exists())
     }
 }
 
-/// Project label for a session's working directory — the trailing path segment,
-/// matching how the other providers name projects.
+/// Project label for a session's working directory: its trailing path segment.
+///
+/// Splits on `/` only, which holds for the macOS paths this provider is gated
+/// to — see [`platform_supported`].
 fn project_name_from_cwd(cwd: &str) -> String {
     let trimmed = cwd.trim_end_matches('/');
     if trimmed.is_empty() {
@@ -889,6 +908,16 @@ mod tests {
         let history = load_history_from(&missing);
         assert!(history.days.is_empty());
         assert!(history.cursor.is_none());
+    }
+
+    #[test]
+    fn reports_unavailable_off_macos() {
+        // Parsing is unverified on Windows, so the toggle must stay hidden there
+        // rather than surfacing a source that silently reports zero.
+        if !platform_supported() {
+            assert!(!GrokProvider::new().is_available());
+        }
+        assert_eq!(platform_supported(), cfg!(target_os = "macos"));
     }
 
     #[test]

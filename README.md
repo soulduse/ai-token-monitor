@@ -163,7 +163,7 @@ Shared data: daily token count, cost, messages/sessions. **No code or conversati
 | **Codex** | `~/.codex/sessions/**/*.jsonl` | Supports multiple roots. |
 | **OpenCode** | `~/.local/share/opencode/**/*.jsonl` | Per-model pricing from bundled registry. |
 | **GJC (Gajae Code)** | `~/.gjc/agent/sessions/**/*.jsonl` | Per-message usage (`message.usage`) with pre-computed cost; dedup by API response id. Supports multiple roots. |
-| **Grok** | `~/.grok/logs/unified.jsonl` | Exact per-request tokens from `shell.turn.inference_done`; model/project joined from `~/.grok/sessions`. Grok truncates this rolling log, so days are accumulated into a local snapshot. |
+| **Grok** | `~/.grok/logs/unified.jsonl` | Exact per-request tokens from `shell.turn.inference_done`; model/project joined from `~/.grok/sessions`. Grok truncates this rolling log, so days are accumulated into a local snapshot. macOS only for now — the Windows log layout is unverified. |
 
 **Network requests**: only when leaderboard/chat is opted in (sends aggregated data to Supabase) or when a webhook fires. Without these features, the app runs completely offline. AI translation keys, if set, call the provider you chose directly.
 

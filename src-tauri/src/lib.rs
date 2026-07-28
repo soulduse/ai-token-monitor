@@ -462,10 +462,13 @@ fn get_all_watch_dirs() -> Vec<PathBuf> {
     }
 
     // Add Grok's rolling usage log directory. Watching `logs` rather than
-    // `sessions` — token counts only ever land in logs/unified.jsonl.
-    let grok_logs = home.join(".grok").join("logs");
-    if grok_logs.exists() {
-        dirs.push(grok_logs);
+    // `sessions` — token counts only ever land in logs/unified.jsonl. Skipped
+    // off macOS, matching the provider's own platform gate.
+    if cfg!(target_os = "macos") {
+        let grok_logs = home.join(".grok").join("logs");
+        if grok_logs.exists() {
+            dirs.push(grok_logs);
+        }
     }
 
     // Add GLM session directories (future)

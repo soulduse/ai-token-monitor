@@ -149,7 +149,7 @@ Dati condivisi: conteggio giornaliero dei token, costi, messaggi/sessioni. **Nes
 | **Claude Code** | `~/.claude/projects/**/*.jsonl` | Conteggi sessioni/chiamate strumenti da `~/.claude/stats-cache.json`. Supporta root multiple. |
 | **Codex** | `~/.codex/sessions/**/*.jsonl` | Supporta root multiple. |
 | **OpenCode** | `~/.local/share/opencode/**/*.jsonl` | Costi per modello dal registro prezzi integrato. |
-| **Grok** | `~/.grok/logs/unified.jsonl` | Token reali per richiesta da `shell.turn.inference_done`; modello e progetto uniti da `~/.grok/sessions`. Grok tronca questo log a rotazione, quindi i totali giornalieri vengono accumulati in uno snapshot locale. |
+| **Grok** | `~/.grok/logs/unified.jsonl` | Token reali per richiesta da `shell.turn.inference_done`; modello e progetto uniti da `~/.grok/sessions`. Grok tronca questo log a rotazione, quindi i totali giornalieri vengono accumulati in uno snapshot locale. Per ora solo macOS — il layout dei log su Windows non è verificato. |
 
 **Richieste di rete**: solo quando classifica/chat sono attivati (invio dati aggregati a Supabase) o quando scatta un webhook. Senza queste funzionalita, l'app funziona completamente offline. Le chiavi di traduzione AI, se configurate, inviano richieste direttamente al provider scelto.
 

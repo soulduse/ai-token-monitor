@@ -149,7 +149,7 @@ npm run tauri build   # 生产构建
 | **Claude Code** | `~/.claude/projects/**/*.jsonl` | 从 `~/.claude/stats-cache.json` 补充会话/工具调用数。支持多根目录。 |
 | **Codex** | `~/.codex/sessions/**/*.jsonl` | 支持多根目录。 |
 | **OpenCode** | `~/.local/share/opencode/**/*.jsonl` | 内置价格注册表按模型计算费用。 |
-| **Grok** | `~/.grok/logs/unified.jsonl` | 来自 `shell.turn.inference_done` 的每次请求实测 token；模型与项目从 `~/.grok/sessions` 关联。Grok 会截断该滚动日志的开头，因此按天汇总累积到本地快照。 |
+| **Grok** | `~/.grok/logs/unified.jsonl` | 来自 `shell.turn.inference_done` 的每次请求实测 token；模型与项目从 `~/.grok/sessions` 关联。Grok 会截断该滚动日志的开头，因此按天汇总累积到本地快照。 目前仅支持 macOS — Windows 的日志结构尚未验证。 |
 
 **网络请求**:仅在开启排行榜/聊天时(向 Supabase 发送汇总数据)或 Webhook 触发时才会发起网络请求。不使用这些功能时,应用完全离线运行。配置 AI 翻译密钥后,才会直接向相应提供商发送请求。
 

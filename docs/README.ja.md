@@ -149,7 +149,7 @@ npm run tauri build   # プロダクションビルド
 | **Claude Code** | `~/.claude/projects/**/*.jsonl` | `~/.claude/stats-cache.json` からセッション/ツール呼び出し数を補足。複数ルート対応。 |
 | **Codex** | `~/.codex/sessions/**/*.jsonl` | 複数ルート対応。 |
 | **OpenCode** | `~/.local/share/opencode/**/*.jsonl` | 内蔵プライシングレジストリでモデル別コスト計算。 |
-| **Grok** | `~/.grok/logs/unified.jsonl` | `shell.turn.inference_done` のリクエスト単位の実測トークン。モデル・プロジェクトは `~/.grok/sessions` から結合。Grok がこのローリングログの先頭を切り詰めるため、日別集計をローカルスナップショットに蓄積します。 |
+| **Grok** | `~/.grok/logs/unified.jsonl` | `shell.turn.inference_done` のリクエスト単位の実測トークン。モデル・プロジェクトは `~/.grok/sessions` から結合。Grok がこのローリングログの先頭を切り詰めるため、日別集計をローカルスナップショットに蓄積します。 現在 macOS のみ — Windows のログ構造は未検証です。 |
 
 **ネットワークリクエスト**：リーダーボード/チャットをオプトインした場合のみ Supabase に集計データを送信し、Webhook 発火時に外部へ送信します。これらの機能を使わなければ、アプリは完全にオフラインで動作します。AI 翻訳キーを設定した場合のみ、該当プロバイダーへ直接リクエストが送信されます。
 
