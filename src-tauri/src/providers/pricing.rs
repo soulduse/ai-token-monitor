@@ -87,6 +87,11 @@ struct ScheduledPrice {
     cache_write_1h: f64,
     #[serde(default)]
     cached_input: f64,
+    /// Scheduled high-context rates. Base and high tiers live in the same entry,
+    /// so a price change has to be able to move both — otherwise the base shifts
+    /// on the `from` date while the high tier silently keeps the old rate.
+    #[serde(default)]
+    high_context: Option<HighContextTier>,
 }
 
 /// Prices for one model, already resolved for the current date. This is what
@@ -98,7 +103,8 @@ struct ResolvedPrice {
     cache_write: f64,
     cache_write_1h: f64,
     cached_input: f64,
-    /// Carried over verbatim — high-context rates are not date-scheduled.
+    /// The entry's high-context rates, replaced wholesale by a schedule that
+    /// carries its own.
     high_context: Option<HighContextTier>,
 }
 
@@ -129,6 +135,7 @@ impl PricingEntry {
             if sched.cache_write > 0.0 { price.cache_write = sched.cache_write; }
             if sched.cache_write_1h > 0.0 { price.cache_write_1h = sched.cache_write_1h; }
             if sched.cached_input > 0.0 { price.cached_input = sched.cached_input; }
+            if sched.high_context.is_some() { price.high_context = sched.high_context; }
         }
         price
     }
@@ -501,6 +508,40 @@ mod tests {
     fn grok_unknown_model_defaults_to_45() {
         let unknown = get_grok_pricing("grok-9.9-experimental");
         assert_eq!(unknown.input, get_grok_pricing("grok-4.5").input);
+    }
+
+    #[test]
+    fn scheduled_override_moves_the_high_context_tier_too() {
+        // Base and high rates live in one entry, so a scheduled price change has
+        // to move both — otherwise the base shifts on the `from` date while long
+        // prompts keep billing at the old high rate, with nothing to signal it.
+        let entry: PricingEntry = serde_json::from_str(
+            r#"{ "match": "grok-test", "input": 2.0, "output": 6.0, "cached_input": 0.3,
+                 "high_context": { "threshold_tokens": 200000, "input": 4.0, "output": 12.0, "cached_input": 0.6 },
+                 "scheduled": [ { "from": "2026-01-01", "input": 3.0, "output": 9.0,
+                   "high_context": { "threshold_tokens": 200000, "input": 6.0, "output": 18.0, "cached_input": 0.9 } } ] }"#,
+        )
+        .unwrap();
+
+        let resolved = entry.resolve_for("2026-07-29");
+        assert_eq!(resolved.input, 3.0);
+        let high = resolved.high_context.expect("scheduled high tier");
+        assert_eq!(high.input, 6.0);
+        assert_eq!(high.output, 18.0);
+    }
+
+    #[test]
+    fn schedule_without_high_context_keeps_the_base_tier() {
+        let entry: PricingEntry = serde_json::from_str(
+            r#"{ "match": "grok-test", "input": 2.0, "output": 6.0,
+                 "high_context": { "threshold_tokens": 200000, "input": 4.0, "output": 12.0, "cached_input": 0.6 },
+                 "scheduled": [ { "from": "2026-01-01", "input": 3.0 } ] }"#,
+        )
+        .unwrap();
+
+        let resolved = entry.resolve_for("2026-07-29");
+        assert_eq!(resolved.input, 3.0);
+        assert_eq!(resolved.high_context.expect("base high tier").input, 4.0);
     }
 
     #[test]
