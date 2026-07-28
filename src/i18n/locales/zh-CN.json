@@ -15,6 +15,7 @@
   "sources.kimi": "Kimi",
   "sources.glm": "GLM",
   "sources.gjc": "GJC",
+  "sources.grok": "Grok",
   "sources.summary.count": "{{total}} 个中 {{active}} 个启用",
   "sources.open": "打开来源菜单",
   "today.title": "今日",

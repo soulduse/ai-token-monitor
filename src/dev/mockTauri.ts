@@ -67,6 +67,7 @@ const mockPrefs: UserPreferences = {
   include_kimi: false,
   include_glm: false,
   include_gjc: false,
+  include_grok: false,
   theme: "github",
   color_mode: "dark",
   language: "en",
@@ -94,6 +95,7 @@ export function installMockTauri(): void {
     get_kimi_stats: () => stats,
     get_glm_stats: () => stats,
     get_gjc_stats: () => stats,
+    get_grok_stats: () => stats,
     get_preferences: () => mockPrefs,
     get_ai_keys: () => null,
     get_pricing_table: () => ({

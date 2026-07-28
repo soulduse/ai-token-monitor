@@ -15,6 +15,7 @@
   "sources.kimi": "Kimi",
   "sources.glm": "GLM",
   "sources.gjc": "GJC",
+  "sources.grok": "Grok",
   "sources.summary.count": "{{active}} of {{total}} active",
   "sources.open": "Open sources menu",
   "today.title": "Today",
