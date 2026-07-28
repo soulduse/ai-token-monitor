@@ -5,6 +5,16 @@ import type { AllStats } from "../lib/types";
 
 export type StatsProvider = "claude" | "codex" | "opencode" | "kimi" | "glm" | "gjc" | "grok";
 
+const STATS_COMMANDS: Record<StatsProvider, string> = {
+  claude: "get_all_stats",
+  codex: "get_codex_stats",
+  opencode: "get_opencode_stats",
+  kimi: "get_kimi_stats",
+  glm: "get_glm_stats",
+  gjc: "get_gjc_stats",
+  grok: "get_grok_stats",
+};
+
 export function useTokenStats(provider: StatsProvider = "claude") {
   const [stats, setStats] = useState<AllStats | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -15,7 +25,7 @@ export function useTokenStats(provider: StatsProvider = "claude") {
   const fetchStats = useCallback(async () => {
     const requestId = ++requestIdRef.current;
     try {
-      const command = provider === "codex" ? "get_codex_stats" : provider === "opencode" ? "get_opencode_stats" : provider === "kimi" ? "get_kimi_stats" : provider === "glm" ? "get_glm_stats" : provider === "gjc" ? "get_gjc_stats" : provider === "grok" ? "get_grok_stats" : "get_all_stats";
+      const command = STATS_COMMANDS[provider] ?? STATS_COMMANDS.claude;
       const data = await invoke<AllStats>(command);
       if (requestId !== requestIdRef.current) return;
       setStats(data);

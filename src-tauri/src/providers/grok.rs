@@ -103,7 +103,6 @@ struct HistoryModel {
     output_tokens: u64,
     cache_read_tokens: u64,
     cost_usd: f64,
-    messages: u32,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -413,7 +412,6 @@ impl GrokProvider {
             m.output_tokens += record.completion_tokens;
             m.cache_read_tokens += record.cached_prompt_tokens;
             m.cost_usd += cost;
-            m.messages += 1;
 
             if let Some(name) = session.map(|s| s.project.clone()).filter(|p| !p.is_empty()) {
                 let p = day.projects.entry(name).or_default();
@@ -521,10 +519,12 @@ impl GrokProvider {
         let start = Instant::now();
         let current_meta = self.log_meta();
 
-        // Nothing new in the log — the snapshot cannot have changed either.
+        // Nothing new in the log — the snapshot cannot have changed either. This
+        // holds for a missing log too (both sides None): once Grok is gone, only
+        // the snapshot remains and nothing can add to it.
         if let Ok(cache) = STATS_CACHE.lock() {
             if let Some(ref cached) = *cache {
-                if cached.log_meta == current_meta && current_meta.is_some() {
+                if cached.log_meta == current_meta {
                     return Ok(cached.stats.clone());
                 }
             }
