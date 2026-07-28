@@ -1,9 +1,14 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import type { AllStats } from "../../lib/types";
 import type { Period } from "../../lib/statsHelpers";
 import { useI18n } from "../../i18n/I18nContext";
 import { useShareImage } from "../../hooks/useShareImage";
+import { useToday } from "../../hooks/useToday";
+import { useDateNav } from "../../hooks/useDateNav";
+import { useSettings } from "../../contexts/SettingsContext";
+import { formatNavDate, getTotalTokens } from "../../lib/format";
+import { DateNavigator } from "../DateNavigator";
 import { Receipt } from "./Receipt";
 
 interface Props {
@@ -25,6 +30,19 @@ export function ReceiptOverlay({ visible, onClose, stats }: Props) {
   const receiptRef = useRef<HTMLDivElement>(null);
   const { capture, captured } = useShareImage(receiptRef);
   const t = useI18n();
+  const { prefs } = useSettings();
+
+  const todayStr = useToday();
+  const minDate = useMemo(() => {
+    if (stats.daily.length === 0) return null;
+    return stats.daily.reduce((min, d) => (d.date < min ? d.date : min), stats.daily[0].date);
+  }, [stats.daily]);
+  const dateNav = useDateNav(todayStr, minDate);
+  const dailyTokens = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const d of stats.daily) map[d.date] = getTotalTokens(d.tokens);
+    return map;
+  }, [stats.daily]);
 
   useEffect(() => {
     getVersion().then(setAppVersion);
@@ -115,11 +133,24 @@ export function ReceiptOverlay({ visible, onClose, stats }: Props) {
           ))}
         </div>
 
+        {/* Day navigation — only meaningful for the daily receipt */}
+        {period === "today" && (
+          <div style={{ marginTop: -8, marginBottom: 10 }}>
+            <DateNavigator
+              nav={dateNav}
+              label={dateNav.isToday ? t("receipt.today") : formatNavDate(dateNav.date, prefs.language)}
+              tone="overlay"
+              dailyTokens={dailyTokens}
+            />
+          </div>
+        )}
+
         {/* Receipt */}
         <Receipt
           ref={receiptRef}
           stats={stats}
           period={period}
+          date={period === "today" ? dateNav.date : undefined}
           appVersion={appVersion}
         />
 

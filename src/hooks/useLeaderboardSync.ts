@@ -18,6 +18,9 @@ interface UseLeaderboardSyncProps {
   provider: LeaderboardProvider;
   period: LeaderboardPeriod;
   userId?: string;
+  /** Anchor date (YYYY-MM-DD) for the `today` period — enables browsing past
+   *  days. Ignored for other periods; defaults to the actual today. */
+  anchorDate?: string;
 }
 
 const LEADERBOARD_CACHE_TTL = 30 * 60_000; // 30 minutes
@@ -25,7 +28,7 @@ const LEADERBOARD_POLL_INTERVAL = 30 * 60_000; // 30 minutes
 
 export type LeaderboardPeriod = "today" | "week" | "month" | "grid";
 
-export function useLeaderboardSync({ provider, period, userId }: UseLeaderboardSyncProps) {
+export function useLeaderboardSync({ provider, period, userId, anchorDate }: UseLeaderboardSyncProps) {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const cacheRef = useRef<{
@@ -33,7 +36,11 @@ export function useLeaderboardSync({ provider, period, userId }: UseLeaderboardS
     fetchedAt: number;
     period: LeaderboardPeriod;
     provider: LeaderboardProvider;
+    anchorDate?: string;
   } | null>(null);
+  // Monotonic request counter — discards out-of-order RPC responses when the
+  // user navigates dates faster than the network answers.
+  const requestSeqRef = useRef(0);
 
   // Fetch leaderboard data
   const fetchLeaderboard = useCallback(async (forceRefresh = false) => {
@@ -41,15 +48,23 @@ export function useLeaderboardSync({ provider, period, userId }: UseLeaderboardS
     // Grid view uses a separate hook (useLeaderboardGrid); skip list fetch.
     if (period === "grid") return;
 
-    // Return cached data if still fresh and period+provider match
+    // Every fetch attempt — including a cache hit — supersedes older in-flight
+    // requests, so a stale response can't overwrite a fresher cached view.
+    const seq = ++requestSeqRef.current;
+
+    // Return cached data if still fresh and period+provider+anchor match
     if (
       !forceRefresh &&
       cacheRef.current &&
       cacheRef.current.period === period &&
       cacheRef.current.provider === provider &&
+      cacheRef.current.anchorDate === anchorDate &&
       Date.now() - cacheRef.current.fetchedAt < LEADERBOARD_CACHE_TTL
     ) {
       setLeaderboard(cacheRef.current.data);
+      // The invalidated in-flight request can no longer clear the spinner —
+      // this cache hit is the freshest state, so loading is over.
+      setLoading(false);
       return;
     }
 
@@ -57,10 +72,12 @@ export function useLeaderboardSync({ provider, period, userId }: UseLeaderboardS
 
     try {
       const today = toLocalDateStr(new Date());
+      // Never query past today, even with a (theoretically) stale anchor.
+      const anchor = anchorDate && anchorDate < today ? anchorDate : today;
       let dateFrom: string;
 
       if (period === "today") {
-        dateFrom = today;
+        dateFrom = anchor;
       } else if (period === "week") {
         const now = new Date();
         const dow = now.getDay();
@@ -77,8 +94,11 @@ export function useLeaderboardSync({ provider, period, userId }: UseLeaderboardS
       const { data } = await supabase.rpc("get_leaderboard_entries", {
         p_provider: provider,
         p_date_from: dateFrom,
-        p_date_to: today,
+        p_date_to: period === "today" ? anchor : today,
       });
+
+      // A newer request superseded this one — drop the stale response.
+      if (seq !== requestSeqRef.current) return;
 
       if (data) {
         const entries = (data as LeaderboardEntry[]).map((e) => ({
@@ -86,12 +106,12 @@ export function useLeaderboardSync({ provider, period, userId }: UseLeaderboardS
           cost_usd: Number(e.cost_usd),
         }));
         setLeaderboard(entries);
-        cacheRef.current = { data: entries, fetchedAt: Date.now(), period, provider };
+        cacheRef.current = { data: entries, fetchedAt: Date.now(), period, provider, anchorDate };
       }
     } finally {
-      setLoading(false);
+      if (seq === requestSeqRef.current) setLoading(false);
     }
-  }, [period, provider]);
+  }, [period, provider, anchorDate]);
 
   // When a snapshot upload completes, optimistically patch only the user's own
   // row instead of refetching the whole leaderboard. The next scheduled poll
@@ -109,6 +129,14 @@ export function useLeaderboardSync({ provider, period, userId }: UseLeaderboardS
       const detail = (e as CustomEvent<SnapshotUploadedDetail>).detail;
       if (!detail || detail.provider !== provider) return;
       if (period !== "today") return;
+      // The detail carries totals for the uploaded row's date — only patch the
+      // list when that exact day is the one being viewed.
+      const viewed = anchorDate ?? toLocalDateStr(new Date());
+      if (detail.today !== viewed) return;
+      // Discard any RPC that started before this upload — its pre-upload rows
+      // would overwrite the fresher patch. The next poll reconciles fully.
+      requestSeqRef.current++;
+      setLoading(false);
       setLeaderboard((prev) => {
         const idx = prev.findIndex((entry) => entry.user_id === userId);
         if (idx < 0) return prev;
@@ -121,12 +149,23 @@ export function useLeaderboardSync({ provider, period, userId }: UseLeaderboardS
           sessions: detail.sessions,
         };
         next.sort((a, b) => b.total_tokens - a.total_tokens);
+        // Mirror the patch into the matching cache entry so a visibility
+        // refresh within the TTL doesn't restore pre-upload totals.
+        // (Idempotent — safe under StrictMode double-invocation.)
+        if (
+          cacheRef.current &&
+          cacheRef.current.period === period &&
+          cacheRef.current.provider === provider &&
+          cacheRef.current.anchorDate === anchorDate
+        ) {
+          cacheRef.current = { ...cacheRef.current, data: next };
+        }
         return next;
       });
     };
     window.addEventListener(SNAPSHOT_UPLOADED_EVENT, handler);
     return () => window.removeEventListener(SNAPSHOT_UPLOADED_EVENT, handler);
-  }, [provider, period, userId]);
+  }, [provider, period, userId, anchorDate]);
 
   // Auto-refresh with visibility-aware polling
   useEffect(() => {
@@ -163,7 +202,10 @@ export function useLeaderboardSync({ provider, period, userId }: UseLeaderboardS
   const dateRange = useMemo(() => {
     const now = new Date();
     const today = toLocalDateStr(now);
-    if (period === "today") return { from: today, to: today };
+    if (period === "today") {
+      const anchor = anchorDate && anchorDate < today ? anchorDate : today;
+      return { from: anchor, to: anchor };
+    }
     if (period === "week") {
       const dow = now.getDay();
       const mondayOffset = dow === 0 ? 6 : dow - 1;
@@ -178,7 +220,7 @@ export function useLeaderboardSync({ provider, period, userId }: UseLeaderboardS
     }
     const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     return { from: toLocalDateStr(firstOfMonth), to: today };
-  }, [period]);
+  }, [period, anchorDate]);
 
   return { leaderboard, loading, dateRange, refetch: () => fetchLeaderboard(true) };
 }

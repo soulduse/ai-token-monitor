@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { supabase } from "../lib/supabase";
 import type { AllStats, LeaderboardProvider } from "../lib/types";
 import { getTotalTokens, toLocalDateStr } from "../lib/format";
+import { isMockTauriSession } from "../lib/devMode";
 import type { User } from "@supabase/supabase-js";
 
 interface UseSnapshotUploaderProps {
@@ -107,6 +108,12 @@ async function callSyncRpc(
 ): Promise<boolean> {
   if (!supabase) return false;
   if (rows.length === 0 && staleDates.length === 0) return false;
+  // Browser QA mock serves fixture stats — never let them reach the shared
+  // production leaderboard. Compile-time no-op in release builds.
+  if (isMockTauriSession()) {
+    console.warn("[mockTauri] leaderboard upload blocked — fixture data must not reach production");
+    return false;
+  }
   const { error } = await supabase.rpc("sync_device_snapshots", {
     p_provider: provider,
     p_device_id: deviceId,
