@@ -21,6 +21,11 @@ on:
           - all
           - macos-only
           - windows-only
+      prerelease:
+        description: 'Mark as pre-release (installed apps keep seeing the current stable; use to validate a release before promoting it)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -241,7 +246,7 @@ jobs:
           releaseName: ${{ needs.bump-version.outputs.tag }}
           releaseBody: ${{ needs.bump-version.outputs.changelog }}
           releaseDraft: false
-          prerelease: false
+          prerelease: ${{ inputs.prerelease }}
           args: --target ${{ matrix.target }}
 
   build-windows:
@@ -289,4 +294,4 @@ jobs:
           releaseName: ${{ needs.bump-version.outputs.tag }}
           releaseBody: ${{ needs.bump-version.outputs.changelog }}
           releaseDraft: false
-          prerelease: false
+          prerelease: ${{ inputs.prerelease }}
