@@ -26,6 +26,7 @@
   "today.sessions": "Sessions",
   "today.costTooltipTitle": "Coût API estimé ($/MTok)",
   "today.costTooltipNote": "Les abonnés paient un forfait, pas par jeton.",
+  "today.costTooltipGrokHighContext": "Grok : les prompts de 200K tokens ou plus sont facturés au double du tarif indiqué.",
   "today.costTooltipModel": "Modèle",
   "today.costTooltipIn": "Entrée",
   "today.costTooltipOut": "Sortie",

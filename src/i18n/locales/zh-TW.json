@@ -26,6 +26,7 @@
   "today.sessions": "工作階段",
   "today.costTooltipTitle": "預估 API 費用 ($/MTok)",
   "today.costTooltipNote": "訂閱方案使用者支付固定費用，而非按令牌計費。",
+  "today.costTooltipGrokHighContext": "Grok：達到 200K 權杖以上的提示會以所示費率的兩倍計費。",
   "today.costTooltipModel": "模型",
   "today.costTooltipIn": "輸入",
   "today.costTooltipOut": "輸出",

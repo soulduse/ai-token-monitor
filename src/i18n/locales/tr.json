@@ -26,6 +26,7 @@
   "today.sessions": "Oturumlar",
   "today.costTooltipTitle": "Tahmini API maliyeti ($/MTok)",
   "today.costTooltipNote": "Abonelik planı kullanıcıları token başına değil, sabit ücret öder.",
+  "today.costTooltipGrokHighContext": "Grok: 200K token ve üzeri istemler belirtilen ücretin iki katı üzerinden faturalandırılır.",
   "today.costTooltipModel": "Model",
   "today.costTooltipIn": "Girdi",
   "today.costTooltipOut": "Çıktı",

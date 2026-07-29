@@ -400,6 +400,8 @@ pub struct PricingTable {
     pub kimi: Vec<PricingRow>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub glm: Vec<PricingRow>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub grok: Vec<PricingRow>,
 }
 
 fn format_price(val: f64) -> String {
@@ -448,6 +450,9 @@ pub fn get_pricing_table() -> PricingTable {
         opencode: cfg.opencode.as_ref().map(|oc| deduplicated_rows(oc, false)).unwrap_or_default(),
         kimi: cfg.kimi.as_ref().map(|k| deduplicated_rows(k, false)).unwrap_or_default(),
         glm: cfg.glm.as_ref().map(|g| deduplicated_rows(g, false)).unwrap_or_default(),
+        // Grok quotes a discounted cached-input rate, like Codex — so the cache
+        // column reads from cached_input rather than cache_read.
+        grok: cfg.grok.as_ref().map(|g| deduplicated_rows(g, true)).unwrap_or_default(),
     }
 }
 

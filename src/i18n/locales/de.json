@@ -26,6 +26,7 @@
   "today.sessions": "Sitzungen",
   "today.costTooltipTitle": "Geschätzte API-Kosten ($/MTok)",
   "today.costTooltipNote": "Abo-Nutzer zahlen eine Pauschale, nicht pro Token.",
+  "today.costTooltipGrokHighContext": "Grok: Prompts ab 200K Tokens werden zum doppelten angegebenen Satz abgerechnet.",
   "today.costTooltipModel": "Modell",
   "today.costTooltipIn": "Eingabe",
   "today.costTooltipOut": "Ausgabe",

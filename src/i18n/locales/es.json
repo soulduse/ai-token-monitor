@@ -26,6 +26,7 @@
   "today.sessions": "Sesiones",
   "today.costTooltipTitle": "Costo API estimado ($/MTok)",
   "today.costTooltipNote": "Los usuarios con suscripción pagan tarifa fija, no por token.",
+  "today.costTooltipGrokHighContext": "Grok: los prompts de 200K tokens o más se facturan al doble de la tarifa indicada.",
   "today.costTooltipModel": "Modelo",
   "today.costTooltipIn": "Entrada",
   "today.costTooltipOut": "Salida",

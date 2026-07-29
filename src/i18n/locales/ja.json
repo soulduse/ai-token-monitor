@@ -26,6 +26,7 @@
   "today.sessions": "セッション",
   "today.costTooltipTitle": "推定APIコスト ($/MTok)",
   "today.costTooltipNote": "サブスクリプションプランのユーザーはトークン単位ではなく定額料金を支払います。",
+  "today.costTooltipGrokHighContext": "Grok: 200K トークン以上のプロンプトは表示料金の 2 倍で課金されます。",
   "today.costTooltipModel": "モデル",
   "today.costTooltipIn": "入力",
   "today.costTooltipOut": "出力",

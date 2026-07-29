@@ -26,6 +26,7 @@
   "today.sessions": "세션",
   "today.costTooltipTitle": "예상 API 비용 ($/MTok)",
   "today.costTooltipNote": "구독 플랜 사용자는 토큰당 요금이 아닌 구독료를 지불합니다.",
+  "today.costTooltipGrokHighContext": "Grok: 200K 토큰 이상 프롬프트는 표시된 요율의 2배로 청구됩니다.",
   "today.costTooltipModel": "모델",
   "today.costTooltipIn": "입력",
   "today.costTooltipOut": "출력",
