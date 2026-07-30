@@ -608,13 +608,15 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
 fn activate_app() {
     #[allow(deprecated)]
     use cocoa::appkit::NSApplication;
+    // `YES` rather than a bare `true`: objc types BOOL as `bool` on arm64 but
+    // as `i8` on x86_64, so a literal only compiles for one of the two targets.
     #[allow(deprecated)]
-    use cocoa::base::nil;
+    use cocoa::base::{nil, YES};
     unsafe {
         #[allow(deprecated)]
         let ns_app = NSApplication::sharedApplication(nil);
         #[allow(deprecated)]
-        ns_app.activateIgnoringOtherApps_(true);
+        ns_app.activateIgnoringOtherApps_(YES);
     }
 }
 
