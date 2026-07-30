@@ -313,7 +313,7 @@
   "settings.aiKeyGemini": "Gemini API Key",
   "settings.aiKeyOpenAI": "OpenAI API Key",
   "settings.aiKeyAnthropic": "Anthropic API Key",
-  "settings.aiKeyKiro": "Kiro API Key (requires kiro-cli)",
+  "settings.aiKeyKiro": "Kiro API Key (ksk_…)",
   "settings.aiModel": "AI Model",
   "settings.aiDescription": "Translate chat messages using AI",
   "settings.aiFeatures": "• Click translate button on any message to read in your language\n• Auto-translate your replies to match the other person's language\n• Add an API key from any provider below to get started",

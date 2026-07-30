@@ -1071,8 +1071,12 @@ const AI_PROVIDERS: AiProvider[] = [
   {
     id: "kiro",
     i18nKey: "settings.aiKeyKiro",
+    // Kiro serves Claude models too, so ids carry a `kiro/` prefix to stay
+    // distinct from the direct-Anthropic entries above (the backend strips it).
     models: [
-      { id: "kiro", label: "Kiro CLI" },
+      { id: "kiro/claude-haiku-4.5", label: "Kiro Haiku 4.5" },
+      { id: "kiro/claude-sonnet-4.6", label: "Kiro Sonnet 4.6" },
+      { id: "kiro/glm-5", label: "Kiro GLM-5" },
     ],
   },
 ];

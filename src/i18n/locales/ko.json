@@ -313,7 +313,7 @@
   "settings.aiKeyGemini": "Gemini API 키",
   "settings.aiKeyOpenAI": "OpenAI API 키",
   "settings.aiKeyAnthropic": "Anthropic API 키",
-  "settings.aiKeyKiro": "Kiro API 키 (kiro-cli 필요)",
+  "settings.aiKeyKiro": "Kiro API 키 (ksk_…)",
   "settings.aiModel": "AI 모델",
   "settings.aiDescription": "AI를 활용하여 채팅 메시지를 번역합니다",
   "settings.aiFeatures": "• 메시지의 번역 버튼을 눌러 내 언어로 확인\n• 답글 작성 시 상대방 언어로 자동 번역하여 전송\n• 아래 제공업체 중 하나의 API 키를 추가하면 사용할 수 있습니다",
