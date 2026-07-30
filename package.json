@@ -1,7 +1,7 @@
 {
   "name": "ai-token-monitor",
   "private": true,
-  "version": "0.19.43",
+  "version": "0.19.44",
   "type": "module",
   "scripts": {
     "dev": "vite",
