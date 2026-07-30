@@ -9,7 +9,8 @@ type SourceKey =
   | "include_opencode"
   | "include_kimi"
   | "include_glm"
-  | "include_gjc";
+  | "include_gjc"
+  | "include_grok";
 
 interface SourceDef {
   key: SourceKey;
@@ -25,6 +26,7 @@ export function SourceSelector() {
   const [kimiAvailable, setKimiAvailable] = useState(false);
   const [glmAvailable, setGlmAvailable] = useState(false);
   const [gjcAvailable, setGjcAvailable] = useState(false);
+  const [grokAvailable, setGrokAvailable] = useState(false);
   const [availabilityLoaded, setAvailabilityLoaded] = useState(false);
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -36,12 +38,14 @@ export function SourceSelector() {
       invoke<boolean>("is_kimi_available").catch(() => false),
       invoke<boolean>("is_glm_available").catch(() => false),
       invoke<boolean>("is_gjc_available").catch(() => false),
-    ]).then(([codex, opencode, kimi, glm, gjc]) => {
+      invoke<boolean>("is_grok_available").catch(() => false),
+    ]).then(([codex, opencode, kimi, glm, gjc, grok]) => {
       setCodexAvailable(codex);
       setOpencodeAvailable(opencode);
       setKimiAvailable(kimi);
       setGlmAvailable(glm);
       setGjcAvailable(gjc);
+      setGrokAvailable(grok);
       setAvailabilityLoaded(true);
     });
   }, []);
@@ -59,8 +63,9 @@ export function SourceSelector() {
     if (prefs.include_kimi && !kimiAvailable) patch.include_kimi = false;
     if (prefs.include_glm && !glmAvailable) patch.include_glm = false;
     if (prefs.include_gjc && !gjcAvailable) patch.include_gjc = false;
+    if (prefs.include_grok && !grokAvailable) patch.include_grok = false;
     if (Object.keys(patch).length > 0) updatePrefs(patch);
-  }, [availabilityLoaded, codexAvailable, opencodeAvailable, kimiAvailable, glmAvailable, gjcAvailable, prefs.include_codex, prefs.include_opencode, prefs.include_kimi, prefs.include_glm, prefs.include_gjc, updatePrefs]);
+  }, [availabilityLoaded, codexAvailable, opencodeAvailable, kimiAvailable, glmAvailable, gjcAvailable, grokAvailable, prefs.include_codex, prefs.include_opencode, prefs.include_kimi, prefs.include_glm, prefs.include_gjc, prefs.include_grok, updatePrefs]);
 
   useEffect(() => {
     if (!open) return;
@@ -91,7 +96,8 @@ export function SourceSelector() {
     { key: "include_kimi", label: t("sources.kimi"), available: kimiAvailable },
     { key: "include_glm", label: t("sources.glm"), available: glmAvailable },
     { key: "include_gjc", label: t("sources.gjc"), available: gjcAvailable },
-  ], [t, codexAvailable, opencodeAvailable, kimiAvailable, glmAvailable, gjcAvailable]);
+    { key: "include_grok", label: t("sources.grok"), available: grokAvailable },
+  ], [t, codexAvailable, opencodeAvailable, kimiAvailable, glmAvailable, gjcAvailable, grokAvailable]);
 
   const visibleSources = sources.filter((s) => s.available);
   const totalCount = visibleSources.length;

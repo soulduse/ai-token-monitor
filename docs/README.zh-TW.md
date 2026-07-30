@@ -7,7 +7,7 @@
 
 ![AI Token Monitor — 在選單列即時追蹤 AI 程式開發工具的權杖與費用](images/hero.png)
 
-**AI Token Monitor** 是一款輕量的 macOS / Windows 系統托盤應用,全天候回答一個問題:*我的 AI 程式開發工具到底花了多少錢?* 它讀取 **Claude Code**、**Codex**、**OpenCode** 與 **GJC** 本來就會寫入的本機工作階段日誌,依各模型單價(含快取讀取)為每個權杖計費,並把今日支出直接顯示在時鐘旁邊——圖表、方案限額提醒、可選的排行榜、聊天與 Webhook 通知都只需一次點擊。
+**AI Token Monitor** 是一款輕量的 macOS / Windows 系統托盤應用,全天候回答一個問題:*我的 AI 程式開發工具到底花了多少錢?* 它讀取 **Claude Code**、**Codex**、**OpenCode**、**GJC** 與 **Grok** 本來就會寫入的本機工作階段日誌,依各模型單價(含快取讀取)為每個權杖計費,並把今日支出直接顯示在時鐘旁邊——圖表、方案限額提醒、可選的排行榜、聊天與 Webhook 通知都只需一次點擊。
 
 - **零設定** — 不需要 API 金鑰、不需要代理。只要執行過一次 Claude Code 或 Codex,即刻可用。
 - **支出一目了然** — 選單列 / 系統托盤即時顯示費用,點擊即可開啟完整儀表板。
@@ -149,6 +149,7 @@ npm run tauri build   # 生產建置
 | **Claude Code** | `~/.claude/projects/**/*.jsonl` | 從 `~/.claude/stats-cache.json` 補充工作階段/工具呼叫數。支援多個根目錄。 |
 | **Codex** | `~/.codex/sessions/**/*.jsonl` | 支援多個根目錄。 |
 | **OpenCode** | `~/.local/share/opencode/**/*.jsonl` | 內建價格資料按模型計算費用。 |
+| **Grok** | `~/.grok/logs/unified.jsonl` | 來自 `shell.turn.inference_done` 的每次請求實測 token；模型與專案從 `~/.grok/sessions` 關聯。Grok 會截斷此滾動日誌的開頭，因此將每日彙總累積到本機快照。 目前僅支援 macOS — Windows 的日誌結構尚未驗證。 |
 
 **網路請求**:僅在啟用排行榜/聊天時(向 Supabase 傳送彙總資料)或 Webhook 觸發時才會發起網路請求。未使用這些功能時,應用完全離線運作。設定 AI 翻譯金鑰後,才會直接向對應供應商傳送請求。
 

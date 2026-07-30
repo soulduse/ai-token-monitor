@@ -7,7 +7,7 @@
 
 ![AI Token Monitor — AI 코딩 도구의 토큰·비용을 메뉴바에서 실시간 추적](images/hero.png)
 
-**AI Token Monitor**는 "내 AI 코딩 도구가 실제로 얼마나 쓰고 있지?"라는 질문에 하루 종일 답해주는 가벼운 macOS / Windows 시스템 트레이 앱입니다. **Claude Code**, **Codex**, **OpenCode**, **GJC**가 이미 남기고 있는 로컬 세션 로그를 읽어 모델별 단가(캐시 읽기 포함)로 모든 토큰의 비용을 계산하고, 오늘의 지출을 시계 바로 옆에 보여줍니다. 차트, 플랜 한도 알림, 옵트인 리더보드·채팅·웹훅 알림까지 클릭 한 번 거리에 있습니다.
+**AI Token Monitor**는 "내 AI 코딩 도구가 실제로 얼마나 쓰고 있지?"라는 질문에 하루 종일 답해주는 가벼운 macOS / Windows 시스템 트레이 앱입니다. **Claude Code**, **Codex**, **OpenCode**, **GJC**, **Grok**이 이미 남기고 있는 로컬 세션 로그를 읽어 모델별 단가(캐시 읽기 포함)로 모든 토큰의 비용을 계산하고, 오늘의 지출을 시계 바로 옆에 보여줍니다. 차트, 플랜 한도 알림, 옵트인 리더보드·채팅·웹훅 알림까지 클릭 한 번 거리에 있습니다.
 
 - **설정 제로** — API 키도 프록시도 필요 없습니다. Claude Code나 Codex를 한 번이라도 실행했다면 바로 동작합니다.
 - **지출을 한눈에** — 메뉴바/시스템 트레이에 실시간 비용 표시, 클릭하면 전체 대시보드가 열립니다.
@@ -149,6 +149,7 @@ npm run tauri build   # 프로덕션 빌드
 | **Claude Code** | `~/.claude/projects/**/*.jsonl` | `~/.claude/stats-cache.json`에서 세션/툴 호출 수 보조. 여러 루트 지원. |
 | **Codex** | `~/.codex/sessions/**/*.jsonl` | 여러 루트 지원. |
 | **OpenCode** | `~/.local/share/opencode/**/*.jsonl` | 내장 가격 레지스트리 기반 모델별 비용 계산. |
+| **Grok** | `~/.grok/logs/unified.jsonl` | `shell.turn.inference_done`의 요청별 실측 토큰. 모델·프로젝트는 `~/.grok/sessions`에서 조인. Grok이 이 롤링 로그의 앞부분을 잘라내므로 일별 집계를 로컬 스냅샷에 누적합니다. 현재 macOS 전용 — Windows 로그 구조는 미검증입니다. |
 
 **네트워크 요청**: 리더보드/채팅 opt-in 시 Supabase로 집계 데이터 전송, 웹훅 발화 시 외부 전송. 이 기능을 쓰지 않으면 앱은 완전히 오프라인으로 동작합니다. AI 번역 키를 설정한 경우에만 해당 프로바이더로 직접 요청이 전송됩니다.
 

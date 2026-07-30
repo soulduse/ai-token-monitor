@@ -167,6 +167,7 @@ function LeaderboardContent({ user, minDate, dailyTokens }: { user: User; minDat
   if (prefs.include_kimi) availableProviders.push("kimi");
   if (prefs.include_glm) availableProviders.push("glm");
   if (prefs.include_gjc) availableProviders.push("gjc");
+  if (prefs.include_grok) availableProviders.push("grok");
   // Default to claude if nothing enabled
   if (availableProviders.length === 0) availableProviders.push("claude");
 

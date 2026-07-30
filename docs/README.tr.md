@@ -7,7 +7,7 @@
 
 ![AI Token Monitor — AI kodlama araçlarınızın token ve maliyetini menü çubuğundan gerçek zamanlı izleyin](images/hero.png)
 
-**AI Token Monitor**, gün boyu tek bir soruyu yanıtlayan hafif bir macOS / Windows sistem tepsisi uygulamasıdır: *AI kodlama araçlarım bana gerçekte ne kadara mal oluyor?* **Claude Code**, **Codex**, **OpenCode** ve **GJC**'nin zaten yazdığı yerel oturum günlüklerini okur, her token'ı modele özgü fiyatlarla (önbellek okumaları dahil) ücretlendirir ve bugünün harcamasını saatinizin hemen yanında gösterir — grafikler, plan limiti uyarıları, isteğe bağlı liderlik tablosu, sohbet ve webhook bildirimleri de tek tık uzağınızda.
+**AI Token Monitor**, gün boyu tek bir soruyu yanıtlayan hafif bir macOS / Windows sistem tepsisi uygulamasıdır: *AI kodlama araçlarım bana gerçekte ne kadara mal oluyor?* **Claude Code**, **Codex**, **OpenCode**, **GJC** ve **Grok**'un zaten yazdığı yerel oturum günlüklerini okur, her token'ı modele özgü fiyatlarla (önbellek okumaları dahil) ücretlendirir ve bugünün harcamasını saatinizin hemen yanında gösterir — grafikler, plan limiti uyarıları, isteğe bağlı liderlik tablosu, sohbet ve webhook bildirimleri de tek tık uzağınızda.
 
 - **Sıfır kurulum** — API anahtarı yok, proxy yok. Claude Code veya Codex'i bir kez çalıştırdıysanız hemen çalışır.
 - **Harcama bir bakışta** — menü çubuğunda / sistem tepsisinde canlı maliyet, tek tıkla tam gösterge paneli.
@@ -149,6 +149,7 @@ Paylaşılan veriler: günlük toplam token sayısı, maliyet, mesaj/oturum say�
 | **Claude Code** | `~/.claude/projects/**/*.jsonl` | `~/.claude/stats-cache.json` üzerinden oturum/araç çağrı sayıları. Birden fazla kök dizin desteklenir. |
 | **Codex** | `~/.codex/sessions/**/*.jsonl` | Birden fazla kök dizin desteklenir. |
 | **OpenCode** | `~/.local/share/opencode/**/*.jsonl` | Yerleşik fiyatlandırma kaydına dayalı model bazlı maliyet hesaplaması. |
+| **Grok** | `~/.grok/logs/unified.jsonl` | `shell.turn.inference_done` kaydından istek başına gerçek token; model ve proje `~/.grok/sessions` ile eşleştirilir. Grok bu döngüsel günlüğün başını kırptığı için günlük toplamlar yerel bir anlık görüntüde biriktirilir. Şimdilik yalnızca macOS — Windows günlük yapısı doğrulanmadı. |
 
 **Ağ istekleri**: yalnızca liderlik tablosu/sohbet etkinleştirildiğinde (Supabase'e toplu veri gönderilir) veya bir webhook tetiklendiğinde gerçekleşir. Bu özellikler kullanılmadığında uygulama tamamen çevrimdışı çalışır. Yapay zeka çeviri anahtarı ayarlandıysa, yalnızca seçtiğiniz sağlayıcıya doğrudan istek gönderilir.
 

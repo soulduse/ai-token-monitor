@@ -22,6 +22,7 @@ interface PricingTable {
   last_updated: string;
   claude: PricingRow[];
   codex: PricingRow[];
+  grok?: PricingRow[];
 }
 
 interface Props {
@@ -48,6 +49,15 @@ export function TodaySummary({ today, weekAvg, nav, dailyTokens }: Props) {
   useEffect(() => {
     invoke<PricingTable>("get_pricing_table").then(setPricing).catch(console.error);
   }, []);
+
+  // Only the enabled sources belong in the cost tooltip — it explains the number
+  // shown next to it, so a rate table for a source that did not contribute is
+  // noise. The section label appears once there is more than one to tell apart.
+  const pricingSections = [
+    prefs.include_claude ? { label: "Claude", rows: pricing?.claude } : null,
+    prefs.include_codex ? { label: "Codex", rows: pricing?.codex } : null,
+    prefs.include_grok ? { label: "Grok", rows: pricing?.grok } : null,
+  ].filter((s): s is { label: string; rows: PricingRow[] } => !!s?.rows?.length);
 
   const comparison = weekAvg > 0
     ? Math.round(((totalTokens - weekAvg) / weekAvg) * 100)
@@ -157,11 +167,9 @@ export function TodaySummary({ today, weekAvg, nav, dailyTokens }: Props) {
           tooltip={pricing && (
             <InfoTooltip wide>
               <div style={{ fontWeight: 700, marginBottom: 6 }}>{t("today.costTooltipTitle")}</div>
-              {(prefs.include_claude ? [{ label: "Claude", rows: pricing.claude }] : [])
-                .concat(prefs.include_codex ? [{ label: "Codex", rows: pricing.codex }] : [])
-                .map(({ label, rows }) => (
+              {pricingSections.map(({ label, rows }) => (
                 <div key={label}>
-                  {prefs.include_claude && prefs.include_codex && (
+                  {pricingSections.length > 1 && (
                     <div style={{ fontWeight: 600, fontSize: 9, marginTop: 4, marginBottom: 2, opacity: 0.7 }}>{label}</div>
                   )}
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 9 }}>
@@ -188,6 +196,11 @@ export function TodaySummary({ today, weekAvg, nav, dailyTokens }: Props) {
                   </table>
                 </div>
               ))}
+              {prefs.include_grok && !!pricing.grok?.length && (
+                <div style={{ marginTop: 6, opacity: 0.7, fontSize: 9 }}>
+                  {t("today.costTooltipGrokHighContext")}
+                </div>
+              )}
               <div style={{ marginTop: 6, opacity: 0.7, fontSize: 9 }}>
                 {t("today.costTooltipNote")} (v{pricing.version}, {pricing.last_updated})
               </div>

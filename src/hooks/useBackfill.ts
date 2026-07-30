@@ -10,7 +10,7 @@ import {
 } from "../lib/backfillRegistry";
 import type { LeaderboardProvider } from "../lib/types";
 
-const PROVIDERS: LeaderboardProvider[] = ["claude", "codex", "opencode", "kimi", "glm", "gjc"];
+const PROVIDERS: LeaderboardProvider[] = ["claude", "codex", "opencode", "kimi", "glm", "gjc", "grok"];
 
 function activeProviders(prefs: {
   include_claude: boolean;
@@ -19,15 +19,22 @@ function activeProviders(prefs: {
   include_kimi: boolean;
   include_glm: boolean;
   include_gjc: boolean;
+  include_grok: boolean;
 }): LeaderboardProvider[] {
-  return PROVIDERS.filter((p) => {
-    if (p === "claude") return prefs.include_claude;
-    if (p === "codex") return prefs.include_codex;
-    if (p === "opencode") return prefs.include_opencode;
-    if (p === "kimi") return prefs.include_kimi;
-    if (p === "glm") return prefs.include_glm;
-    return prefs.include_gjc;
-  });
+  // Keyed lookup rather than an if-chain: the chain's final `return` doubled as
+  // the default case, so adding a provider to PROVIDERS without also adding its
+  // branch silently gated it on the previous provider's flag. A Record over
+  // LeaderboardProvider makes the compiler demand an entry instead.
+  const enabled: Record<LeaderboardProvider, boolean> = {
+    claude: prefs.include_claude,
+    codex: prefs.include_codex,
+    opencode: prefs.include_opencode,
+    kimi: prefs.include_kimi,
+    glm: prefs.include_glm,
+    gjc: prefs.include_gjc,
+    grok: prefs.include_grok,
+  };
+  return PROVIDERS.filter((p) => enabled[p]);
 }
 
 export function useBackfill() {

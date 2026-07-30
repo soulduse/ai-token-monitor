@@ -18,6 +18,8 @@ struct PricingConfig {
     kimi: Option<ProviderConfig>,
     #[serde(default)]
     glm: Option<ProviderConfig>,
+    #[serde(default)]
+    grok: Option<ProviderConfig>,
 }
 
 #[derive(Deserialize)]
@@ -48,6 +50,24 @@ struct PricingEntry {
     /// whose `from` is on/before today (UTC) overrides the base fields.
     #[serde(default)]
     scheduled: Vec<ScheduledPrice>,
+    /// Higher rates for long-context requests. xAI bills *every* token in a
+    /// request at the higher rate once the prompt reaches the threshold (200k),
+    /// so the tier has to be picked per request — this only carries the rates,
+    /// and the caller (provider) does the picking.
+    #[serde(default)]
+    high_context: Option<HighContextTier>,
+}
+
+/// Rates that apply when a prompt reaches `threshold_tokens`.
+#[derive(Deserialize, Clone, Copy)]
+struct HighContextTier {
+    threshold_tokens: u64,
+    #[serde(default)]
+    input: f64,
+    #[serde(default)]
+    output: f64,
+    #[serde(default)]
+    cached_input: f64,
 }
 
 /// A price override that takes effect on `from` (inclusive, UTC). Any price
@@ -67,6 +87,11 @@ struct ScheduledPrice {
     cache_write_1h: f64,
     #[serde(default)]
     cached_input: f64,
+    /// Scheduled high-context rates. Base and high tiers live in the same entry,
+    /// so a price change has to be able to move both — otherwise the base shifts
+    /// on the `from` date while the high tier silently keeps the old rate.
+    #[serde(default)]
+    high_context: Option<HighContextTier>,
 }
 
 /// Prices for one model, already resolved for the current date. This is what
@@ -78,6 +103,9 @@ struct ResolvedPrice {
     cache_write: f64,
     cache_write_1h: f64,
     cached_input: f64,
+    /// The entry's high-context rates, replaced wholesale by a schedule that
+    /// carries its own.
+    high_context: Option<HighContextTier>,
 }
 
 impl PricingEntry {
@@ -92,6 +120,7 @@ impl PricingEntry {
             cache_write: self.cache_write,
             cache_write_1h: self.cache_write_1h,
             cached_input: self.cached_input,
+            high_context: self.high_context,
         };
         // Pick the latest schedule effective on/before today.
         if let Some(sched) = self
@@ -106,6 +135,7 @@ impl PricingEntry {
             if sched.cache_write > 0.0 { price.cache_write = sched.cache_write; }
             if sched.cache_write_1h > 0.0 { price.cache_write_1h = sched.cache_write_1h; }
             if sched.cached_input > 0.0 { price.cached_input = sched.cached_input; }
+            if sched.high_context.is_some() { price.high_context = sched.high_context; }
         }
         price
     }
@@ -150,6 +180,47 @@ pub struct GlmPricing {
     pub input: f64,
     pub output: f64,
     pub cache_read: f64,
+}
+
+/// Grok rates. xAI splits pricing into two tiers by prompt length, and once a
+/// request crosses the threshold every token in it bills at the higher rate.
+/// Call [`GrokPricing::tier_for`] per request to get the rates that apply.
+pub struct GrokPricing {
+    pub input: f64,
+    pub output: f64,
+    pub cached_input: f64,
+    /// 0 means a single flat tier (no threshold).
+    pub high_threshold_tokens: u64,
+    pub high_input: f64,
+    pub high_output: f64,
+    pub high_cached_input: f64,
+}
+
+/// The rates that actually apply to one request.
+pub struct GrokTier {
+    pub input: f64,
+    pub output: f64,
+    pub cached_input: f64,
+}
+
+impl GrokPricing {
+    /// Pick the tier from this request's prompt size — at or above the
+    /// threshold, the higher rates apply.
+    pub fn tier_for(&self, prompt_tokens: u64) -> GrokTier {
+        if self.high_threshold_tokens > 0 && prompt_tokens >= self.high_threshold_tokens {
+            GrokTier {
+                input: self.high_input,
+                output: self.high_output,
+                cached_input: self.high_cached_input,
+            }
+        } else {
+            GrokTier {
+                input: self.input,
+                output: self.output,
+                cached_input: self.cached_input,
+            }
+        }
+    }
 }
 
 // --- Loading ---
@@ -245,6 +316,33 @@ pub fn get_glm_pricing(model: &str) -> GlmPricing {
     GlmPricing { input: 0.50, output: 1.00, cache_read: 0.0 }
 }
 
+pub fn get_grok_pricing(model: &str) -> GrokPricing {
+    let cfg = config();
+    if let Some(ref grok) = cfg.grok {
+        let p = resolved_pricing(grok, model);
+        let high = p.high_context;
+        return GrokPricing {
+            input: p.input,
+            output: p.output,
+            cached_input: p.cached_input,
+            high_threshold_tokens: high.map_or(0, |h| h.threshold_tokens),
+            high_input: high.map_or(p.input, |h| h.input),
+            high_output: high.map_or(p.output, |h| h.output),
+            high_cached_input: high.map_or(p.cached_input, |h| h.cached_input),
+        };
+    }
+    // Fallback defaults (Grok 4.5 rates) when pricing.json has no grok section.
+    GrokPricing {
+        input: 2.00,
+        output: 6.00,
+        cached_input: 0.30,
+        high_threshold_tokens: 200_000,
+        high_input: 4.00,
+        high_output: 12.00,
+        high_cached_input: 0.60,
+    }
+}
+
 pub fn get_opencode_pricing(model: &str) -> OpenCodePricing {
     let cfg = config();
     // Use dedicated opencode pricing if available, otherwise try to match
@@ -302,6 +400,8 @@ pub struct PricingTable {
     pub kimi: Vec<PricingRow>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub glm: Vec<PricingRow>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub grok: Vec<PricingRow>,
 }
 
 fn format_price(val: f64) -> String {
@@ -350,6 +450,9 @@ pub fn get_pricing_table() -> PricingTable {
         opencode: cfg.opencode.as_ref().map(|oc| deduplicated_rows(oc, false)).unwrap_or_default(),
         kimi: cfg.kimi.as_ref().map(|k| deduplicated_rows(k, false)).unwrap_or_default(),
         glm: cfg.glm.as_ref().map(|g| deduplicated_rows(g, false)).unwrap_or_default(),
+        // Grok quotes a discounted cached-input rate, like Codex — so the cache
+        // column reads from cached_input rather than cache_read.
+        grok: cfg.grok.as_ref().map(|g| deduplicated_rows(g, true)).unwrap_or_default(),
     }
 }
 
@@ -368,6 +471,93 @@ mod tests {
         assert!(!cfg.kimi.unwrap().models.is_empty());
         assert!(cfg.glm.is_some());
         assert!(!cfg.glm.unwrap().models.is_empty());
+        assert!(cfg.grok.is_some());
+        assert!(!cfg.grok.unwrap().models.is_empty());
+    }
+
+    #[test]
+    fn grok_45_pricing() {
+        let p = get_grok_pricing("grok-4.5");
+        assert_eq!(p.input, 2.00);
+        assert_eq!(p.output, 6.00);
+        assert_eq!(p.cached_input, 0.30);
+        assert_eq!(p.high_threshold_tokens, 200_000);
+    }
+
+    #[test]
+    fn grok_build_variant_bills_as_grok_45() {
+        // The CLI reports the agent variant as its model id on some turns.
+        let variant = get_grok_pricing("grok-4.5-build");
+        let base = get_grok_pricing("grok-4.5");
+        assert_eq!(variant.input, base.input);
+        assert_eq!(variant.output, base.output);
+    }
+
+    #[test]
+    fn grok_code_fast_is_cheaper_than_45() {
+        let fast = get_grok_pricing("grok-code-fast-1");
+        assert_eq!(fast.input, 1.00);
+        assert_eq!(fast.output, 2.00);
+        // grok-build-0.1 is the same model under its versioned id.
+        assert_eq!(get_grok_pricing("grok-build-0.1").input, fast.input);
+    }
+
+    #[test]
+    fn grok_43_not_billed_as_45() {
+        let p43 = get_grok_pricing("grok-4.3");
+        assert_eq!(p43.input, 1.25);
+        assert_ne!(p43.output, get_grok_pricing("grok-4.5").output);
+    }
+
+    #[test]
+    fn grok_unknown_model_defaults_to_45() {
+        let unknown = get_grok_pricing("grok-9.9-experimental");
+        assert_eq!(unknown.input, get_grok_pricing("grok-4.5").input);
+    }
+
+    #[test]
+    fn scheduled_override_moves_the_high_context_tier_too() {
+        // Base and high rates live in one entry, so a scheduled price change has
+        // to move both — otherwise the base shifts on the `from` date while long
+        // prompts keep billing at the old high rate, with nothing to signal it.
+        let entry: PricingEntry = serde_json::from_str(
+            r#"{ "match": "grok-test", "input": 2.0, "output": 6.0, "cached_input": 0.3,
+                 "high_context": { "threshold_tokens": 200000, "input": 4.0, "output": 12.0, "cached_input": 0.6 },
+                 "scheduled": [ { "from": "2026-01-01", "input": 3.0, "output": 9.0,
+                   "high_context": { "threshold_tokens": 200000, "input": 6.0, "output": 18.0, "cached_input": 0.9 } } ] }"#,
+        )
+        .unwrap();
+
+        let resolved = entry.resolve_for("2026-07-29");
+        assert_eq!(resolved.input, 3.0);
+        let high = resolved.high_context.expect("scheduled high tier");
+        assert_eq!(high.input, 6.0);
+        assert_eq!(high.output, 18.0);
+    }
+
+    #[test]
+    fn schedule_without_high_context_keeps_the_base_tier() {
+        let entry: PricingEntry = serde_json::from_str(
+            r#"{ "match": "grok-test", "input": 2.0, "output": 6.0,
+                 "high_context": { "threshold_tokens": 200000, "input": 4.0, "output": 12.0, "cached_input": 0.6 },
+                 "scheduled": [ { "from": "2026-01-01", "input": 3.0 } ] }"#,
+        )
+        .unwrap();
+
+        let resolved = entry.resolve_for("2026-07-29");
+        assert_eq!(resolved.input, 3.0);
+        assert_eq!(resolved.high_context.expect("base high tier").input, 4.0);
+    }
+
+    #[test]
+    fn grok_high_context_tier_doubles_rates() {
+        let p = get_grok_pricing("grok-4.5");
+        let below = p.tier_for(199_999);
+        let above = p.tier_for(200_000);
+        assert_eq!(below.input, 2.00);
+        assert_eq!(above.input, 4.00);
+        assert_eq!(above.output, 12.00);
+        assert_eq!(above.cached_input, 0.60);
     }
 
     #[test]
