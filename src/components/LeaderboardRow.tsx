@@ -1,5 +1,7 @@
 import type { LeaderboardEntry } from "../hooks/useLeaderboardSync";
+import type { LeaderboardProvider } from "../lib/types";
 import { formatTokens, formatCost } from "../lib/format";
+import { formatCredits, isCreditProvider } from "../lib/kiro";
 import { useSettings } from "../contexts/SettingsContext";
 import { useMiniProfile } from "../contexts/MiniProfileContext";
 import { useI18n } from "../i18n/I18nContext";
@@ -8,11 +10,13 @@ interface Props {
   entry: LeaderboardEntry;
   rank: number;
   isMe: boolean;
+  /** Kiro ranks by credits, so its rows render a different unit. */
+  provider: LeaderboardProvider;
 }
 
 const MEDALS = ["", "\ud83e\udd47", "\ud83e\udd48", "\ud83e\udd49"];
 
-export function LeaderboardRow({ entry, rank, isMe }: Props) {
+export function LeaderboardRow({ entry, rank, isMe, provider }: Props) {
   const { prefs } = useSettings();
   const { open: openMiniProfile } = useMiniProfile();
   const t = useI18n();
@@ -120,7 +124,9 @@ export function LeaderboardRow({ entry, rank, isMe }: Props) {
           fontWeight: 800,
           color: isMe ? "var(--accent-purple)" : "var(--text-primary)",
         }}>
-          {formatTokens(entry.total_tokens, prefs.number_format)}
+          {isCreditProvider(provider)
+            ? `${formatCredits(entry.total_tokens)} cr`
+            : formatTokens(entry.total_tokens, prefs.number_format)}
         </div>
         <div style={{
           fontSize: 10,

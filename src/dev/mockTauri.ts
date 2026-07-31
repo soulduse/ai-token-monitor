@@ -68,6 +68,7 @@ const mockPrefs: UserPreferences = {
   include_glm: false,
   include_gjc: false,
   include_grok: false,
+  include_kiro: false,
   theme: "github",
   color_mode: "dark",
   language: "en",
@@ -81,8 +82,95 @@ const mockPrefs: UserPreferences = {
   quick_action_items: [],
 };
 
+const KIRO_CREDIT_RATE_USD = 0.04;
+
+/**
+ * Kiro's fixture keeps every token counter at 0, exactly like the real provider:
+ * Kiro meters credits and records no token counts anywhere, so a QA fixture with
+ * plausible-looking token numbers would misrepresent what the provider can know.
+ */
+function fixtureKiroStats(): AllStats {
+  const daily: DailyUsage[] = [];
+  for (let back = 4; back >= 0; back--) {
+    const date = toLocalDateStr(new Date(Date.now() - back * DAY_MS));
+    const credits = 1.2 * (1 + ((4 - back) % 3));
+    daily.push({
+      date,
+      tokens: {},
+      cost_usd: credits * KIRO_CREDIT_RATE_USD,
+      messages: 4 + back,
+      sessions: 1 + (back % 2),
+      tool_calls: 3 * (back + 1),
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+    });
+  }
+  return {
+    daily,
+    model_usage: {
+      "claude-sonnet-4.5": { input_tokens: 0, output_tokens: 0, cache_read: 0, cache_write: 0, cost_usd: 0.62 },
+      "claude-haiku-4.5": { input_tokens: 0, output_tokens: 0, cache_read: 0, cache_write: 0, cost_usd: 0.11 },
+      auto: { input_tokens: 0, output_tokens: 0, cache_read: 0, cache_write: 0, cost_usd: 0.07 },
+    },
+    total_sessions: 6,
+    total_messages: 24,
+    first_session_date: daily[0]?.date ?? null,
+    rate_limits: null,
+  };
+}
+
+/** Mirrors `providers::kiro::KiroBreakdown` so the Kiro sub-tab renders in QA mode. */
+function fixtureKiroBreakdown() {
+  const stats = fixtureKiroStats();
+  const days = stats.daily.map((d) => ({
+    date: d.date,
+    credits: d.cost_usd / KIRO_CREDIT_RATE_USD,
+    cost_usd: d.cost_usd,
+    turns: d.messages,
+    cancelled_turns: d.date === stats.daily[1]?.date ? 1 : 0,
+  }));
+  const totalCredits = days.reduce((s, d) => s + d.credits, 0);
+  const today = stats.daily[stats.daily.length - 1]?.date ?? toLocalDateStr(new Date());
+  return {
+    total_credits: totalCredits,
+    total_cost_usd: totalCredits * KIRO_CREDIT_RATE_USD,
+    credit_rate_usd: KIRO_CREDIT_RATE_USD,
+    total_turns: days.reduce((s, d) => s + d.turns, 0),
+    total_requests: 31,
+    total_tool_calls: 45,
+    total_sessions: 6,
+    cancelled_turns: 1,
+    cancelled_credits: 0.84,
+    auto_credits: 1.795,
+    first_turn_date: stats.daily[0]?.date ?? null,
+    last_turn_date: today,
+    by_model: [
+      { model: "claude-sonnet-4.5", credits: totalCredits * 0.62, cost_usd: totalCredits * 0.62 * KIRO_CREDIT_RATE_USD, turns: 12, requests: 18, is_auto: false },
+      { model: "claude-haiku-4.5", credits: totalCredits * 0.23, cost_usd: totalCredits * 0.23 * KIRO_CREDIT_RATE_USD, turns: 7, requests: 9, is_auto: false },
+      { model: "auto", credits: totalCredits * 0.15, cost_usd: totalCredits * 0.15 * KIRO_CREDIT_RATE_USD, turns: 5, requests: 4, is_auto: true },
+    ],
+    by_day: days,
+    by_project: [
+      { project: "ai-token-monitor", project_path: "/Users/qa/github/ai-token-monitor", credits: totalCredits * 0.7, cost_usd: totalCredits * 0.7 * KIRO_CREDIT_RATE_USD, turns: 16 },
+      { project: "scratch", project_path: "/tmp/scratch", credits: totalCredits * 0.3, cost_usd: totalCredits * 0.3 * KIRO_CREDIT_RATE_USD, turns: 8 },
+    ],
+    recent_turns: [
+      { ended_at: new Date(Date.now() - 3 * 60_000).toISOString(), date: today, model: "claude-sonnet-4.5", credits: 3.87, cost_usd: 3.87 * KIRO_CREDIT_RATE_USD, end_reason: "UserTurnEnd", cancelled: false, requests: 4, tool_calls: 9, context_percent: 18.4, duration_secs: 92, project_path: "/Users/qa/github/ai-token-monitor", project: "ai-token-monitor", source: "session", session_id: "qa-session-1" },
+      { ended_at: new Date(Date.now() - 22 * 60_000).toISOString(), date: today, model: "auto", credits: 1.795, cost_usd: 1.795 * KIRO_CREDIT_RATE_USD, end_reason: "UserTurnEnd", cancelled: false, requests: 2, tool_calls: 3, context_percent: 9.1, duration_secs: 41, project_path: "/tmp/scratch", project: "scratch", source: "sqlite", session_id: "qa-session-2" },
+      { ended_at: new Date(Date.now() - 55 * 60_000).toISOString(), date: today, model: "claude-haiku-4.5", credits: 0.84, cost_usd: 0.84 * KIRO_CREDIT_RATE_USD, end_reason: "Cancelled", cancelled: true, requests: 1, tool_calls: 0, context_percent: null, duration_secs: 12, project_path: "/Users/qa/github/ai-token-monitor", project: "ai-token-monitor", source: "session", session_id: "qa-session-1" },
+    ],
+    session_store_turns: 14,
+    sqlite_store_turns: 10,
+    tokens_unavailable: true,
+  };
+}
+
 export function installMockTauri(): void {
   const stats = fixtureStats();
+  const kiroStats = fixtureKiroStats();
+  const kiroBreakdown = fixtureKiroBreakdown();
   let callbackId = 0;
 
   // Flag checked by isMockTauriSession() to block server writes in QA mode.
@@ -96,6 +184,9 @@ export function installMockTauri(): void {
     get_glm_stats: () => stats,
     get_gjc_stats: () => stats,
     get_grok_stats: () => stats,
+    get_kiro_stats: () => kiroStats,
+    get_kiro_breakdown: () => kiroBreakdown,
+    is_kiro_available: () => true,
     get_preferences: () => mockPrefs,
     get_ai_keys: () => null,
     get_pricing_table: () => ({

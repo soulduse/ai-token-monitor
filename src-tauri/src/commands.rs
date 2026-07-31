@@ -12,6 +12,7 @@ use crate::providers::codex::CodexProvider;
 use crate::providers::gjc::GjcProvider;
 use crate::providers::glm::GlmProvider;
 use crate::providers::grok::GrokProvider;
+use crate::providers::kiro::{KiroBreakdown, KiroProvider};
 use crate::providers::kimi::KimiProvider;
 use crate::providers::opencode::OpenCodeProvider;
 use crate::providers::pricing;
@@ -160,6 +161,48 @@ pub async fn get_grok_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
 #[tauri::command]
 pub fn is_grok_available() -> bool {
     GrokProvider::new().is_available()
+}
+
+#[tauri::command]
+pub async fn get_kiro_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
+    let result = tauri::async_runtime::spawn_blocking(|| {
+        let provider = KiroProvider::new();
+        if !provider.is_available() {
+            return Err("Kiro stats not available".to_string());
+        }
+        provider.fetch_stats()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    match result {
+        Ok(mut stats) => {
+            crate::hydration::apply(&mut stats, "kiro");
+            crate::update_tray_title(&app);
+            Ok(stats)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Kiro's credit-based detail, which `AllStats` has no room for: per-turn credits,
+/// cancellations, Auto-attributed spend, and which local store each turn came from.
+#[tauri::command]
+pub async fn get_kiro_breakdown() -> Result<KiroBreakdown, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let provider = KiroProvider::new();
+        if !provider.is_available() {
+            return Err("Kiro stats not available".to_string());
+        }
+        crate::providers::kiro::get_breakdown()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub fn is_kiro_available() -> bool {
+    KiroProvider::new().is_available()
 }
 
 #[tauri::command]

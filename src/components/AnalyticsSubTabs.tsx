@@ -1,16 +1,20 @@
 import { useI18n } from "../i18n/I18nContext";
 
-export type AnalyticsSubTab = "usage" | "projects" | "tools";
+export type AnalyticsSubTab = "usage" | "projects" | "tools" | "kiro";
 
 interface Props {
   active: AnalyticsSubTab;
   onChange: (tab: AnalyticsSubTab) => void;
+  /** Kiro meters in credits, not tokens, so it gets its own tab — shown only
+   *  when the source is enabled. */
+  showKiro?: boolean;
 }
 
-const TABS: AnalyticsSubTab[] = ["usage", "projects", "tools"];
+const BASE_TABS: AnalyticsSubTab[] = ["usage", "projects", "tools"];
 
-export function AnalyticsSubTabs({ active, onChange }: Props) {
+export function AnalyticsSubTabs({ active, onChange, showKiro = false }: Props) {
   const t = useI18n();
+  const TABS = showKiro ? [...BASE_TABS, "kiro" as const] : BASE_TABS;
 
   return (
     <div style={{

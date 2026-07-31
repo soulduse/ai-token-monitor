@@ -18,6 +18,7 @@ export const PROVIDER_COLORS: Record<LeaderboardProvider, string> = {
   glm: "#00b96b",
   gjc: "#e11d48",
   grok: "#475569",
+  kiro: "#7c5cfc",
 };
 
 export const PROVIDER_LABELS: Record<LeaderboardProvider, string> = {
@@ -28,6 +29,7 @@ export const PROVIDER_LABELS: Record<LeaderboardProvider, string> = {
   glm: "GLM",
   gjc: "GJC",
   grok: "Grok",
+  kiro: "Kiro",
 };
 
 export const PERIOD_LABELS: Record<string, string> = {

@@ -168,6 +168,7 @@ function LeaderboardContent({ user, minDate, dailyTokens }: { user: User; minDat
   if (prefs.include_glm) availableProviders.push("glm");
   if (prefs.include_gjc) availableProviders.push("gjc");
   if (prefs.include_grok) availableProviders.push("grok");
+  if (prefs.include_kiro) availableProviders.push("kiro");
   // Default to claude if nothing enabled
   if (availableProviders.length === 0) availableProviders.push("claude");
 
@@ -493,6 +494,7 @@ function ProviderLeaderboard({
         ) : (
           pageEntries.map((entry, i) => (
             <LeaderboardRow
+              provider={provider}
               key={entry.user_id}
               entry={entry}
               rank={page * PAGE_SIZE + i + 1}
