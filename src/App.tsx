@@ -13,6 +13,7 @@ import { PopoverShell } from "./components/PopoverShell";
 import { Header } from "./components/Header";
 import { TabBar } from "./components/TabBar";
 import type { TabType } from "./components/TabBar";
+import { KiroBreakdown } from "./components/KiroBreakdown";
 import { TodaySummary } from "./components/TodaySummary";
 import { DailyChart } from "./components/DailyChart";
 import { Heatmap } from "./components/Heatmap";
@@ -72,6 +73,7 @@ function AppContent() {
     includeGlm: prefs.include_glm,
     includeGjc: prefs.include_gjc,
     includeGrok: prefs.include_grok,
+    includeKiro: prefs.include_kiro,
   });
   const t = useI18n();
   const { user, profile } = useAuth();
@@ -213,7 +215,7 @@ function AppContent() {
       </div>
 
       <div style={{ display: activeTab === "analytics" ? "contents" : "none" }}>
-        <AnalyticsSubTabs active={analyticsSubTab} onChange={setAnalyticsSubTab} />
+        <AnalyticsSubTabs active={analyticsSubTab} onChange={setAnalyticsSubTab} showKiro={prefs.include_kiro} />
 
         {analyticsSubTab === "usage" && (
           <>
@@ -246,6 +248,8 @@ function AppContent() {
               </>
             : <AnalyticsEmptyState message={t("analytics.empty.tools")} />
         )}
+
+        {analyticsSubTab === "kiro" && <KiroBreakdown />}
       </div>
 
       {/* Leaderboard: defers mount (and its network requests) until first visit,

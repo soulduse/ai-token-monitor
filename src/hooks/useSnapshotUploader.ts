@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { supabase } from "../lib/supabase";
-import type { AllStats, LeaderboardProvider } from "../lib/types";
+import type { AllStats, DailyUsage, LeaderboardProvider } from "../lib/types";
+import { creditsFromCostUsd, isCreditProvider, toMilliCredits } from "../lib/kiro";
 import { getTotalTokens, toLocalDateStr } from "../lib/format";
 import { isMockTauriSession } from "../lib/devMode";
 import type { User } from "@supabase/supabase-js";
@@ -63,7 +64,23 @@ interface RowPayload {
   sessions: number;
 }
 
-function buildTodayRow(stats: AllStats, today: string): RowPayload | null {
+/**
+ * The quantity a provider is ranked by. Every token-based provider reports its
+ * summed token counts; Kiro has none (it meters credits) so it reports
+ * millicredits instead — see `lib/kiro.ts` for why the scaling is needed.
+ */
+function rankedQuantity(entry: DailyUsage, provider: LeaderboardProvider): number {
+  if (isCreditProvider(provider)) {
+    return toMilliCredits(creditsFromCostUsd(entry.cost_usd));
+  }
+  return getTotalTokens(entry.tokens);
+}
+
+function buildTodayRow(
+  stats: AllStats,
+  today: string,
+  provider: LeaderboardProvider,
+): RowPayload | null {
   const todayEntry = stats.daily.find((d) => d.date === today);
   if (!todayEntry) return null;
   // A hydrated "today" means no local activity yet on this machine — the value
@@ -72,7 +89,7 @@ function buildTodayRow(stats: AllStats, today: string): RowPayload | null {
   if (todayEntry.hydrated) return null;
   return {
     date: today,
-    total_tokens: getTotalTokens(todayEntry.tokens),
+    total_tokens: rankedQuantity(todayEntry, provider),
     cost_usd: todayEntry.cost_usd,
     messages: todayEntry.messages,
     sessions: todayEntry.sessions,
@@ -201,7 +218,7 @@ export function useSnapshotUploader({ stats, user, optedIn, provider }: UseSnaps
       if (!liveStats) return;
 
       const today = toLocalDateStr(new Date());
-      const todayRow = buildTodayRow(liveStats, today);
+      const todayRow = buildTodayRow(liveStats, today, provider);
       if (!todayRow) return;
 
       const state = getUploadState(stateKey);
@@ -263,7 +280,7 @@ export function useSnapshotUploader({ stats, user, optedIn, provider }: UseSnaps
         .filter((d) => d.date >= startStr && d.date <= today && !d.hydrated)
         .map((d) => ({
           date: d.date,
-          total_tokens: getTotalTokens(d.tokens),
+          total_tokens: rankedQuantity(d, provider),
           cost_usd: d.cost_usd,
           messages: d.messages,
           sessions: d.sessions,

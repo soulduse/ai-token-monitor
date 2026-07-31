@@ -3,6 +3,7 @@ pub mod codex;
 pub mod gjc;
 pub mod glm;
 pub mod grok;
+pub mod kiro;
 pub mod kimi;
 pub mod opencode;
 pub mod pricing;

@@ -20,6 +20,7 @@ function activeProviders(prefs: {
   include_glm: boolean;
   include_gjc: boolean;
   include_grok: boolean;
+  include_kiro: boolean;
 }): LeaderboardProvider[] {
   // Keyed lookup rather than an if-chain: the chain's final `return` doubled as
   // the default case, so adding a provider to PROVIDERS without also adding its
@@ -33,6 +34,7 @@ function activeProviders(prefs: {
     glm: prefs.include_glm,
     gjc: prefs.include_gjc,
     grok: prefs.include_grok,
+    kiro: prefs.include_kiro,
   };
   return PROVIDERS.filter((p) => enabled[p]);
 }

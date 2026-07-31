@@ -7,7 +7,7 @@
 
 ![AI Token Monitor — monitoraggio in tempo reale di token e costi degli strumenti di AI coding, direttamente dalla barra dei menu](images/hero.png)
 
-**AI Token Monitor** è una leggera app per la barra di sistema di macOS e Windows che risponde a una sola domanda, tutto il giorno: *quanto mi stanno costando davvero i miei strumenti di AI coding?* Legge i log di sessione locali che **Claude Code**, **Codex**, **OpenCode**, **GJC** e **Grok** già scrivono, calcola il costo di ogni token con tariffe per modello (letture dalla cache incluse) e mostra la spesa di oggi accanto all'orologio — con grafici, avvisi sui limiti del piano, classifica opzionale, chat e notifiche webhook a un clic di distanza.
+**AI Token Monitor** è una leggera app per la barra di sistema di macOS e Windows che risponde a una sola domanda, tutto il giorno: *quanto mi stanno costando davvero i miei strumenti di AI coding?* Legge i log di sessione locali che **Claude Code**, **Codex**, **OpenCode**, **GJC**, **Grok** e **Kiro** già scrivono, calcola il costo di ogni token con tariffe per modello (letture dalla cache incluse) e mostra la spesa di oggi accanto all'orologio — con grafici, avvisi sui limiti del piano, classifica opzionale, chat e notifiche webhook a un clic di distanza.
 
 - **Zero configurazione** — niente chiavi API, niente proxy. Se hai eseguito Claude Code o Codex almeno una volta, funziona subito.
 - **Spesa a colpo d'occhio** — costo in tempo reale nella barra dei menu / barra di sistema, dashboard completa con un clic.
@@ -150,6 +150,7 @@ Dati condivisi: conteggio giornaliero dei token, costi, messaggi/sessioni. **Nes
 | **Codex** | `~/.codex/sessions/**/*.jsonl` | Supporta root multiple. |
 | **OpenCode** | `~/.local/share/opencode/**/*.jsonl` | Costi per modello dal registro prezzi integrato. |
 | **Grok** | `~/.grok/logs/unified.jsonl` | Token reali per richiesta da `shell.turn.inference_done`; modello e progetto uniti da `~/.grok/sessions`. Grok tronca questo log a rotazione, quindi i totali giornalieri vengono accumulati in uno snapshot locale. Per ora solo macOS — il layout dei log su Windows non è verificato. |
+| **Kiro** | `~/.kiro/sessions/cli/*.json` + `data.sqlite3` | **Crediti, non token** — Kiro misura un'"unità di lavoro" per turno e non registra alcun conteggio di token, quindi il costo deriva dai crediti (× $0.04, la tariffa di eccedenza). Le esecuzioni interattive e non interattive scrivono in due store separati con nomi di chiave diversi; vengono letti entrambi. I turni lasciati su Auto non registrano quale modello sia stato usato. |
 
 **Richieste di rete**: solo quando classifica/chat sono attivati (invio dati aggregati a Supabase) o quando scatta un webhook. Senza queste funzionalita, l'app funziona completamente offline. Le chiavi di traduzione AI, se configurate, inviano richieste direttamente al provider scelto.
 

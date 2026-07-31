@@ -24,6 +24,7 @@ const defaultPrefs: UserPreferences = {
   include_glm: false,
   include_gjc: false,
   include_grok: false,
+  include_kiro: false,
   theme: "github",
   color_mode: "system",
   language: "en",

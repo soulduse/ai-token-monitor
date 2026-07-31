@@ -382,15 +382,29 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             (true, 0.0)
         };
 
-        let computed =
-            claude_cost + codex_cost + opencode_cost + kimi_cost + glm_cost + gjc_cost + grok_cost;
+        let (kiro_warm, kiro_cost) = if prefs.include_kiro {
+            let s = providers::kiro::get_cached_stats();
+            (s.is_some(), today_cost_of(&s, &today))
+        } else {
+            (true, 0.0)
+        };
+
+        let computed = claude_cost
+            + codex_cost
+            + opencode_cost
+            + kimi_cost
+            + glm_cost
+            + gjc_cost
+            + grok_cost
+            + kiro_cost;
         let warm = claude_warm
             && codex_warm
             && opencode_warm
             && kimi_warm
             && glm_warm
             && gjc_warm
-            && grok_warm;
+            && grok_warm
+            && kiro_warm;
 
         let today_cost = if warm {
             // Every enabled provider has parsed — this is the real number.
@@ -474,6 +488,14 @@ fn get_all_watch_dirs() -> Vec<PathBuf> {
         if grok_logs.exists() {
             dirs.push(grok_logs);
         }
+    }
+
+    // Add Kiro's interactive session store. The sibling `.jsonl` message log
+    // is rewritten constantly, but only the `.json` carries usage, and both
+    // live here — the debounce absorbs the extra wakeups.
+    let kiro_sessions = home.join(".kiro").join("sessions").join("cli");
+    if kiro_sessions.exists() {
+        dirs.push(kiro_sessions);
     }
 
     // Add GLM session directories (future)
@@ -572,6 +594,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                     providers::glm::invalidate_stats_cache();
                     providers::gjc::invalidate_stats_cache();
                     providers::grok::invalidate_stats_cache();
+                    providers::kiro::invalidate_stats_cache();
                     // Re-parse in background, then notify the frontend. Emitting only
                     // after the parse completes means the frontend's get_*_stats calls
                     // hit the warm cache instead of racing this thread and parsing the
@@ -599,6 +622,9 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                         if prefs.include_grok {
                             let _ = providers::grok::GrokProvider::new().fetch_stats();
                         }
+                        if prefs.include_kiro {
+                            let _ = providers::kiro::KiroProvider::new().fetch_stats();
+                        }
                         update_tray_title(&app_for_refresh);
                         let _ = app_for_refresh.emit("stats-updated", ());
                     });
@@ -624,6 +650,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                         providers::glm::invalidate_stats_cache();
                         providers::gjc::invalidate_stats_cache();
                         providers::grok::invalidate_stats_cache();
+                        providers::kiro::invalidate_stats_cache();
                         let _ = app_handle.emit("stats-updated", ());
                     }
                     update_tray_title(&app_handle);
@@ -1032,6 +1059,9 @@ pub fn run() {
             commands::is_kimi_available,
             commands::get_grok_stats,
             commands::is_grok_available,
+            commands::get_kiro_stats,
+            commands::get_kiro_breakdown,
+            commands::is_kiro_available,
             commands::get_glm_stats,
             commands::is_glm_available,
             commands::get_gjc_stats,
