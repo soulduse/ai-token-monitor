@@ -219,8 +219,7 @@ impl KiroProvider {
 
         let mut turns = self.parse_sessions();
         let session_store_turns = turns.len() as u32;
-        turns.extend(self.parse_sqlite());
-        let sqlite_store_turns = turns.len() as u32 - session_store_turns;
+        let sqlite_store_turns = merge_sqlite_turns(&mut turns, self.parse_sqlite());
 
         // Newest first; the view shows a recent-activity list and the rollups do
         // not care about order.
@@ -315,6 +314,15 @@ impl KiroProvider {
         }
         // Open read-only + immutable: kiro-cli may hold the DB open, and this
         // provider must never take a write lock on another process's database.
+        //
+        // `immutable=1` asserts the file never changes, so SQLite skips locking
+        // *and* the WAL. If kiro-cli is mid-write in WAL mode, un-checkpointed
+        // turns are invisible here and a torn read can fail outright. Both are
+        // transient and self-healing: this reconnects on every compute, so the
+        // next refresh — file-watcher event or the 60s poll — picks the turns up
+        // once they land in the main DB file. The alternative (a normal
+        // read-only open) reads the WAL but can contend with the writer, which
+        // is the worse trade for a monitor that must never disturb the CLI.
         let uri = format!("file:{}?immutable=1", self.db_path.to_string_lossy());
         let conn = match rusqlite::Connection::open_with_flags(
             &uri,
@@ -424,6 +432,36 @@ impl TokenProvider for KiroProvider {
 }
 
 // --- Folding ------------------------------------------------------------------
+
+/// Append the sqlite store's turns to the session store's, skipping any that the
+/// session store already reported. Returns how many were actually added.
+///
+/// The two stores are disjoint on kiro-cli 2.16.0 — the TUI writes only session
+/// JSON, `--no-interactive` writes only sqlite — so a plain concat is correct
+/// today. But nothing in the CLI guarantees that, and double counting is silent
+/// and hard to spot once it reaches a leaderboard, so identical turns are dropped
+/// rather than trusted.
+///
+/// The identity is (end time, credits) — deliberately *not* the turn's id, since
+/// the stores number turns in different namespaces (`session_id` vs
+/// `conversation_id`), so an id-based key would never match a cross-store
+/// duplicate and the guard would do nothing. Two genuinely distinct turns would
+/// have to end at the same instant for the same fractional credit cost to
+/// collide, which the timestamp precision makes negligible.
+fn merge_sqlite_turns(turns: &mut Vec<KiroTurn>, from_sqlite: Vec<KiroTurn>) -> u32 {
+    let mut seen: HashSet<(String, u64)> = turns
+        .iter()
+        .map(|t| (t.ended_at.clone(), t.credits.to_bits()))
+        .collect();
+    let mut added = 0;
+    for turn in from_sqlite {
+        if seen.insert((turn.ended_at.clone(), turn.credits.to_bits())) {
+            turns.push(turn);
+            added += 1;
+        }
+    }
+    added
+}
 
 fn build_breakdown(
     turns: &[KiroTurn],
@@ -767,6 +805,43 @@ mod tests {
         let m = s.model_usage.get("claude-haiku-4.5").expect("model rollup");
         assert_eq!(m.input_tokens, 0);
         assert!((m.cost_usd - 2.5 * CREDIT_RATE_USD).abs() < 1e-9);
+    }
+
+    #[test]
+    fn merges_disjoint_stores_and_drops_cross_store_duplicates() {
+        // Disjoint, the real shape on kiro-cli 2.16.0: everything is kept.
+        let mut turns = vec![
+            turn("2026-07-30T10:00:00Z", "claude-sonnet-4.5", 13.310557, "UserTurnEnd", 4, 6),
+            turn("2026-07-30T10:20:00Z", "claude-haiku-4.5", 0.840715, "Cancelled", 1, 0),
+        ];
+        let added = merge_sqlite_turns(
+            &mut turns,
+            vec![
+                turn("2026-07-30T11:00:00Z", "claude-haiku-4.5", 0.670007, "UserTurnEnd", 1, 0),
+                turn("2026-07-30T11:05:00Z", "claude-haiku-4.5", 0.043130, "UserTurnEnd", 1, 0),
+            ],
+        );
+        assert_eq!(added, 2);
+        assert_eq!(turns.len(), 4);
+
+        // Overlapping: a turn the session store already reported must not be
+        // counted twice, even though its id differs across the two stores.
+        let mut turns = vec![turn(
+            "2026-07-30T10:00:00Z",
+            "claude-sonnet-4.5",
+            13.310557,
+            "UserTurnEnd",
+            4,
+            6,
+        )];
+        let mut dup = turn("2026-07-30T10:00:00Z", "claude-sonnet-4.5", 13.310557, "UserTurnEnd", 4, 6);
+        dup.session_id = "conversation-uuid-from-the-other-namespace".to_string();
+        dup.source = "sqlite".to_string();
+        let added = merge_sqlite_turns(&mut turns, vec![dup]);
+        assert_eq!(added, 0);
+        assert_eq!(turns.len(), 1);
+        let b = build_breakdown(&turns, 1, added);
+        assert!((b.total_credits - 13.310557).abs() < 1e-9);
     }
 
     fn turn(
