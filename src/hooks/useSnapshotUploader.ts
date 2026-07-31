@@ -137,7 +137,20 @@ async function callSyncRpc(
     p_rows: rows,
     p_stale_dates: staleDates,
   });
-  return !error;
+  if (error) {
+    // Swallowing this silently makes a rejected upload indistinguishable from
+    // "nobody has data yet": the leaderboard just renders its empty state. The
+    // common cause is a provider the server does not know — sync_device_snapshots
+    // raises 'Invalid provider' until the matching migration is deployed — which
+    // is invisible without a log line. Callers still get a boolean; this only
+    // adds the diagnosis.
+    console.error(
+      `[leaderboard] sync_device_snapshots rejected provider="${provider}" ` +
+        `(${rows.length} rows, ${staleDates.length} stale): ${error.message}`,
+    );
+    return false;
+  }
+  return true;
 }
 
 function dispatchUploaded(provider: LeaderboardProvider, todayRow: RowPayload | null) {
