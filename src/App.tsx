@@ -96,6 +96,14 @@ function AppContent() {
     if (activeTab === "leaderboard") setLeaderboardActivated(true);
   }, [activeTab]);
 
+  // Turning the Kiro source off removes its sub-tab button, which would leave
+  // `analyticsSubTab` pointing at a tab the user can no longer see or leave.
+  useEffect(() => {
+    if (!prefs.include_kiro) {
+      setAnalyticsSubTab((tab) => (tab === "kiro" ? "usage" : tab));
+    }
+  }, [prefs.include_kiro]);
+
   // Drive the unified chat realtime channel. Activation is gated only by
   // login state; RLS on chat_messages/chat_reactions enforces the actual
   // access policy on the server. This replaces three independent Realtime
@@ -249,7 +257,7 @@ function AppContent() {
             : <AnalyticsEmptyState message={t("analytics.empty.tools")} />
         )}
 
-        {analyticsSubTab === "kiro" && <KiroBreakdown />}
+        {analyticsSubTab === "kiro" && prefs.include_kiro && <KiroBreakdown />}
       </div>
 
       {/* Leaderboard: defers mount (and its network requests) until first visit,
