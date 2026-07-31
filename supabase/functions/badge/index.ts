@@ -72,6 +72,31 @@ function formatTokens(n: number): string {
   return n.toString();
 }
 
+/**
+ * Kiro meters credits, not tokens, and its `total_tokens` column holds
+ * millicredits (credits × 1000) — see `src/lib/kiro.ts` for why the scaling is
+ * needed. Rendering that through `formatTokens` would print "20.6K tokens" for
+ * 20.56 credits, so credit providers get their own unit and label.
+ */
+const CREDIT_PROVIDERS = new Set(["kiro"]);
+const CREDIT_SCALE = 1000;
+
+function isCreditProvider(provider: string): boolean {
+  return CREDIT_PROVIDERS.has(provider);
+}
+
+function formatCredits(milliCredits: number): string {
+  const credits = milliCredits / CREDIT_SCALE;
+  return credits < 1 ? credits.toFixed(3) : credits.toFixed(2);
+}
+
+/** The ranked quantity plus its unit, for whichever metering the provider uses. */
+function formatQuantity(provider: string, value: number): string {
+  return isCreditProvider(provider)
+    ? `${formatCredits(value)} credits`
+    : `${formatTokens(value)} tokens`;
+}
+
 function formatCost(usd: number): string {
   if (usd >= 100) return `$${usd.toFixed(0)}`;
   if (usd >= 1) return `$${usd.toFixed(2)}`;
@@ -143,7 +168,7 @@ function generateFlatBadge(
   style: string,
 ): string {
   const label = `AI Token Monitor | ${PROVIDER_LABELS[data.provider] ?? data.provider}`;
-  const value = `#${data.rank} | ${formatTokens(data.totalTokens)} tokens`;
+  const value = `#${data.rank} | ${formatQuantity(data.provider, data.totalTokens)}`;
   const rx = style === "flat-square" ? 0 : 3;
   const color = PROVIDER_COLORS[data.provider] ?? "#555";
   const labelWidth = Math.round(measureText(label) + 12);
@@ -189,7 +214,7 @@ function generateCardBadge(
   const color = PROVIDER_COLORS[data.provider] ?? "#555";
   const providerLabel = PROVIDER_LABELS[data.provider] ?? data.provider;
   const periodLabel = PERIOD_LABELS[data.period] ?? data.period;
-  const tokensStr = formatTokens(data.totalTokens);
+  const quantityStr = formatQuantity(data.provider, data.totalTokens);
   const costStr = formatCost(data.costUsd);
   const rankStr = data.rank <= 3 ? ["#1", "#2", "#3"][data.rank - 1] : `#${data.rank}`;
   // Truncate nickname to fit within card width (max ~250px for font-size 16)
@@ -207,7 +232,7 @@ function generateCardBadge(
     <text x="24" y="36" font-size="16" font-weight="bold">${escapeXml(nickname)}</text>
     <text x="376" y="36" font-size="20" font-weight="bold" text-anchor="end">${escapeXml(rankStr)}</text>
     <line x1="24" y1="50" x2="376" y2="50" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
-    <text x="24" y="80" font-size="24" font-weight="bold">${escapeXml(tokensStr)} tokens</text>
+    <text x="24" y="80" font-size="24" font-weight="bold">${escapeXml(quantityStr)}</text>
     <text x="376" y="80" font-size="18" font-weight="bold" text-anchor="end" opacity="0.9">${escapeXml(costStr)}</text>
     <text x="24" y="112" font-size="11" opacity="0.7">${escapeXml(providerLabel)}  &#183;  ${escapeXml(periodLabel)}</text>
     <text x="376" y="130" font-size="9" text-anchor="end" opacity="0.4">AI Token Monitor</text>
