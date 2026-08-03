@@ -608,7 +608,11 @@ fn parse_message_json(id: &str, data: &Value) -> Option<OpenCodeEntry> {
 
     Some(OpenCodeEntry {
         date,
-        model: model_id.to_string(),
+        // Normalized so one model yields one key across providers — the frontend
+        // merges providers' model_usage by key. opencode ids carry a provider
+        // prefix (`anthropic/claude-opus-5`), which is exactly what gets dropped;
+        // its pricing patterns are bare families, so matching is unaffected.
+        model: pricing::normalize_model_id(model_id),
         session_id,
         input_tokens: input,
         output_tokens: output,

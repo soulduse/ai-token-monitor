@@ -410,10 +410,14 @@ impl CodexProvider {
 
                                     let date = resolve_entry_date(path_date.as_deref(), &value);
 
+                                    // Normalized so one model yields one key here
+                                    // and in every other provider — the frontend
+                                    // merges providers' model_usage by key, so
+                                    // differing spellings would split a row.
                                     let model = if state.current_model.is_empty() {
                                         "codex".to_string()
                                     } else {
-                                        state.current_model.clone()
+                                        pricing::normalize_model_id(&state.current_model)
                                     };
 
                                     let cumulative = extract_cumulative_usage(info);
