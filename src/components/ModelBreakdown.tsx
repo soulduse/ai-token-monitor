@@ -1,24 +1,11 @@
 import type { ModelUsage } from "../lib/types";
 import { formatTokens, formatCost } from "../lib/format";
+import { shortenModelName } from "../lib/statsHelpers";
 import { useSettings } from "../contexts/SettingsContext";
 import { useI18n } from "../i18n/I18nContext";
 
 interface Props {
   modelUsage: Record<string, ModelUsage>;
-}
-
-function shortModelName(name: string): string {
-  // Extract family and version: "claude-opus-4-6" → "Opus 4.6", "claude-opus-5" → "Opus 5".
-  // Version digits are capped at 2 so date suffixes ("-20260320") never read as versions.
-  const match = name.match(/(opus|sonnet|haiku|fable|mythos)-(\d{1,2})(?:-(\d{1,2}))?(?!\d)/);
-  if (match) {
-    const family = match[1].charAt(0).toUpperCase() + match[1].slice(1);
-    return match[3] ? `${family} ${match[2]}.${match[3]}` : `${family} ${match[2]}`;
-  }
-  if (name.includes("opus")) return "Opus";
-  if (name.includes("sonnet")) return "Sonnet";
-  if (name.includes("haiku")) return "Haiku";
-  return name.split("-").slice(0, 2).join(" ");
 }
 
 export function ModelBreakdown({ modelUsage }: Props) {
@@ -69,7 +56,7 @@ export function ModelBreakdown({ modelUsage }: Props) {
                 marginBottom: 4,
               }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>
-                  {shortModelName(model)}
+                  {shortenModelName(model)}
                   <span style={{ fontSize: 9, fontWeight: 500, color: "var(--text-secondary)", marginLeft: 4 }}>
                     {formatCost(usage.cost_usd)}
                   </span>

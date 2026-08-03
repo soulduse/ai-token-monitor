@@ -165,13 +165,63 @@ export function computeStreaks(daily: DailyUsage[], year?: number): StreakInfo {
   };
 }
 
+/** Capitalize each hyphen-separated word, leaving pure-numeric segments alone. */
+function titleCase(s: string): string {
+  return s
+    .split("-")
+    .map((w) => (/^\d+$/.test(w) ? w : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(" ");
+}
+
+/**
+ * Human-readable label for a model id, e.g. `claude-opus-4-8` → "Opus 4.8".
+ *
+ * Ids reaching the frontend are normalized by the backend: lowercase, with dots
+ * and underscores folded to hyphens and any vendor prefix dropped. So `gpt-5.6-sol`
+ * arrives as `gpt-5-6-sol`, and the version separator has to be reconstructed
+ * here rather than read off the id.
+ *
+ * Version digits are capped at 2 so date suffixes ("-20260320") never read as
+ * versions.
+ */
 export function shortenModelName(name: string): string {
-  const match = name.match(/claude-(\w+)-(\d+)-(\d+)/);
-  if (match) {
-    return `${match[1].charAt(0).toUpperCase() + match[1].slice(1)} ${match[2]}.${match[3]}`;
+  const claude = name.match(
+    /(opus|sonnet|haiku|fable|mythos)-(\d{1,2})(?:-(\d{1,2}))?(?!\d)/
+  );
+  if (claude) {
+    const family = claude[1].charAt(0).toUpperCase() + claude[1].slice(1);
+    return claude[3] ? `${family} ${claude[2]}.${claude[3]}` : `${family} ${claude[2]}`;
   }
-  // Codex models
-  if (name.startsWith("gpt-")) return name;
-  if (name === "codex-mini") return "Codex Mini";
-  return name;
+
+  if (name === "codex-mini" || name === "codex-mini-latest") return "Codex Mini";
+  if (name === "codex") return "Codex";
+
+  // `gpt-4o` glues a letter to the version, so it has no `major.minor` to rebuild.
+  const gpt4o = name.match(/^gpt-4o(?:-(.+))?$/);
+  if (gpt4o) return `GPT-4o${gpt4o[1] ? " " + titleCase(gpt4o[1]) : ""}`;
+
+  // OpenAI reasoning models: `o3`, `o4-mini`.
+  const oSeries = name.match(/^(o\d)(?:-(.+))?$/);
+  if (oSeries) return `${oSeries[1].toUpperCase()}${oSeries[2] ? " " + titleCase(oSeries[2]) : ""}`;
+
+  // Families that write their version as `major-minor` and display it as
+  // `major.minor`, with an optional tier suffix:
+  //   gpt-5-6-sol → "GPT-5.6 Sol", grok-4-5 → "Grok 4.5", glm-4-6 → "GLM 4.6"
+  const FAMILIES: Array<[RegExp, string]> = [
+    [/^gpt-(\d{1,2})(?:-(\d{1,2}))?(?:-(.+))?$/, "GPT-"],
+    [/^grok-(\d{1,2})(?:-(\d{1,2}))?(?:-(.+))?$/, "Grok "],
+    [/^glm-(\d{1,2})(?:-(\d{1,2}))?(?:-(.+))?$/, "GLM "],
+    [/^gemini-(\d{1,2})(?:-(\d{1,2}))?(?:-(.+))?$/, "Gemini "],
+  ];
+  for (const [pattern, prefix] of FAMILIES) {
+    const m = name.match(pattern);
+    if (m) {
+      const version = m[2] ? `${m[1]}.${m[2]}` : m[1];
+      return `${prefix}${version}${m[3] ? " " + titleCase(m[3]) : ""}`;
+    }
+  }
+
+  // Unrecognized: title-case the hyphenated segments so it still reads as a name
+  // rather than a raw id.
+  return titleCase(name);
 }
