@@ -976,8 +976,9 @@ mod tests {
         assert_eq!(canonical_model("claude-opus-4.8"), "claude-opus-4-8");
         assert_eq!(canonical_model("CLAUDE5_SONNET"), "claude5-sonnet");
         assert_eq!(canonical_model("claude-opus-4-8"), "claude-opus-4-8");
-        // Vendor prefixes survive: patterns match as substrings, and opencode's
-        // table matches on `anthropic/` deliberately.
+        // Vendor prefixes survive canonicalization: patterns match as
+        // substrings, so `kiro/claude-opus-5` still contains `opus-5`.
+        // Stripping the prefix is normalize_model_id's job, not this one's.
         assert_eq!(canonical_model("kiro/claude-opus-5"), "kiro/claude-opus-5");
     }
 
