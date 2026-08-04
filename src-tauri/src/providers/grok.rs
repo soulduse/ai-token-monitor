@@ -146,11 +146,38 @@ fn history_path() -> PathBuf {
         .join("ai-token-monitor-grok-history.json")
 }
 
+/// Re-key each day's model map through [`pricing::normalize_model_id`], summing
+/// any entries that collapse together.
+///
+/// Snapshots written before model ids were normalized hold raw keys (`grok-4.5`),
+/// while fresh records now arrive normalized (`grok-4-5`), so without this the
+/// same model would appear as two rows — one frozen at the old total. The
+/// snapshot carries history already rolled off the logs and cannot be rebuilt,
+/// so it is migrated in place rather than discarded. Normalization is idempotent,
+/// which makes re-running this on an already-migrated snapshot a no-op.
+fn migrate_model_keys(history: &mut GrokHistory) {
+    for day in history.days.values_mut() {
+        let mut migrated: HashMap<String, HistoryModel> = HashMap::with_capacity(day.models.len());
+        for (model, usage) in day.models.drain() {
+            let acc = migrated
+                .entry(pricing::normalize_model_id(&model))
+                .or_default();
+            acc.input_tokens += usage.input_tokens;
+            acc.output_tokens += usage.output_tokens;
+            acc.cache_read_tokens += usage.cache_read_tokens;
+            acc.cost_usd += usage.cost_usd;
+        }
+        day.models = migrated;
+    }
+}
+
 fn load_history_from(path: &Path) -> GrokHistory {
-    fs::read_to_string(path)
+    let mut history: GrokHistory = fs::read_to_string(path)
         .ok()
         .and_then(|c| serde_json::from_str(&c).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    migrate_model_keys(&mut history);
+    history
 }
 
 fn save_history_to(path: &Path, history: &GrokHistory) {
@@ -383,12 +410,14 @@ impl GrokProvider {
                 continue;
             };
 
+            // Normalized so one model yields one key across providers — the
+            // frontend merges providers' model_usage by key.
             let model = value
                 .get("current_model_id")
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
-                .unwrap_or(UNKNOWN_MODEL)
-                .to_string();
+                .map(pricing::normalize_model_id)
+                .unwrap_or_else(|| UNKNOWN_MODEL.to_string());
             let project = value
                 .pointer("/info/cwd")
                 .and_then(|v| v.as_str())
@@ -708,11 +737,14 @@ mod tests {
         }
     }
 
+    /// `model` is the raw id as the log carries it; it is normalized here because
+    /// the real parser normalizes at that point, so `SessionMeta` never holds a
+    /// raw id in production.
     fn meta_for(sid: &str, model: &str, project: &str) -> HashMap<String, SessionMeta> {
         HashMap::from([(
             sid.to_string(),
             SessionMeta {
-                model: model.to_string(),
+                model: pricing::normalize_model_id(model),
                 project: project.to_string(),
             },
         )])
@@ -764,7 +796,7 @@ mod tests {
 
         let day = &history.days["2026-07-24"];
         assert_eq!(day.messages, 2);
-        let m = &day.models["grok-4.5"];
+        let m = &day.models["grok-4-5"];
         assert_eq!(m.input_tokens, 600 + 1_500);
         assert_eq!(m.cache_read_tokens, 400 + 500);
         assert_eq!(m.output_tokens, 300);
@@ -876,6 +908,45 @@ mod tests {
         assert!(history.days["2026-07-24"].models.contains_key(UNKNOWN_MODEL));
     }
 
+    // A snapshot written before ids were normalized holds raw keys. Loading it
+    // must fold them onto the normalized key rather than leave two rows — one of
+    // them frozen, since fresh records only ever land on the normalized key. The
+    // snapshot holds history already rolled off the logs, so it is migrated
+    // rather than discarded.
+    #[test]
+    fn loading_migrates_pre_normalization_model_keys() {
+        let dir = std::env::temp_dir().join(format!("grok-migrate-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).expect("create temp dir");
+        let path = dir.join("history.json");
+
+        // Hand-built legacy snapshot: the same model under raw and normalized keys.
+        let mut legacy = GrokHistory::default();
+        let day = legacy.days.entry("2026-07-24".to_string()).or_default();
+        day.models.insert("grok-4.5".to_string(), HistoryModel {
+            input_tokens: 100, output_tokens: 10, cache_read_tokens: 5, cost_usd: 1.0,
+        });
+        day.models.insert("grok-4-5".to_string(), HistoryModel {
+            input_tokens: 200, output_tokens: 20, cache_read_tokens: 7, cost_usd: 2.0,
+        });
+        save_history_to(&path, &legacy);
+
+        let restored = load_history_from(&path);
+        let day = &restored.days["2026-07-24"];
+        assert_eq!(day.models.len(), 1, "raw and normalized keys must merge, got {:?}", day.models.keys());
+        let m = &day.models["grok-4-5"];
+        assert_eq!(m.input_tokens, 300, "both keys' tokens must sum");
+        assert_eq!(m.output_tokens, 30);
+        assert_eq!(m.cache_read_tokens, 12);
+        assert!((m.cost_usd - 3.0).abs() < 1e-9);
+
+        // Migration is idempotent: re-loading a migrated snapshot changes nothing.
+        save_history_to(&path, &restored);
+        let again = load_history_from(&path);
+        assert_eq!(again.days["2026-07-24"].models["grok-4-5"].input_tokens, 300);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn survives_a_save_load_round_trip() {
         let records = vec![rec(1_000, "2026-07-24", "s1", 250_000, 200_000, 400)];
@@ -891,7 +962,7 @@ mod tests {
         assert_eq!(restored.cursor, history.cursor);
         let day = &restored.days["2026-07-24"];
         assert_eq!(day.session_ids.len(), 1);
-        assert_eq!(day.models["grok-4.5"].cache_read_tokens, 200_000);
+        assert_eq!(day.models["grok-4-5"].cache_read_tokens, 200_000);
         assert_eq!(day.projects["proj"].tokens, 250_400);
 
         // A restored snapshot must not re-absorb records it already counted.

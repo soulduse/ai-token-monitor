@@ -180,10 +180,12 @@ impl KimiProvider {
             let date = extract_date_from_value(&value)
                 .unwrap_or_else(|| extract_date_from_file_mtime(path));
 
+            // Normalized so one model yields one key across providers — the
+            // frontend merges providers' model_usage by key.
             let model = if current_model.is_empty() {
                 "kimi-k2".to_string()
             } else {
-                current_model.clone()
+                pricing::normalize_model_id(&current_model)
             };
 
             let key = format!("{}:{}", session_id, line_index);

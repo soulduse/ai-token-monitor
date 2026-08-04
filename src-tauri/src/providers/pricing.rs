@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::sync::OnceLock;
+use std::collections::HashSet;
+use std::sync::{Mutex, OnceLock};
 
 /// Embedded pricing JSON (compile-time fallback)
 const EMBEDDED_PRICING: &str = include_str!("../../pricing.json");
@@ -244,13 +245,69 @@ fn config() -> &'static PricingConfig {
     })
 }
 
-fn find_pricing<'a>(provider: &'a ProviderConfig, model: &str) -> &'a PricingEntry {
+/// Normalize a model id so cosmetic spelling differences don't defeat matching.
+///
+/// Proxies and gateways (omniroute, LiteLLM, Bedrock, …) rewrite the model id
+/// on its way into the log, so the same model arrives under several spellings:
+/// `claude-opus-4.8` (dots for hyphens), `CLAUDE5_SONNET` (upper snake), or
+/// `kiro/claude-opus-5` (vendor prefix). The patterns in `pricing.json` use one
+/// spelling — lowercase, hyphenated — so a dotted id like `claude-opus-4.8`
+/// misses `opus-4-8` and falls through to the broader `opus-4` entry, billing
+/// Opus 4.8 at Opus 4.1 rates (3x). Folding both sides to the same shape makes
+/// the match spelling-independent.
+///
+/// This only folds spelling; it leaves vendor prefixes alone, since patterns
+/// match as substrings and `kiro/claude-opus-5` already contains `opus-5`.
+/// Stripping the prefix is [`normalize_model_id`]'s job.
+fn canonical_model(model: &str) -> String {
+    model
+        .chars()
+        .map(|c| match c {
+            '.' | '_' => '-',
+            c => c.to_ascii_lowercase(),
+        })
+        .collect()
+}
+
+/// Model ids already reported as unmatched, so the warning fires once per id
+/// rather than once per message.
+static WARNED_UNMATCHED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+
+/// Warn once that `model` matched no pattern and is being billed at
+/// `provider`'s default rates. A silent fallback is how a new model id ends up
+/// mispriced with nothing to point at, so each unknown id gets one line.
+fn warn_unmatched(provider_name: &str, model: &str, default: &str) {
+    let mut guard = match WARNED_UNMATCHED.lock() {
+        Ok(g) => g,
+        Err(e) => e.into_inner(),
+    };
+    let seen = guard.get_or_insert_with(HashSet::new);
+    if seen.insert(format!("{}:{}", provider_name, model)) {
+        eprintln!(
+            "[PRICING] No pattern matched model {:?} in the {} table — billing at the default ({:?}) rates. \
+             Add an entry to pricing.json if this model has its own price.",
+            model, provider_name, default
+        );
+    }
+}
+
+/// Find the entry for `model`, or the provider's default when nothing matches.
+/// `provider_name` only labels the unmatched-model warning.
+fn find_pricing_in<'a>(
+    provider: &'a ProviderConfig,
+    provider_name: &str,
+    model: &str,
+) -> &'a PricingEntry {
+    // Compare canonical forms so dotted/upper/underscored ids from proxies land
+    // on the same entry as the hyphenated lowercase ids the patterns are written in.
+    let canonical = canonical_model(model);
     // First match wins (order in JSON matters)
     provider
         .models
         .iter()
-        .find(|e| model.contains(&e.match_pattern))
+        .find(|e| canonical.contains(&canonical_model(&e.match_pattern)))
         .unwrap_or_else(|| {
+            warn_unmatched(provider_name, model, &provider.default);
             // Fallback to default model
             provider
                 .models
@@ -262,13 +319,153 @@ fn find_pricing<'a>(provider: &'a ProviderConfig, model: &str) -> &'a PricingEnt
 
 // --- Public API ---
 
+/// Entry lookup without a provider label, for tests asserting which entry a
+/// model id lands on.
+#[cfg(test)]
+fn find_pricing<'a>(provider: &'a ProviderConfig, model: &str) -> &'a PricingEntry {
+    find_pricing_in(provider, "test", model)
+}
+
 /// Look up and date-resolve a model's prices in one step.
-fn resolved_pricing(provider: &ProviderConfig, model: &str) -> ResolvedPrice {
-    find_pricing(provider, model).resolve_for(&today_utc())
+fn resolved_pricing(provider: &ProviderConfig, provider_name: &str, model: &str) -> ResolvedPrice {
+    find_pricing_in(provider, provider_name, model).resolve_for(&today_utc())
+}
+
+/// Prefixes a gateway prepends to name the endpoint it routed through. They
+/// describe the route, not the model, so they only ever split one model across
+/// several rows in the breakdown.
+const VENDOR_PREFIXES: &[&str] = &[
+    "anthropic", "openai", "azure", "bedrock", "vertex", "google", "xai",
+    "moonshot", "zhipu", "kiro", "litellm", "omniroute", "openrouter",
+];
+
+/// Stable identity for a model, for use as an aggregation key.
+///
+/// A proxy can emit the same model under several spellings, and each distinct
+/// string becomes its own row in the model breakdown — `claude-opus-4-8` and
+/// `claude-opus-4.8` show up as two models, as do `gpt-5.6-sol` and
+/// `anthropic-gpt-5.6-sol`. Folding to one form collapses them back into one row.
+///
+/// Two prefixes are dropped:
+/// - a leading `vendor/` path segment (`kiro/claude-opus-5` → `claude-opus-5`),
+///   which is unambiguously routing metadata;
+/// - a leading `vendor-` token *only when the remainder belongs to a different
+///   vendor's family* (`anthropic-gpt-5.6-sol` → `gpt-5-6-sol`). That guard is
+///   what keeps `claude-opus-5` intact: stripping `claude-` would leave `opus-5`,
+///   an Anthropic family, so no strip happens.
+///
+/// The result still matches `pricing.json` patterns, which are compared in the
+/// same canonical form — every table's patterns are bare model families with no
+/// vendor path, so dropping the prefix cannot cost a match.
+pub fn normalize_model_id(model: &str) -> String {
+    let canonical = canonical_model(model);
+    // Routing path segment: the model is whatever follows the last slash.
+    let without_path = canonical.rsplit('/').next().unwrap_or(&canonical);
+    // Strip a vendor token only when what follows still names a model family.
+    // `moonshot` is both a vendor and part of real model ids (`moonshot-v1-8k`),
+    // and there the remainder (`v1-8k`) names no family — so it is left alone.
+    for vendor in VENDOR_PREFIXES {
+        if let Some(rest) = without_path.strip_prefix(&format!("{}-", vendor)) {
+            if names_a_family(rest) {
+                return rest.to_string();
+            }
+        }
+    }
+    without_path.to_string()
+}
+
+/// Anthropic model families, as they appear inside a model id.
+const ANTHROPIC_FAMILIES: &[&str] =
+    &["claude", "opus", "sonnet", "haiku", "fable", "mythos"];
+
+/// True when `id` names a recognizable model family (Anthropic or otherwise).
+/// Used to tell a vendor prefix apart from a vendor name that is genuinely part
+/// of the model id.
+fn names_a_family(id: &str) -> bool {
+    !id.is_empty()
+        && (ANTHROPIC_FAMILIES.iter().any(|f| id.contains(f))
+            || foreign_table(id).is_some()
+            || OTHER_FAMILIES.iter().any(|f| id.contains(f)))
+}
+
+/// Which non-Anthropic pricing table a model id belongs to, if any.
+///
+/// Claude Code's log records whatever model id the endpoint reported, so a
+/// gateway pointing it at a non-Anthropic model leaves a foreign id in a
+/// Claude-shaped log (omniroute writes `anthropic-gpt-5.6-sol` — an OpenAI model
+/// behind an Anthropic-compatible endpoint). Matching is on the model family in
+/// the id, never on the vendor prefix, precisely because that prefix lies here.
+///
+/// Returns `None` for Anthropic models and for anything unrecognized, so the
+/// caller falls through to the claude table and its unmatched-model warning.
+fn foreign_table(canonical: &str) -> Option<&'static str> {
+    // Anthropic families first: an Anthropic id must never be routed away, even
+    // if some future name happens to contain a foreign substring.
+    if ANTHROPIC_FAMILIES.iter().any(|f| canonical.contains(f)) {
+        return None;
+    }
+    // OpenAI/Codex: gpt-*, o3/o4 reasoning models, and the codex variants.
+    if canonical.contains("gpt")
+        || canonical.contains("codex")
+        || canonical.contains("o3-")
+        || canonical.contains("o4-")
+    {
+        return Some("codex");
+    }
+    if canonical.contains("grok") {
+        return Some("grok");
+    }
+    if canonical.contains("kimi") || canonical.contains("moonshot") {
+        return Some("kimi");
+    }
+    if canonical.contains("glm") {
+        return Some("glm");
+    }
+    None
+}
+
+/// Families that have no pricing table of their own but are still recognizable
+/// model names. Only [`names_a_family`] consults these: a vendor prefix in front
+/// of `gemini-3` is still routing metadata even though no table prices Gemini.
+const OTHER_FAMILIES: &[&str] = &["gemini", "deepseek", "qwen", "llama", "mistral"];
+
+/// Price a non-Anthropic model found in a Claude-shaped log, expressed as
+/// [`ClaudePricing`] so the caller's cost math is unchanged.
+///
+/// These providers quote a single discounted rate for cached input rather than
+/// Anthropic's separate read/write rates, so `cached_input` maps onto
+/// `cache_read` and the cache-write rates are zero — matching how the codex and
+/// grok providers already bill their own logs.
+fn foreign_model_pricing(model: &str) -> Option<ClaudePricing> {
+    let canonical = canonical_model(model);
+    let table = foreign_table(&canonical)?;
+    let cfg = config();
+    let (provider, cached_as_read) = match table {
+        "codex" => (&cfg.codex, true),
+        "grok" => (cfg.grok.as_ref()?, true),
+        "kimi" => (cfg.kimi.as_ref()?, false),
+        "glm" => (cfg.glm.as_ref()?, false),
+        _ => return None,
+    };
+    let p = resolved_pricing(provider, table, model);
+    Some(ClaudePricing {
+        input: p.input,
+        output: p.output,
+        cache_read: if cached_as_read { p.cached_input } else { p.cache_read },
+        cache_write_5m: p.cache_write,
+        cache_write_1h: if p.cache_write_1h > 0.0 { p.cache_write_1h } else { p.cache_write },
+    })
 }
 
 pub fn get_claude_pricing(model: &str) -> ClaudePricing {
-    let p = resolved_pricing(&config().claude, model);
+    // Claude Code's log can carry non-Anthropic models when a proxy/gateway
+    // routes them (omniroute reports e.g. `anthropic-gpt-5.6-sol`). Those have
+    // no entry in the claude table, so without this they'd silently bill at the
+    // Sonnet default. Route by model family, not by which log file it came from.
+    if let Some(p) = foreign_model_pricing(model) {
+        return p;
+    }
+    let p = resolved_pricing(&config().claude, "claude", model);
     ClaudePricing {
         input: p.input,
         output: p.output,
@@ -279,7 +476,7 @@ pub fn get_claude_pricing(model: &str) -> ClaudePricing {
 }
 
 pub fn get_codex_pricing(model: &str) -> CodexPricing {
-    let p = resolved_pricing(&config().codex, model);
+    let p = resolved_pricing(&config().codex, "codex", model);
     CodexPricing {
         input: p.input,
         output: p.output,
@@ -290,7 +487,7 @@ pub fn get_codex_pricing(model: &str) -> CodexPricing {
 pub fn get_kimi_pricing(model: &str) -> KimiPricing {
     let cfg = config();
     if let Some(ref kimi) = cfg.kimi {
-        let p = resolved_pricing(kimi, model);
+        let p = resolved_pricing(kimi, "kimi", model);
         return KimiPricing {
             input: p.input,
             output: p.output,
@@ -305,7 +502,7 @@ pub fn get_kimi_pricing(model: &str) -> KimiPricing {
 pub fn get_glm_pricing(model: &str) -> GlmPricing {
     let cfg = config();
     if let Some(ref glm) = cfg.glm {
-        let p = resolved_pricing(glm, model);
+        let p = resolved_pricing(glm, "glm", model);
         return GlmPricing {
             input: p.input,
             output: p.output,
@@ -319,7 +516,7 @@ pub fn get_glm_pricing(model: &str) -> GlmPricing {
 pub fn get_grok_pricing(model: &str) -> GrokPricing {
     let cfg = config();
     if let Some(ref grok) = cfg.grok {
-        let p = resolved_pricing(grok, model);
+        let p = resolved_pricing(grok, "grok", model);
         let high = p.high_context;
         return GrokPricing {
             input: p.input,
@@ -348,7 +545,7 @@ pub fn get_opencode_pricing(model: &str) -> OpenCodePricing {
     // Use dedicated opencode pricing if available, otherwise try to match
     // against claude or codex pricing tables based on model name.
     if let Some(ref oc) = cfg.opencode {
-        let p = resolved_pricing(oc, model);
+        let p = resolved_pricing(oc, "opencode", model);
         return OpenCodePricing {
             input: p.input,
             output: p.output,
@@ -359,7 +556,7 @@ pub fn get_opencode_pricing(model: &str) -> OpenCodePricing {
 
     // Fallback: try claude pricing first (for claude-* models), then codex
     if model.contains("claude") || model.contains("fable") || model.contains("mythos") || model.contains("sonnet") || model.contains("opus") || model.contains("haiku") {
-        let p = resolved_pricing(&cfg.claude, model);
+        let p = resolved_pricing(&cfg.claude, "claude", model);
         OpenCodePricing {
             input: p.input,
             output: p.output,
@@ -367,7 +564,7 @@ pub fn get_opencode_pricing(model: &str) -> OpenCodePricing {
             cache_write: p.cache_write,
         }
     } else {
-        let p = resolved_pricing(&cfg.codex, model);
+        let p = resolved_pricing(&cfg.codex, "codex", model);
         OpenCodePricing {
             input: p.input,
             output: p.output,
@@ -770,6 +967,256 @@ mod tests {
     fn claude_unknown_defaults_to_sonnet() {
         let p = get_claude_pricing("claude-unknown-model");
         assert!((p.input - 3.0).abs() < 0.001);
+    }
+
+    // --- Proxy/gateway model id normalization ---
+
+    #[test]
+    fn canonical_model_folds_case_dots_and_underscores() {
+        assert_eq!(canonical_model("claude-opus-4.8"), "claude-opus-4-8");
+        assert_eq!(canonical_model("CLAUDE5_SONNET"), "claude5-sonnet");
+        assert_eq!(canonical_model("claude-opus-4-8"), "claude-opus-4-8");
+        // Vendor prefixes survive: patterns match as substrings, and opencode's
+        // table matches on `anthropic/` deliberately.
+        assert_eq!(canonical_model("kiro/claude-opus-5"), "kiro/claude-opus-5");
+    }
+
+    // Regression guard: omniroute reports Opus 4.8 as `claude-opus-4.8` (dots).
+    // Before canonical matching, `"claude-opus-4.8".contains("opus-4-8")` was
+    // false, so it fell through to the broader `opus-4` entry and billed at Opus
+    // 4.1 rates ($15/$75) — a 3x overcharge on every such message.
+    #[test]
+    fn claude_dotted_opus_48_not_billed_as_41() {
+        let dotted = get_claude_pricing("claude-opus-4.8");
+        assert!((dotted.input - 5.0).abs() < 0.001, "dotted Opus 4.8 input must be $5/MTok, got ${}", dotted.input);
+        assert!((dotted.output - 25.0).abs() < 0.001, "dotted Opus 4.8 output must be $25/MTok, got ${}", dotted.output);
+
+        // Both spellings must price identically.
+        let hyphenated = get_claude_pricing("claude-opus-4-8");
+        assert!((dotted.input - hyphenated.input).abs() < 0.001);
+        assert!((dotted.output - hyphenated.output).abs() < 0.001);
+        assert!((dotted.cache_read - hyphenated.cache_read).abs() < 0.001);
+        assert!((dotted.cache_write_5m - hyphenated.cache_write_5m).abs() < 0.001);
+        assert!((dotted.cache_write_1h - hyphenated.cache_write_1h).abs() < 0.001);
+    }
+
+    // Dotted spellings must not shadow neighbouring versions: `claude-opus-4.1`
+    // still has to reach the Opus 4.1 entry, not the 4.8 one.
+    #[test]
+    fn claude_dotted_opus_41_still_resolves_to_41() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let entry = find_pricing(&cfg.claude, "claude-opus-4.1");
+        assert_eq!(entry.label, "Opus 4.1/4");
+        let p = get_claude_pricing("claude-opus-4.1");
+        assert!((p.input - 15.0).abs() < 0.001, "Opus 4.1 input must stay $15/MTok, got ${}", p.input);
+    }
+
+    // Upper snake case ids (`CLAUDE5_SONNET`) matched nothing at all before
+    // canonicalization and fell to the default. Now they reach the Sonnet entry.
+    #[test]
+    fn claude_upper_snake_case_id_matches_sonnet() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let entry = find_pricing(&cfg.claude, "CLAUDE5_SONNET");
+        assert_eq!(entry.label, "Sonnet 4.x");
+    }
+
+    // Canonicalization must not disturb any existing resolution. Every pattern,
+    // used as a model id, has to land on the entry it did before.
+    #[test]
+    fn canonical_matching_preserves_existing_resolutions() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let tables: Vec<(&str, &ProviderConfig)> = vec![
+            ("claude", &cfg.claude),
+            ("codex", &cfg.codex),
+            ("opencode", cfg.opencode.as_ref().unwrap()),
+            ("kimi", cfg.kimi.as_ref().unwrap()),
+            ("glm", cfg.glm.as_ref().unwrap()),
+            ("grok", cfg.grok.as_ref().unwrap()),
+        ];
+        for (name, provider) in tables {
+            // No two patterns may collapse to the same canonical form — that
+            // would let one silently shadow the other.
+            let mut seen = std::collections::HashSet::new();
+            for e in &provider.models {
+                assert!(
+                    seen.insert(canonical_model(&e.match_pattern)),
+                    "[{}] pattern {:?} collides with another after canonicalization",
+                    name, e.match_pattern
+                );
+            }
+            // Each pattern, treated as a model id, still resolves to itself
+            // (first match wins, so the first pattern containing it may differ —
+            // assert against raw matching, which is the pre-change behaviour).
+            for e in &provider.models {
+                let raw = provider
+                    .models
+                    .iter()
+                    .find(|c| e.match_pattern.contains(&c.match_pattern))
+                    .map(|c| c.match_pattern.as_str());
+                let canon = find_pricing_in(provider, name, &e.match_pattern).match_pattern.as_str();
+                assert_eq!(
+                    raw, Some(canon),
+                    "[{}] {:?} resolves differently under canonical matching",
+                    name, e.match_pattern
+                );
+            }
+        }
+    }
+
+    // --- Aggregation-key normalization ---
+
+    // The point of normalization: spellings a gateway emits for one model must
+    // collapse to one key, or the breakdown shows the same model twice.
+    #[test]
+    fn normalize_model_id_collapses_gateway_spellings() {
+        // Dotted vs hyphenated.
+        assert_eq!(normalize_model_id("claude-opus-4.8"), normalize_model_id("claude-opus-4-8"));
+        // Vendor path segment.
+        assert_eq!(normalize_model_id("kiro/claude-opus-5"), normalize_model_id("claude-opus-5"));
+        assert_eq!(normalize_model_id("claude/claude-opus-5"), normalize_model_id("claude-opus-5"));
+        // Contradicting vendor token on a foreign model.
+        assert_eq!(normalize_model_id("anthropic-gpt-5.6-sol"), normalize_model_id("gpt-5.6-sol"));
+        // Case and underscores.
+        assert_eq!(normalize_model_id("CLAUDE-OPUS-5"), normalize_model_id("claude-opus-5"));
+    }
+
+    // Distinct models must stay distinct — normalization must not over-merge.
+    #[test]
+    fn normalize_model_id_keeps_distinct_models_apart() {
+        let ids = [
+            "claude-opus-5", "claude-opus-4-8", "claude-opus-4-1", "claude-sonnet-5",
+            "claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-fable-5",
+            "claude-mythos-5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5-codex", "grok-4.5",
+        ];
+        let mut seen = std::collections::HashMap::new();
+        for id in ids {
+            let key = normalize_model_id(id);
+            if let Some(prev) = seen.insert(key.clone(), id) {
+                panic!("{id:?} and {prev:?} both normalize to {key:?}");
+            }
+        }
+    }
+
+    // The Anthropic-family guard: `claude-` is in VENDOR_PREFIXES via `kiro`-style
+    // handling, but stripping a family token would turn `claude-opus-5` into
+    // `opus-5` and split it from ids that keep the prefix.
+    #[test]
+    fn normalize_model_id_preserves_anthropic_family_tokens() {
+        assert_eq!(normalize_model_id("claude-opus-5"), "claude-opus-5");
+        assert_eq!(normalize_model_id("claude-sonnet-5"), "claude-sonnet-5");
+        // A vendor prefix in front of an Anthropic model is dropped, but the
+        // Anthropic id underneath is left whole.
+        assert_eq!(normalize_model_id("bedrock/claude-opus-5"), "claude-opus-5");
+    }
+
+    // `moonshot` is both a vendor name and a real model-id prefix
+    // (`moonshot-v1-8k`). Stripping it there would destroy the id, so the strip
+    // only fires when what remains still names a family.
+    #[test]
+    fn normalize_model_id_keeps_vendor_names_that_are_part_of_the_id() {
+        assert_eq!(normalize_model_id("moonshot-v1-8k"), "moonshot-v1-8k");
+        // With a family after it, the prefix is routing metadata and goes.
+        assert_eq!(normalize_model_id("moonshot-kimi-k2"), "kimi-k2");
+    }
+
+    // Normalized ids must still price correctly — normalization feeds the same
+    // lookup, so a normalized key must not lose its pricing entry.
+    #[test]
+    fn normalized_ids_still_resolve_to_the_same_price() {
+        for id in [
+            "claude-opus-4.8", "kiro/claude-opus-5", "anthropic-gpt-5.6-sol",
+            "CLAUDE-OPUS-5", "claude-sonnet-5", "grok-4.5",
+        ] {
+            let raw = get_claude_pricing(id);
+            let normalized = get_claude_pricing(&normalize_model_id(id));
+            assert!(
+                (raw.input - normalized.input).abs() < 0.001
+                    && (raw.output - normalized.output).abs() < 0.001,
+                "{id:?} prices differently after normalization: ${}/${} vs ${}/${}",
+                raw.input, raw.output, normalized.input, normalized.output
+            );
+        }
+    }
+
+    // Normalization is idempotent — re-normalizing a stored key is a no-op, so a
+    // cache written with normalized keys stays stable across versions.
+    #[test]
+    fn normalize_model_id_is_idempotent() {
+        for id in [
+            "claude-opus-4.8", "kiro/claude-opus-5", "anthropic-gpt-5.6-sol",
+            "moonshot-v1-8k", "CLAUDE5_SONNET", "gpt-5.6-sol",
+        ] {
+            let once = normalize_model_id(id);
+            assert_eq!(normalize_model_id(&once), once, "{id:?} is not idempotent");
+        }
+    }
+
+    // --- Foreign models in Claude Code's log ---
+
+    // Regression guard: omniroute routes Claude Code at OpenAI models and logs
+    // them as `anthropic-gpt-5.6-sol` — an OpenAI model wearing an Anthropic
+    // prefix. Billing it from the claude table meant no pattern matched and it
+    // fell to the Sonnet default ($3/$15) instead of GPT-5.6 Sol's $5/$30.
+    #[test]
+    fn claude_log_gpt56_sol_billed_from_codex_table() {
+        let codex = get_codex_pricing("gpt-5.6-sol");
+        for id in ["gpt-5.6-sol", "anthropic-gpt-5.6-sol"] {
+            let p = get_claude_pricing(id);
+            assert!((p.input - codex.input).abs() < 0.001, "{id} input must be ${}, got ${}", codex.input, p.input);
+            assert!((p.output - codex.output).abs() < 0.001, "{id} output must be ${}, got ${}", codex.output, p.output);
+            // OpenAI quotes one discounted cached-input rate, mapped onto cache_read.
+            assert!((p.cache_read - codex.cached_input).abs() < 0.001);
+            assert!(p.cache_write_5m.abs() < 0.001, "{id} must have no cache-write rate");
+        }
+    }
+
+    #[test]
+    fn claude_log_foreign_families_route_to_their_tables() {
+        let grok = get_claude_pricing("grok-4.5");
+        let grok_ref = get_grok_pricing("grok-4.5");
+        assert!((grok.input - grok_ref.input).abs() < 0.001);
+        assert!((grok.output - grok_ref.output).abs() < 0.001);
+
+        let kimi = get_claude_pricing("kimi-k2");
+        let kimi_ref = get_kimi_pricing("kimi-k2");
+        assert!((kimi.input - kimi_ref.input).abs() < 0.001);
+        assert!((kimi.output - kimi_ref.output).abs() < 0.001);
+
+        let codex = get_claude_pricing("gpt-5-codex");
+        assert!((codex.input - 1.25).abs() < 0.001, "gpt-5-codex must bill at $1.25, got ${}", codex.input);
+    }
+
+    // Anthropic ids must never be routed away, and unknown ids must stay on the
+    // claude table so the default fallback (and its warning) still applies.
+    #[test]
+    fn anthropic_and_unknown_ids_stay_on_claude_table() {
+        for id in [
+            "claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-mythos-5",
+            "claude-haiku-4-5-20251001", "opus", "sonnet", "haiku", "fable",
+            "kiro/claude-opus-5", "claude/claude-opus-5",
+        ] {
+            assert!(
+                foreign_table(&canonical_model(id)).is_none(),
+                "{id} must stay on the claude table"
+            );
+        }
+        assert_eq!(foreign_table(&canonical_model("some-unknown-model")), None);
+
+        // Vendor-prefixed foreign ids still route by family, not by prefix.
+        assert_eq!(foreign_table(&canonical_model("anthropic-gpt-5.6-sol")), Some("codex"));
+        assert_eq!(foreign_table(&canonical_model("openai/gpt-5.6-terra")), Some("codex"));
+    }
+
+    // A Claude id whose spelling comes from a proxy must still price as Anthropic.
+    #[test]
+    fn claude_pricing_unchanged_for_known_anthropic_ids() {
+        let opus5 = get_claude_pricing("claude-opus-5");
+        assert!((opus5.input - 5.0).abs() < 0.001);
+        assert!((opus5.output - 25.0).abs() < 0.001);
+        // Vendor-prefixed Claude ids price identically to the bare id.
+        let prefixed = get_claude_pricing("kiro/claude-opus-5");
+        assert!((prefixed.input - opus5.input).abs() < 0.001);
+        assert!((prefixed.output - opus5.output).abs() < 0.001);
     }
 
     #[test]

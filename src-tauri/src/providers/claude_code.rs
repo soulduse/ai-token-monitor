@@ -91,7 +91,12 @@ fn calculate_cost(
 /// v1 (missing/0): dates stored as UTC strings (bug)
 /// v2: dates stored as local-timezone strings (correct)
 /// v3: total_tokens now includes cache tokens; cache TTL-aware cost calculation
-const CACHE_VERSION: u32 = 4;
+/// v4: (see above)
+/// v5: model ids stored normalized (gateway spellings collapsed to one key).
+///     A v4 cache holds raw ids, so merging it would re-split the very rows
+///     normalization exists to join — and its costs were computed with the
+///     pre-fix pricing lookup. Both require a rebuild, not a migration.
+const CACHE_VERSION: u32 = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DiskCache {
@@ -560,12 +565,20 @@ fn parse_session_line(line: &str) -> Option<SessionEntry> {
         }
     };
 
-    let model = message.get("model")?.as_str()?.to_string();
+    let raw_model = message.get("model")?.as_str()?;
 
     // Filter out synthetic/placeholder models
-    if model.starts_with('<') || model == "synthetic" {
+    if raw_model.starts_with('<') || raw_model == "synthetic" {
         return None;
     }
+
+    // Normalize here, at the one place a model id enters the pipeline, so every
+    // downstream consumer (daily tokens, model_usage, analytics, pricing) agrees
+    // on one key per model. A gateway reports the same model under several
+    // spellings — `claude-opus-4-8` / `claude-opus-4.8`, `gpt-5.6-sol` /
+    // `anthropic-gpt-5.6-sol` — and each raw string would otherwise become its
+    // own row in the breakdown.
+    let model = pricing::normalize_model_id(raw_model);
 
     let session_id = value.get("sessionId").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let message_id = message.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -1129,6 +1142,60 @@ mod tests {
     fn parse_session_line_rejects_non_assistant() {
         let line = r#"{"type":"human","timestamp":"2026-03-23T10:00:00Z","message":{"content":"hello"}}"#;
         assert!(parse_session_line(line).is_none());
+    }
+
+    /// One assistant line with the given model id and 1 input token.
+    fn line_with_model(model: &str, id: &str) -> String {
+        format!(
+            r#"{{"sessionId":"s","type":"assistant","timestamp":"2026-03-23T10:00:00Z","requestId":"{id}","message":{{"id":"m-{id}","model":"{model}","usage":{{"input_tokens":1,"output_tokens":1}}}}}}"#
+        )
+    }
+
+    // Gateways report one model under several spellings. Normalizing at the parse
+    // site is what keeps them from becoming separate rows in the breakdown; every
+    // downstream map is keyed off `entry.model`.
+    #[test]
+    fn parse_session_line_normalizes_gateway_model_spellings() {
+        let cases = [
+            ("claude-opus-4.8", "claude-opus-4-8"),
+            ("kiro/claude-opus-5", "claude-opus-5"),
+            ("anthropic-gpt-5.6-sol", "gpt-5-6-sol"),
+        ];
+        for (raw, expected) in cases {
+            let entry = parse_session_line(&line_with_model(raw, "r1")).expect("should parse");
+            assert_eq!(entry.model, expected, "{raw:?} should normalize to {expected:?}");
+        }
+    }
+
+    // The spellings must land on one key, with their tokens summed rather than
+    // split across separate rows. Asserted through `aggregate_entries`, which is
+    // the pure aggregation step — `build_stats` also merges the on-disk cache
+    // from the real home directory, which would make this depend on local data.
+    #[test]
+    fn aggregation_merges_gateway_spellings_into_one_model() {
+        let parsed: Vec<SessionEntry> = ["claude-opus-4-8", "claude-opus-4.8", "CLAUDE-OPUS-4-8"]
+            .iter()
+            .enumerate()
+            .map(|(i, raw)| parse_session_line(&line_with_model(raw, &format!("r{i}"))).expect("should parse"))
+            .collect();
+        let refs: Vec<&SessionEntry> = parsed.iter().collect();
+
+        let (daily_map, model_usage, messages, _) = aggregate_entries(&refs);
+
+        assert_eq!(messages, 3, "all three lines are distinct messages");
+        assert_eq!(
+            model_usage.keys().collect::<Vec<_>>(),
+            vec!["claude-opus-4-8"],
+            "the three spellings must collapse to one model key"
+        );
+        let usage = &model_usage["claude-opus-4-8"];
+        assert_eq!(usage.input_tokens, 3, "all three spellings' tokens must sum");
+        assert_eq!(usage.output_tokens, 3);
+
+        // The per-day token map is keyed by model too, and must merge the same way.
+        let day = daily_map.values().next().expect("one day");
+        assert_eq!(day.tokens.len(), 1, "one model key per day, got {:?}", day.tokens);
+        assert_eq!(day.tokens["claude-opus-4-8"], 6, "3 input + 3 output tokens");
     }
 
     #[test]
