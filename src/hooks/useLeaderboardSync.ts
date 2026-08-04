@@ -113,59 +113,35 @@ export function useLeaderboardSync({ provider, period, userId, anchorDate }: Use
     }
   }, [period, provider, anchorDate]);
 
-  // When a snapshot upload completes, optimistically patch only the user's own
-  // row instead of refetching the whole leaderboard. The next scheduled poll
-  // (every 15 min) will reconcile any drift. This avoids ~1 extra RPC per
-  // local Claude/Codex write cluster-wide.
+  // When a snapshot upload completes, force-refetch the leaderboard so the
+  // user's row reflects the upload immediately.
   //
-  // Scope: only `today` can be updated precisely from a single-day signature.
-  // For `week`/`month` the detail values are *today's totals*, so we apply the
-  // delta between the row's current "today slice" and the new one — but we
-  // don't have per-day breakdown server-side here. The simplest correct
-  // behavior is to no-op for non-today periods and let the poll handle it.
+  // This used to optimistically patch the user's row with the upload payload
+  // instead. That payload is THIS DEVICE's totals only, while the server row
+  // merges every device the account uploads from (`device_snapshots`) — so for
+  // anyone running the app on two machines the patch visibly collapsed their
+  // row to one device's numbers (e.g. $1901 → $161) and then pinned the wrong
+  // value into the 30-minute cache. Only the server knows the merged total, so
+  // the honest immediate update is a refetch. Cost is bounded: uploads fire at
+  // most every 15 min per provider, and this handler only runs while the
+  // leaderboard is actually being viewed.
   useEffect(() => {
     if (!userId) return;
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<SnapshotUploadedDetail>).detail;
       if (!detail || detail.provider !== provider) return;
-      if (period !== "today") return;
-      // The detail carries totals for the uploaded row's date — only patch the
-      // list when that exact day is the one being viewed.
-      const viewed = anchorDate ?? toLocalDateStr(new Date());
-      if (detail.today !== viewed) return;
-      // Discard any RPC that started before this upload — its pre-upload rows
-      // would overwrite the fresher patch. The next poll reconciles fully.
-      requestSeqRef.current++;
-      setLoading(false);
-      setLeaderboard((prev) => {
-        const idx = prev.findIndex((entry) => entry.user_id === userId);
-        if (idx < 0) return prev;
-        const next = prev.slice();
-        next[idx] = {
-          ...next[idx],
-          total_tokens: detail.total_tokens,
-          cost_usd: detail.cost_usd,
-          messages: detail.messages,
-          sessions: detail.sessions,
-        };
-        next.sort((a, b) => b.total_tokens - a.total_tokens);
-        // Mirror the patch into the matching cache entry so a visibility
-        // refresh within the TTL doesn't restore pre-upload totals.
-        // (Idempotent — safe under StrictMode double-invocation.)
-        if (
-          cacheRef.current &&
-          cacheRef.current.period === period &&
-          cacheRef.current.provider === provider &&
-          cacheRef.current.anchorDate === anchorDate
-        ) {
-          cacheRef.current = { ...cacheRef.current, data: next };
-        }
-        return next;
-      });
+      if (period === "grid") return;
+      // For `today`, only refetch when the uploaded day is the one on screen;
+      // week/month always contain today, so they refetch unconditionally.
+      if (period === "today") {
+        const viewed = anchorDate ?? toLocalDateStr(new Date());
+        if (detail.today !== viewed) return;
+      }
+      fetchLeaderboard(true);
     };
     window.addEventListener(SNAPSHOT_UPLOADED_EVENT, handler);
     return () => window.removeEventListener(SNAPSHOT_UPLOADED_EVENT, handler);
-  }, [provider, period, userId, anchorDate]);
+  }, [provider, period, userId, anchorDate, fetchLeaderboard]);
 
   // Auto-refresh with visibility-aware polling
   useEffect(() => {
