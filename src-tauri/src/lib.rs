@@ -1019,8 +1019,35 @@ fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Record panics to `~/.claude/ai-token-monitor-panic.log` (append, best-effort)
+/// on top of the default stderr report. Stderr is lost for Finder-launched apps,
+/// so before this a parse-thread panic left no trace at all — the stats just
+/// froze until relaunch, with nothing to diagnose from.
+fn install_panic_logger() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if let Some(dir) = dirs::home_dir() {
+            let path = dir.join(".claude").join("ai-token-monitor-panic.log");
+            let thread = std::thread::current();
+            let line = format!(
+                "[{}] version={} thread={} {}\n",
+                chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%z"),
+                env!("CARGO_PKG_VERSION"),
+                thread.name().unwrap_or("<unnamed>"),
+                info
+            );
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+                use std::io::Write;
+                let _ = f.write_all(line.as_bytes());
+            }
+        }
+        previous(info);
+    }));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    install_panic_logger();
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             // Windows에서 deep link는 새 프로세스의 CLI arg로 전달되며,

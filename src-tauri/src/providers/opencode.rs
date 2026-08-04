@@ -8,6 +8,7 @@ use std::time::{Duration, Instant, SystemTime};
 use serde_json::Value;
 
 use super::pricing;
+use super::resilience::{lock_unpoisoned, ParsingGuard};
 use super::traits::TokenProvider;
 use super::types::{AllStats, DailyUsage, ModelUsage};
 
@@ -34,7 +35,7 @@ pub fn invalidate_stats_cache() {
 
 /// Return cached stats without triggering a re-parse (used by tray update).
 pub fn get_cached_stats() -> Option<AllStats> {
-    STATS_CACHE.lock().ok()?.as_ref().map(|c| c.stats.clone())
+    lock_unpoisoned(&STATS_CACHE).as_ref().map(|c| c.stats.clone())
 }
 
 // --- Entry type ---
@@ -419,11 +420,13 @@ impl OpenCodeProvider {
         let (entries, db_mtime, json_meta) = if self.has_sqlite_db() {
             // Check if DB has changed since last parse
             let current_mtime = self.db_mtime();
-            if let Ok(cache) = STATS_CACHE.lock() {
+            {
+                let cache = lock_unpoisoned(&STATS_CACHE);
                 if let Some(ref cached) = *cache {
                     if cached.db_mtime == current_mtime {
                         drop(cache);
-                        if let Ok(mut cache) = STATS_CACHE.lock() {
+                        {
+                            let mut cache = lock_unpoisoned(&STATS_CACHE);
                             if let Some(ref mut cached) = *cache {
                                 cached.computed_at = Instant::now();
                             }
@@ -432,7 +435,8 @@ impl OpenCodeProvider {
                             "[PERF][OpenCode] DB unchanged, reusing cache ({:?})",
                             start.elapsed()
                         );
-                        if let Ok(cache) = STATS_CACHE.lock() {
+                        {
+                            let cache = lock_unpoisoned(&STATS_CACHE);
                             if let Some(ref cached) = *cache {
                                 return Ok(cached.stats.clone());
                             }
@@ -452,11 +456,13 @@ impl OpenCodeProvider {
         } else if self.has_json_storage() {
             // JSON fallback — check file metadata
             let current_meta = self.collect_json_meta();
-            if let Ok(cache) = STATS_CACHE.lock() {
+            {
+                let cache = lock_unpoisoned(&STATS_CACHE);
                 if let Some(ref cached) = *cache {
                     if cached.json_meta == current_meta {
                         drop(cache);
-                        if let Ok(mut cache) = STATS_CACHE.lock() {
+                        {
+                            let mut cache = lock_unpoisoned(&STATS_CACHE);
                             if let Some(ref mut cached) = *cache {
                                 cached.computed_at = Instant::now();
                             }
@@ -465,7 +471,8 @@ impl OpenCodeProvider {
                             "[PERF][OpenCode] JSON files unchanged, reusing cache ({:?})",
                             start.elapsed()
                         );
-                        if let Ok(cache) = STATS_CACHE.lock() {
+                        {
+                            let cache = lock_unpoisoned(&STATS_CACHE);
                             if let Some(ref cached) = *cache {
                                 return Ok(cached.stats.clone());
                             }
@@ -488,7 +495,8 @@ impl OpenCodeProvider {
 
         let stats = Self::build_stats(&entries);
 
-        if let Ok(mut cache) = STATS_CACHE.lock() {
+        {
+            let mut cache = lock_unpoisoned(&STATS_CACHE);
             *cache = Some(StatsCache {
                 stats: stats.clone(),
                 computed_at: Instant::now(),
@@ -512,7 +520,8 @@ impl TokenProvider for OpenCodeProvider {
 
         // Return cached if still fresh and not invalidated
         if !was_invalidated {
-            if let Ok(cache) = STATS_CACHE.lock() {
+            {
+                let cache = lock_unpoisoned(&STATS_CACHE);
                 if let Some(ref cached) = *cache {
                     if cached.computed_at.elapsed() < CACHE_TTL {
                         return Ok(cached.stats.clone());
@@ -521,28 +530,22 @@ impl TokenProvider for OpenCodeProvider {
             }
         }
 
-        // Thundering herd prevention
-        if PARSING
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_err()
-        {
-            if let Ok(cache) = STATS_CACHE.lock() {
-                if let Some(ref cached) = *cache {
-                    return Ok(cached.stats.clone());
-                }
+        // Thundering herd prevention: serve stale cache while another thread
+        // parses. The guard releases PARSING on every exit path — including an
+        // unwinding panic, which previously left the flag stuck and froze the
+        // stats until the app was relaunched.
+        let Some(_parsing) = ParsingGuard::try_acquire(&PARSING) else {
+            if let Some(ref cached) = *lock_unpoisoned(&STATS_CACHE) {
+                return Ok(cached.stats.clone());
             }
             std::thread::sleep(Duration::from_millis(100));
-            if let Ok(cache) = STATS_CACHE.lock() {
-                if let Some(ref cached) = *cache {
-                    return Ok(cached.stats.clone());
-                }
+            if let Some(ref cached) = *lock_unpoisoned(&STATS_CACHE) {
+                return Ok(cached.stats.clone());
             }
             return Err("OpenCode stats computation in progress".to_string());
-        }
+        };
 
-        let result = self.do_fetch_stats();
-        PARSING.store(false, Ordering::SeqCst);
-        result
+        self.do_fetch_stats()
     }
 
     fn is_available(&self) -> bool {

@@ -66,10 +66,11 @@ pub fn invalidate_stats_cache() {
 /// Return cached stats without triggering a re-parse.
 /// Used by tray title update to avoid blocking.
 pub fn get_cached_stats() -> Option<AllStats> {
-    STATS_CACHE.lock().ok()?.as_ref().map(|c| c.stats.clone())
+    lock_unpoisoned(&STATS_CACHE).as_ref().map(|c| c.stats.clone())
 }
 
 use super::pricing;
+use super::resilience::{lock_unpoisoned, ParsingGuard};
 
 fn calculate_cost(
     pricing: &pricing::ClaudePricing,
@@ -887,9 +888,7 @@ impl TokenProvider for ClaudeCodeProvider {
             let changed = *prev != dirs_hash;
             if changed {
                 *prev = dirs_hash;
-                if let Ok(mut cache) = STATS_CACHE.lock() {
-                    *cache = None;
-                }
+                *lock_unpoisoned(&STATS_CACHE) = None;
             }
             changed
         };
@@ -898,35 +897,29 @@ impl TokenProvider for ClaudeCodeProvider {
 
         // If not invalidated, return cached stats if fresh
         if !was_invalidated {
-            if let Ok(cache) = STATS_CACHE.lock() {
-                if let Some(ref cached) = *cache {
-                    if cached.computed_at.elapsed() < CACHE_TTL {
-                        return Ok(cached.stats.clone());
-                    }
+            if let Some(ref cached) = *lock_unpoisoned(&STATS_CACHE) {
+                if cached.computed_at.elapsed() < CACHE_TTL {
+                    return Ok(cached.stats.clone());
                 }
             }
         }
 
-        // Prevent thundering herd: if another thread is already parsing, return stale cache
-        if PARSING.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
-            if let Ok(cache) = STATS_CACHE.lock() {
-                if let Some(ref cached) = *cache {
-                    return Ok(cached.stats.clone());
-                }
+        // Prevent thundering herd: if another thread is already parsing, return
+        // stale cache. The guard releases PARSING on every exit path — including
+        // an unwinding panic, which previously left the flag stuck and froze the
+        // stats until the app was relaunched.
+        let Some(_parsing) = ParsingGuard::try_acquire(&PARSING) else {
+            if let Some(ref cached) = *lock_unpoisoned(&STATS_CACHE) {
+                return Ok(cached.stats.clone());
             }
             std::thread::sleep(Duration::from_millis(100));
-            if let Ok(cache) = STATS_CACHE.lock() {
-                if let Some(ref cached) = *cache {
-                    return Ok(cached.stats.clone());
-                }
+            if let Some(ref cached) = *lock_unpoisoned(&STATS_CACHE) {
+                return Ok(cached.stats.clone());
             }
             return Err("Stats computation in progress".to_string());
-        }
+        };
 
-        // We hold the PARSING flag — ensure we clear it on exit
-        let result = self.do_fetch_stats();
-        PARSING.store(false, Ordering::SeqCst);
-        result
+        self.do_fetch_stats()
     }
 
     fn is_available(&self) -> bool {
@@ -940,21 +933,17 @@ impl ClaudeCodeProvider {
         let current_meta = self.collect_file_meta();
 
         // Check if any files actually changed since last computation
-        let (entries, file_states) = if let Ok(cache) = STATS_CACHE.lock() {
+        let (entries, file_states) = {
+            let cache = lock_unpoisoned(&STATS_CACHE);
             if let Some(ref cached) = *cache {
                 if file_states_match(&cached.file_states, &current_meta) {
                     // No files changed — refresh timestamp and return cached stats
                     drop(cache);
-                    if let Ok(mut cache) = STATS_CACHE.lock() {
-                        if let Some(ref mut cached) = *cache {
-                            cached.computed_at = Instant::now();
-                        }
-                    }
-                    eprintln!("[PERF] No files changed, reusing cache ({:?})", start.elapsed());
-                    if let Ok(cache) = STATS_CACHE.lock() {
-                        if let Some(ref cached) = *cache {
-                            return Ok(cached.stats.clone());
-                        }
+                    let mut cache = lock_unpoisoned(&STATS_CACHE);
+                    if let Some(ref mut cached) = *cache {
+                        cached.computed_at = Instant::now();
+                        eprintln!("[PERF] No files changed, reusing cache ({:?})", start.elapsed());
+                        return Ok(cached.stats.clone());
                     }
                     return Err("Cache lost during refresh".to_string());
                 }
@@ -1049,21 +1038,17 @@ impl ClaudeCodeProvider {
                 eprintln!("[PERF] Full parse completed in {:?}", full_start.elapsed());
                 (entries, file_states)
             }
-        } else {
-            return Err("Failed to acquire cache lock".to_string());
         };
 
         let stats = self.build_stats(&entries);
 
         // Update cache with entries + per-file parse state
-        if let Ok(mut cache) = STATS_CACHE.lock() {
-            *cache = Some(IncrementalCache {
-                stats: stats.clone(),
-                computed_at: Instant::now(),
-                entries,
-                file_states,
-            });
-        }
+        *lock_unpoisoned(&STATS_CACHE) = Some(IncrementalCache {
+            stats: stats.clone(),
+            computed_at: Instant::now(),
+            entries,
+            file_states,
+        });
 
         eprintln!("[PERF] Total fetch_stats: {:?}", start.elapsed());
         Ok(stats)

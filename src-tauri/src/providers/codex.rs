@@ -101,10 +101,11 @@ pub fn invalidate_stats_cache() {
 
 /// Return cached stats without triggering a re-parse (used by tray update).
 pub fn get_cached_stats() -> Option<AllStats> {
-    STATS_CACHE.lock().ok()?.as_ref().map(|c| c.stats.clone())
+    lock_unpoisoned(&STATS_CACHE).as_ref().map(|c| c.stats.clone())
 }
 
 use super::pricing;
+use super::resilience::{lock_unpoisoned, ParsingGuard};
 
 fn calculate_cost(pricing: &pricing::CodexPricing, input: u64, output: u64, cached: u64) -> f64 {
     // OpenAI's input_tokens includes cached_input_tokens as a subset.
@@ -679,12 +680,14 @@ impl CodexProvider {
         let start = Instant::now();
         let current_meta = self.collect_file_meta();
 
-        let (entries, file_states) = if let Ok(cache) = STATS_CACHE.lock() {
+        let (entries, file_states) = {
+            let cache = lock_unpoisoned(&STATS_CACHE);
             if let Some(ref cached) = *cache {
                 if file_states_match(&cached.file_states, &current_meta) {
                     drop(cache);
                     let rate_limits = self.resolve_rate_limits(&current_meta);
-                    if let Ok(mut cache) = STATS_CACHE.lock() {
+                    {
+                        let mut cache = lock_unpoisoned(&STATS_CACHE);
                         if let Some(ref mut cached) = *cache {
                             cached.computed_at = Instant::now();
                             cached.stats.rate_limits = rate_limits;
@@ -694,7 +697,8 @@ impl CodexProvider {
                         "[PERF][Codex] No files changed, refreshed rate limits ({:?})",
                         start.elapsed()
                     );
-                    if let Ok(cache) = STATS_CACHE.lock() {
+                    {
+                        let cache = lock_unpoisoned(&STATS_CACHE);
                         if let Some(ref cached) = *cache {
                             return Ok(cached.stats.clone());
                         }
@@ -725,14 +729,13 @@ impl CodexProvider {
                 );
                 (entries, file_states)
             }
-        } else {
-            return Err("Failed to acquire cache lock".to_string());
         };
 
         let mut stats = Self::build_stats(&entries);
         stats.rate_limits = self.resolve_rate_limits(&current_meta);
 
-        if let Ok(mut cache) = STATS_CACHE.lock() {
+        {
+            let mut cache = lock_unpoisoned(&STATS_CACHE);
             *cache = Some(IncrementalCache {
                 stats: stats.clone(),
                 computed_at: Instant::now(),
@@ -756,7 +759,8 @@ impl TokenProvider for CodexProvider {
 
         // Return cached if still fresh and not invalidated
         if !was_invalidated {
-            if let Ok(cache) = STATS_CACHE.lock() {
+            {
+                let cache = lock_unpoisoned(&STATS_CACHE);
                 if let Some(ref cached) = *cache {
                     if cached.computed_at.elapsed() < CACHE_TTL {
                         return Ok(cached.stats.clone());
@@ -765,28 +769,22 @@ impl TokenProvider for CodexProvider {
             }
         }
 
-        // Thundering herd prevention
-        if PARSING
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_err()
-        {
-            if let Ok(cache) = STATS_CACHE.lock() {
-                if let Some(ref cached) = *cache {
-                    return Ok(cached.stats.clone());
-                }
+        // Thundering herd prevention: serve stale cache while another thread
+        // parses. The guard releases PARSING on every exit path — including an
+        // unwinding panic, which previously left the flag stuck and froze the
+        // stats until the app was relaunched.
+        let Some(_parsing) = ParsingGuard::try_acquire(&PARSING) else {
+            if let Some(ref cached) = *lock_unpoisoned(&STATS_CACHE) {
+                return Ok(cached.stats.clone());
             }
             std::thread::sleep(Duration::from_millis(100));
-            if let Ok(cache) = STATS_CACHE.lock() {
-                if let Some(ref cached) = *cache {
-                    return Ok(cached.stats.clone());
-                }
+            if let Some(ref cached) = *lock_unpoisoned(&STATS_CACHE) {
+                return Ok(cached.stats.clone());
             }
             return Err("Codex stats computation in progress".to_string());
-        }
+        };
 
-        let result = self.do_fetch_stats();
-        PARSING.store(false, Ordering::SeqCst);
-        result
+        self.do_fetch_stats()
     }
 
     fn is_available(&self) -> bool {

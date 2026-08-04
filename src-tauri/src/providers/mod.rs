@@ -7,5 +7,6 @@ pub mod kiro;
 pub mod kimi;
 pub mod opencode;
 pub mod pricing;
+pub(crate) mod resilience;
 pub mod traits;
 pub mod types;
