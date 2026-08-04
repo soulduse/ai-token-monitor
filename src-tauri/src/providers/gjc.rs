@@ -8,6 +8,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use serde_json::Value;
 
+use super::pricing;
 use super::traits::TokenProvider;
 use super::types::{AllStats, DailyUsage, ModelUsage};
 
@@ -182,12 +183,14 @@ impl GjcProvider {
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0);
 
+            // Normalized so one model yields one key across providers — the
+            // frontend merges providers' model_usage by key.
             let model = message
                 .get("model")
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
-                .unwrap_or("gjc")
-                .to_string();
+                .map(pricing::normalize_model_id)
+                .unwrap_or_else(|| "gjc".to_string());
 
             let date = extract_date_from_iso(&value)
                 .unwrap_or_else(|| path_date.clone());
@@ -484,4 +487,40 @@ fn extract_date_from_file_mtime(path: &Path) -> String {
             local.format("%Y-%m-%d").to_string()
         })
         .unwrap_or_else(|| chrono::Local::now().format("%Y-%m-%d").to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// One assistant line with the given model id and a unique responseId.
+    fn line_with_model(model: &str, rid: &str) -> String {
+        format!(
+            r#"{{"id":"l-{rid}","timestamp":"2026-03-23T10:00:00Z","message":{{"role":"assistant","model":"{model}","responseId":"{rid}","usage":{{"input":1,"output":1,"cost":{{"total":0.01}}}}}}}}"#
+        )
+    }
+
+    // GJC reports whatever model id the routed endpoint returned, so gateway
+    // spellings reach this log too. They must land on the same normalized key as
+    // every other provider — the frontend merges providers' model_usage by key.
+    #[test]
+    fn parse_single_file_normalizes_gateway_model_spellings() {
+        let dir = std::env::temp_dir().join(format!("gjc-normalize-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).expect("create temp dir");
+        let path = dir.join("2026-03-23_session.jsonl");
+
+        let lines = [
+            line_with_model("claude-opus-4.8", "r1"),
+            line_with_model("anthropic-gpt-5.6-sol", "r2"),
+            line_with_model("kiro/claude-opus-5", "r3"),
+        ];
+        fs::write(&path, lines.join("\n")).expect("write jsonl");
+
+        let entries = GjcProvider::parse_single_file(&path);
+        let mut models: Vec<&str> = entries.values().map(|e| e.model.as_str()).collect();
+        models.sort_unstable();
+        assert_eq!(models, vec!["claude-opus-4-8", "claude-opus-5", "gpt-5-6-sol"]);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
