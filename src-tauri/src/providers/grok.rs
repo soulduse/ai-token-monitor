@@ -29,6 +29,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::pricing;
+use super::resilience::{lock_unpoisoned, ParsingGuard};
 use super::traits::TokenProvider;
 use super::types::{AllStats, AnalyticsData, DailyUsage, ModelUsage, ProjectUsage};
 
@@ -73,7 +74,7 @@ pub fn invalidate_stats_cache() {
 
 /// Return cached stats without triggering a re-parse (used by tray update).
 pub fn get_cached_stats() -> Option<AllStats> {
-    STATS_CACHE.lock().ok()?.as_ref().map(|c| c.stats.clone())
+    lock_unpoisoned(&STATS_CACHE).as_ref().map(|c| c.stats.clone())
 }
 
 /// Cost for one request. xAI bills every token in a request at the higher rate
@@ -579,7 +580,8 @@ impl GrokProvider {
         // the snapshot remains and nothing can add to it. Refresh computed_at on
         // the way out (as codex.rs does) so the TTL check keeps absorbing calls
         // instead of routing every one of them back through here.
-        if let Ok(mut cache) = STATS_CACHE.lock() {
+        {
+            let mut cache = lock_unpoisoned(&STATS_CACHE);
             if let Some(ref mut cached) = *cache {
                 if cached.log_meta == current_meta {
                     cached.computed_at = Instant::now();
@@ -609,7 +611,8 @@ impl GrokProvider {
 
         let stats = Self::build_stats(&history);
 
-        if let Ok(mut cache) = STATS_CACHE.lock() {
+        {
+            let mut cache = lock_unpoisoned(&STATS_CACHE);
             *cache = Some(IncrementalCache {
                 stats: stats.clone(),
                 computed_at: Instant::now(),
@@ -636,7 +639,8 @@ impl TokenProvider for GrokProvider {
         let was_invalidated = CACHE_INVALIDATED.swap(false, Ordering::Relaxed);
 
         if !was_invalidated {
-            if let Ok(cache) = STATS_CACHE.lock() {
+            {
+                let cache = lock_unpoisoned(&STATS_CACHE);
                 if let Some(ref cached) = *cache {
                     if cached.computed_at.elapsed() < CACHE_TTL {
                         return Ok(cached.stats.clone());
@@ -645,28 +649,22 @@ impl TokenProvider for GrokProvider {
             }
         }
 
-        // Thundering herd prevention
-        if PARSING
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_err()
-        {
-            if let Ok(cache) = STATS_CACHE.lock() {
-                if let Some(ref cached) = *cache {
-                    return Ok(cached.stats.clone());
-                }
+        // Thundering herd prevention: serve stale cache while another thread
+        // parses. The guard releases PARSING on every exit path — including an
+        // unwinding panic, which previously left the flag stuck and froze the
+        // stats until the app was relaunched.
+        let Some(_parsing) = ParsingGuard::try_acquire(&PARSING) else {
+            if let Some(ref cached) = *lock_unpoisoned(&STATS_CACHE) {
+                return Ok(cached.stats.clone());
             }
             std::thread::sleep(Duration::from_millis(100));
-            if let Ok(cache) = STATS_CACHE.lock() {
-                if let Some(ref cached) = *cache {
-                    return Ok(cached.stats.clone());
-                }
+            if let Some(ref cached) = *lock_unpoisoned(&STATS_CACHE) {
+                return Ok(cached.stats.clone());
             }
             return Err("Grok stats computation in progress".to_string());
-        }
+        };
 
-        let result = self.do_fetch_stats();
-        PARSING.store(false, Ordering::SeqCst);
-        result
+        self.do_fetch_stats()
     }
 
     fn is_available(&self) -> bool {

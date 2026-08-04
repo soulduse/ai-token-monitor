@@ -37,6 +37,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::resilience::lock_unpoisoned;
 use super::traits::TokenProvider;
 use super::types::{AllStats, AnalyticsData, DailyUsage, ModelUsage, ProjectUsage, ToolCount};
 
@@ -71,16 +72,14 @@ pub fn invalidate_stats_cache() {
 
 /// Return cached stats without triggering a re-parse.
 pub fn get_cached_stats() -> Option<AllStats> {
-    STATS_CACHE.lock().ok()?.as_ref().map(|c| c.stats.clone())
+    lock_unpoisoned(&STATS_CACHE).as_ref().map(|c| c.stats.clone())
 }
 
 /// Return the cached Kiro-specific breakdown, re-parsing if the cache is cold.
 pub fn get_breakdown() -> Result<KiroBreakdown, String> {
     let provider = KiroProvider::new();
     provider.compute()?;
-    STATS_CACHE
-        .lock()
-        .map_err(|_| "kiro cache poisoned".to_string())?
+    lock_unpoisoned(&STATS_CACHE)
         .as_ref()
         .map(|c| c.breakdown.clone())
         .ok_or_else(|| "kiro breakdown unavailable".to_string())
@@ -208,11 +207,9 @@ impl KiroProvider {
     fn compute(&self) -> Result<(), String> {
         let was_invalidated = CACHE_INVALIDATED.swap(false, Ordering::Relaxed);
         if !was_invalidated {
-            if let Ok(cache) = STATS_CACHE.lock() {
-                if let Some(ref cached) = *cache {
-                    if cached.computed_at.elapsed() < CACHE_TTL {
-                        return Ok(());
-                    }
+            if let Some(ref cached) = *lock_unpoisoned(&STATS_CACHE) {
+                if cached.computed_at.elapsed() < CACHE_TTL {
+                    return Ok(());
                 }
             }
         }
@@ -228,13 +225,11 @@ impl KiroProvider {
         let breakdown = build_breakdown(&turns, session_store_turns, sqlite_store_turns);
         let stats = build_all_stats(&turns, &breakdown);
 
-        if let Ok(mut cache) = STATS_CACHE.lock() {
-            *cache = Some(StatsCache {
-                stats,
-                breakdown,
-                computed_at: Instant::now(),
-            });
-        }
+        *lock_unpoisoned(&STATS_CACHE) = Some(StatsCache {
+            stats,
+            breakdown,
+            computed_at: Instant::now(),
+        });
         Ok(())
     }
 
@@ -418,9 +413,7 @@ impl TokenProvider for KiroProvider {
 
     fn fetch_stats(&self) -> Result<AllStats, String> {
         self.compute()?;
-        STATS_CACHE
-            .lock()
-            .map_err(|_| "kiro cache poisoned".to_string())?
+        lock_unpoisoned(&STATS_CACHE)
             .as_ref()
             .map(|c| c.stats.clone())
             .ok_or_else(|| "kiro stats unavailable".to_string())
