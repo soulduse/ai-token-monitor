@@ -53,32 +53,35 @@ pub(crate) fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 mod tests {
     use super::*;
 
-    static TEST_FLAG: AtomicBool = AtomicBool::new(false);
+    // Each test gets its own flag: tests run in parallel, and a shared flag
+    // makes one test's acquire look like the other's "already held".
 
     // The whole point of the guard: a panicking parse must not leave the flag
     // set, or every fetch after the panic serves stale data forever.
     #[test]
     fn parsing_guard_releases_on_panic() {
+        static FLAG: AtomicBool = AtomicBool::new(false);
         let result = std::panic::catch_unwind(|| {
-            let _guard = ParsingGuard::try_acquire(&TEST_FLAG).expect("flag free");
+            let _guard = ParsingGuard::try_acquire(&FLAG).expect("flag free");
             panic!("simulated parse crash");
         });
         assert!(result.is_err(), "the parse did panic");
         assert!(
-            !TEST_FLAG.load(Ordering::SeqCst),
+            !FLAG.load(Ordering::SeqCst),
             "flag must be released by unwind, not stuck forever"
         );
         // And the flag is immediately reusable.
-        let guard = ParsingGuard::try_acquire(&TEST_FLAG);
+        let guard = ParsingGuard::try_acquire(&FLAG);
         assert!(guard.is_some(), "next fetch must be able to parse again");
     }
 
     #[test]
     fn parsing_guard_excludes_concurrent_holders() {
-        let first = ParsingGuard::try_acquire(&TEST_FLAG).expect("flag free");
-        assert!(ParsingGuard::try_acquire(&TEST_FLAG).is_none(), "held flags stay exclusive");
+        static FLAG: AtomicBool = AtomicBool::new(false);
+        let first = ParsingGuard::try_acquire(&FLAG).expect("flag free");
+        assert!(ParsingGuard::try_acquire(&FLAG).is_none(), "held flags stay exclusive");
         drop(first);
-        assert!(ParsingGuard::try_acquire(&TEST_FLAG).is_some(), "released flags are reusable");
+        assert!(ParsingGuard::try_acquire(&FLAG).is_some(), "released flags are reusable");
     }
 
     // A panic while holding the cache mutex must not make the cache unreachable.
