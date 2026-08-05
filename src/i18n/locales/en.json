@@ -131,6 +131,8 @@
   "settings.autostart": "Launch on Startup",
   "settings.leaderboard": "Leaderboard",
   "settings.shareUsageData": "Share Usage Data",
+  "settings.uploadFromThisDevice": "Upload usage from this device",
+  "settings.uploadFromThisDeviceHint": "When off, this device's usage is not uploaded to the leaderboard. Viewing, chat, and your profile still work. If multiple devices see the same logs, keep uploads on for only one of them to avoid double counting.",
   "settings.signedIn": "Signed in",
   "settings.signOut": "Sign out",
   "settings.restoreHistory": "Restore history",

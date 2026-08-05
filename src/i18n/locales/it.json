@@ -125,6 +125,8 @@
   "settings.autostart": "Avvia all'accensione",
   "settings.leaderboard": "Classifica",
   "settings.shareUsageData": "Condividi dati di utilizzo",
+  "settings.uploadFromThisDevice": "Carica l'utilizzo da questo dispositivo",
+  "settings.uploadFromThisDeviceHint": "Se disattivato, l'utilizzo di questo dispositivo non viene caricato in classifica. Visualizzazione, chat e profilo restano disponibili. Se più dispositivi vedono gli stessi log, mantieni il caricamento attivo su uno solo per evitare doppi conteggi.",
   "settings.signedIn": "Accesso effettuato",
   "settings.signOut": "Esci",
   "settings.restoreHistory": "Ripristina cronologia",

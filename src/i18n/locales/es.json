@@ -125,6 +125,8 @@
   "settings.autostart": "Iniciar al arrancar",
   "settings.leaderboard": "Clasificación",
   "settings.shareUsageData": "Compartir datos de uso",
+  "settings.uploadFromThisDevice": "Subir uso desde este dispositivo",
+  "settings.uploadFromThisDeviceHint": "Si está desactivado, el uso de este dispositivo no se sube a la clasificación. Ver, chatear y tu perfil siguen funcionando. Si varios dispositivos ven los mismos registros, mantén la subida activada solo en uno para evitar el doble conteo.",
   "settings.signedIn": "Sesión iniciada",
   "settings.signOut": "Cerrar sesión",
   "settings.restoreHistory": "Restaurar historial",

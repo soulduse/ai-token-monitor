@@ -61,6 +61,7 @@ const mockPrefs: UserPreferences = {
   number_format: "compact",
   show_tray_cost: true,
   leaderboard_opted_in: false,
+  leaderboard_upload_enabled: true,
   include_claude: true,
   include_codex: false,
   include_opencode: false,

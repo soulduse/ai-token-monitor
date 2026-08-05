@@ -125,6 +125,8 @@
   "settings.autostart": "Beim Start ausführen",
   "settings.leaderboard": "Rangliste",
   "settings.shareUsageData": "Nutzungsdaten teilen",
+  "settings.uploadFromThisDevice": "Nutzung von diesem Gerät hochladen",
+  "settings.uploadFromThisDeviceHint": "Wenn deaktiviert, wird die Nutzung dieses Geräts nicht zur Bestenliste hochgeladen. Ansehen, Chat und Profil funktionieren weiterhin. Wenn mehrere Geräte dieselben Logs sehen, lassen Sie das Hochladen nur auf einem Gerät aktiviert, um Doppelzählungen zu vermeiden.",
   "settings.signedIn": "Angemeldet",
   "settings.signOut": "Abmelden",
   "settings.restoreHistory": "Verlauf wiederherstellen",

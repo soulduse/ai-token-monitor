@@ -125,6 +125,8 @@
   "settings.autostart": "起動時に自動実行",
   "settings.leaderboard": "リーダーボード",
   "settings.shareUsageData": "使用データを共有",
+  "settings.uploadFromThisDevice": "このデバイスから使用量をアップロード",
+  "settings.uploadFromThisDeviceHint": "オフにすると、このデバイスの使用量はリーダーボードにアップロードされません。閲覧・チャット・プロフィールはそのまま利用できます。複数のデバイスが同じログを共有している場合は、二重集計を防ぐため1台のみオンにしてください。",
   "settings.signedIn": "サインイン済み",
   "settings.signOut": "サインアウト",
   "settings.restoreHistory": "履歴の復元",

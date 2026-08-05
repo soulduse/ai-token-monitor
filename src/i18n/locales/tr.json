@@ -125,6 +125,8 @@
   "settings.autostart": "Başlangıçta Başlat",
   "settings.leaderboard": "Sıralama",
   "settings.shareUsageData": "Kullanım Verilerini Paylaş",
+  "settings.uploadFromThisDevice": "Bu cihazdan kullanım yükle",
+  "settings.uploadFromThisDeviceHint": "Kapalıyken bu cihazın kullanımı liderlik tablosuna yüklenmez. Görüntüleme, sohbet ve profiliniz çalışmaya devam eder. Birden fazla cihaz aynı günlükleri görüyorsa, çift sayımı önlemek için yüklemeyi yalnızca birinde açık tutun.",
   "settings.signedIn": "Giriş yapıldı",
   "settings.signOut": "Çıkış Yap",
   "settings.restoreHistory": "Geçmişi geri yükle",

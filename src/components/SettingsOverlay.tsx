@@ -453,6 +453,18 @@ function AccountTab({
             />
           </SettingRow>
 
+          {prefs.leaderboard_opted_in && (
+            <SettingRow
+              label={t("settings.uploadFromThisDevice")}
+              description={t("settings.uploadFromThisDeviceHint")}
+            >
+              <ToggleSwitch
+                checked={prefs.leaderboard_upload_enabled !== false}
+                onChange={(v) => updatePrefs({ leaderboard_upload_enabled: v })}
+              />
+            </SettingRow>
+          )}
+
           {user ? (
             <>
             <div style={{

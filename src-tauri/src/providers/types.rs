@@ -108,6 +108,14 @@ pub struct UserPreferences {
     pub number_format: String,
     pub show_tray_cost: bool,
     pub leaderboard_opted_in: bool,
+    /// Whether THIS machine uploads its usage to the leaderboard. Separate from
+    /// `leaderboard_opted_in` (participation/identity): a user running the app
+    /// on two machines that see overlapping logs (e.g. one syncs the other's
+    /// session files) needs to keep viewing and chatting everywhere while only
+    /// one machine uploads — otherwise the shared usage is counted once per
+    /// uploading device.
+    #[serde(default = "default_true")]
+    pub leaderboard_upload_enabled: bool,
     #[serde(default)]
     pub device_id: Option<String>,
     #[serde(default = "default_theme")]
@@ -286,6 +294,7 @@ impl Default for UserPreferences {
             number_format: "compact".to_string(),
             show_tray_cost: true,
             leaderboard_opted_in: false,
+            leaderboard_upload_enabled: true,
             device_id: None,
             theme: default_theme(),
             color_mode: default_color_mode(),

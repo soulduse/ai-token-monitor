@@ -131,6 +131,8 @@
   "settings.autostart": "부팅 시 자동 실행",
   "settings.leaderboard": "리더보드",
   "settings.shareUsageData": "사용 데이터 공유",
+  "settings.uploadFromThisDevice": "이 기기에서 사용량 업로드",
+  "settings.uploadFromThisDeviceHint": "끄면 이 기기의 사용량은 리더보드에 올라가지 않습니다. 보기·채팅·프로필은 그대로 유지됩니다. 여러 기기가 같은 로그를 공유할 때 중복 집계를 막으려면 한 기기에서만 켜두세요.",
   "settings.signedIn": "로그인됨",
   "settings.signOut": "로그아웃",
   "settings.restoreHistory": "기록 복원",
