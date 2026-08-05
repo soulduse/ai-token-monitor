@@ -125,6 +125,8 @@
   "settings.autostart": "Lancer au démarrage",
   "settings.leaderboard": "Classement",
   "settings.shareUsageData": "Partager les données",
+  "settings.uploadFromThisDevice": "Envoyer l'utilisation depuis cet appareil",
+  "settings.uploadFromThisDeviceHint": "Si désactivé, l'utilisation de cet appareil n'est pas envoyée au classement. La consultation, le chat et votre profil restent disponibles. Si plusieurs appareils voient les mêmes journaux, n'activez l'envoi que sur un seul pour éviter le double comptage.",
   "settings.signedIn": "Connecté",
   "settings.signOut": "Déconnexion",
   "settings.restoreHistory": "Restaurer l'historique",

@@ -86,6 +86,8 @@ export interface UserPreferences {
   number_format: "compact" | "full";
   show_tray_cost: boolean;
   leaderboard_opted_in: boolean;
+  /** Whether THIS machine uploads its usage — participation stays per-account, uploads are per-device. */
+  leaderboard_upload_enabled?: boolean;
   device_id?: string;
   include_claude: boolean;
   include_codex: boolean;

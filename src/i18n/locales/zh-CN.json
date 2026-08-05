@@ -125,6 +125,8 @@
   "settings.autostart": "开机时自动启动",
   "settings.leaderboard": "排行榜",
   "settings.shareUsageData": "共享使用数据",
+  "settings.uploadFromThisDevice": "从此设备上传用量",
+  "settings.uploadFromThisDeviceHint": "关闭后，此设备的用量不会上传到排行榜。浏览、聊天和个人资料仍然可用。如果多台设备共享相同的日志，请只在一台设备上开启上传以避免重复统计。",
   "settings.signedIn": "已登录",
   "settings.signOut": "退出登录",
   "settings.restoreHistory": "恢复历史记录",

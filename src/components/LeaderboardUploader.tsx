@@ -21,7 +21,11 @@ import type { LeaderboardProvider } from "../lib/types";
 export function LeaderboardUploader() {
   const { user } = useAuth();
   const { prefs } = useSettings();
-  const optedIn = !!prefs.leaderboard_opted_in;
+  // Participation is per-account; uploading is per-device. A machine with
+  // uploads disabled still views, chats, and keeps its identity — it just
+  // never contributes rows, so overlapping logs on another machine are not
+  // counted twice.
+  const optedIn = !!prefs.leaderboard_opted_in && prefs.leaderboard_upload_enabled !== false;
 
   // Stats hooks are always called (rules of hooks) but uploads are gated by
   // `optedIn` and each provider's include flag inside `useSnapshotUploader`.
