@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useTokenStats } from "./useTokenStats";
-import type { AllStats, DailyUsage, ModelUsage } from "../lib/types";
+import type { AllStats, AnalyticsData, DailyUsage, ModelUsage, ProjectUsage } from "../lib/types";
 
 interface UseCombinedStatsProps {
   includeClaude: boolean;
@@ -127,8 +127,7 @@ function mergeStats(statsList: AllStats[]): AllStats {
 
   const daily = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 
-  // Take the first available analytics (currently only Claude provides it)
-  const analytics = statsList.find(s => s.analytics)?.analytics;
+  const analytics = mergeAnalytics(statsList);
   const rate_limits = statsList.find(s => s.rate_limits)?.rate_limits;
 
   return {
@@ -139,5 +138,72 @@ function mergeStats(statsList: AllStats[]): AllStats {
     first_session_date: firstDate,
     analytics,
     rate_limits,
+  };
+}
+
+function mergeCounts(
+  into: Map<string, number>,
+  rows: { name: string; count: number }[],
+) {
+  for (const row of rows) {
+    into.set(row.name, (into.get(row.name) ?? 0) + row.count);
+  }
+}
+
+function sortedCounts(map: Map<string, number>): { name: string; count: number }[] {
+  return [...map.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
+function mergeAnalytics(statsList: AllStats[]): AnalyticsData | undefined {
+  const pieces = statsList
+    .map((s) => s.analytics)
+    .filter((a): a is AnalyticsData => !!a);
+  if (pieces.length === 0) return undefined;
+  if (pieces.length === 1) return pieces[0];
+
+  const projects = new Map<string, ProjectUsage>();
+  const tools = new Map<string, number>();
+  const shells = new Map<string, number>();
+  const mcps = new Map<string, number>();
+  const activities = new Map<string, { category: string; cost_usd: number; messages: number }>();
+
+  for (const a of pieces) {
+    for (const p of a.project_usage) {
+      const existing = projects.get(p.name);
+      if (existing) {
+        existing.cost_usd += p.cost_usd;
+        existing.tokens += p.tokens;
+        existing.sessions += p.sessions;
+        existing.messages += p.messages;
+      } else {
+        projects.set(p.name, { ...p });
+      }
+    }
+    mergeCounts(tools, a.tool_usage);
+    mergeCounts(shells, a.shell_commands);
+    for (const m of a.mcp_usage) {
+      mcps.set(m.server, (mcps.get(m.server) ?? 0) + m.calls);
+    }
+    for (const act of a.activity_breakdown) {
+      const existing = activities.get(act.category);
+      if (existing) {
+        existing.cost_usd += act.cost_usd;
+        existing.messages += act.messages;
+      } else {
+        activities.set(act.category, { ...act });
+      }
+    }
+  }
+
+  return {
+    project_usage: [...projects.values()].sort((a, b) => b.cost_usd - a.cost_usd),
+    tool_usage: sortedCounts(tools),
+    shell_commands: sortedCounts(shells),
+    mcp_usage: [...mcps.entries()]
+      .map(([server, calls]) => ({ server, calls }))
+      .sort((a, b) => b.calls - a.calls),
+    activity_breakdown: [...activities.values()].sort((a, b) => b.cost_usd - a.cost_usd),
   };
 }

@@ -12,6 +12,11 @@ const PROVIDER_GRADIENTS: Record<string, string> = {
   claude: "linear-gradient(135deg, #7C5CFC, #5A3DE6)",
   codex: "linear-gradient(135deg, #0ea5e9, #0284c7)",
   opencode: "linear-gradient(135deg, #d97706, #b45309)",
+  grok: "linear-gradient(135deg, #64748b, #334155)",
+  kimi: "linear-gradient(135deg, #1a73e8, #1557b0)",
+  glm: "linear-gradient(135deg, #00b96b, #008f52)",
+  gjc: "linear-gradient(135deg, #e11d48, #be123c)",
+  kiro: "linear-gradient(135deg, #7C5CFC, #5A3DE6)",
 };
 
 function getRankDisplay(rank: number): string {

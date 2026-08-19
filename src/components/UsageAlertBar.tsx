@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useOAuthUsage } from "../hooks/useOAuthUsage";
+import { useGrokUsage } from "../hooks/useGrokUsage";
 import { useTokenStats } from "../hooks/useTokenStats";
 import { useToday } from "../hooks/useToday";
 import { useSettings } from "../contexts/SettingsContext";
@@ -429,6 +430,8 @@ export function UsageAlertBar() {
   const { prefs, refreshPrefs } = useSettings();
   const { usage, status: oauthStatus, refreshing, rateLimitRemaining, refresh } = useOAuthUsage();
   const { stats: codexStats } = useTokenStats("codex");
+  const showGrok = prefs.include_grok;
+  const { credits: grokCredits } = useGrokUsage(showGrok);
   const todayStr = useToday();
   const t = useI18n();
   const [enabling, setEnabling] = useState(false);
@@ -477,7 +480,9 @@ export function UsageAlertBar() {
     await refresh();
   };
 
-  if (!showClaude && !showCodex) return null;
+  const hasGrokCredits = showGrok && (grokCredits?.credit_usage_percent != null || !!grokCredits?.subscription_tier);
+
+  if (!showClaude && !showCodex && !showGrok) return null;
 
   const codexToday = summarizeCodexStats(codexStats, todayStr, 1);
   const codexWeek = summarizeCodexStats(codexStats, todayStr, 7);
@@ -494,7 +499,7 @@ export function UsageAlertBar() {
   // Codex is also on, the same enable affordance is rendered inline further
   // down via showClaudePrompt → ClaudeTrackingPrompt, so this branch is
   // deliberately gated on !showCodex to avoid a duplicate prompt.
-  if (showClaude && !prefs.usage_tracking_enabled && !showCodex) {
+  if (showClaude && !prefs.usage_tracking_enabled && !showCodex && !showGrok) {
     return (
       <div style={{
         background: "var(--bg-card)",
@@ -540,7 +545,7 @@ export function UsageAlertBar() {
     );
   }
 
-  if (!showClaude && showCodex && !hasCodexData) return null;
+  if (!showClaude && !hasCodexData && !hasGrokCredits) return null;
 
   const { five_hour, seven_day, seven_day_models, extra_usage, is_stale } = usage ?? {};
 
@@ -563,7 +568,7 @@ export function UsageAlertBar() {
     prefs.usage_tracking_enabled &&
     !hasClaudeData &&
     oauthStatus === "unavailable";
-  if (!hasClaudeData && !showClaudePrompt && !showClaudeUnavailable && !hasCodexData) return null;
+  if (!hasClaudeData && !showClaudePrompt && !showClaudeUnavailable && !hasCodexData && !hasGrokCredits) return null;
 
   return (
     <div style={{
@@ -691,6 +696,34 @@ export function UsageAlertBar() {
                 maxTokens={codexMaxTokens}
               />
             </>
+          )}
+        </div>
+      )}
+
+      {(hasClaudeData || showClaudePrompt || showClaudeUnavailable || hasCodexData) && hasGrokCredits && (
+        <div style={{
+          height: 1,
+          background: "rgba(255,255,255,0.08)",
+          margin: "12px 0",
+        }} />
+      )}
+
+      {hasGrokCredits && grokCredits && (
+        <div>
+          <ProviderHeader label={t("usageAlert.grok")} />
+          {grokCredits.credit_usage_percent != null && (
+            <UsageRow
+              label={grokCredits.subscription_tier || t("usageAlert.weekly")}
+              utilization={grokCredits.credit_usage_percent}
+              subtitle={formatResetTime(grokCredits.period_end, t)}
+            />
+          )}
+          {grokCredits.on_demand_cap > 0 && (
+            <UsageRow
+              label={t("usageAlert.grokOnDemand")}
+              utilization={Math.min((grokCredits.on_demand_used / grokCredits.on_demand_cap) * 100, 100)}
+              subtitle={`${grokCredits.on_demand_used.toFixed(1)} / ${grokCredits.on_demand_cap.toFixed(1)}`}
+            />
           )}
         </div>
       )}

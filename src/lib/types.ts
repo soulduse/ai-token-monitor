@@ -82,6 +82,19 @@ export interface AllStats {
 
 export type LeaderboardProvider = "claude" | "codex" | "opencode" | "kimi" | "glm" | "gjc" | "grok" | "kiro";
 
+/** SuperGrok / unified-billing snapshot from Grok CLI's rolling log. */
+export interface GrokCredits {
+  subscription_tier: string | null;
+  /** 0–100 */
+  credit_usage_percent: number | null;
+  period_start: string | null;
+  period_end: string | null;
+  on_demand_cap: number;
+  on_demand_used: number;
+  prepaid_balance: number;
+  fetched_at: string;
+}
+
 export interface UserPreferences {
   number_format: "compact" | "full";
   show_tray_cost: boolean;

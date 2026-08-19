@@ -149,7 +149,7 @@ npm run tauri build   # プロダクションビルド
 | **Claude Code** | `~/.claude/projects/**/*.jsonl` | `~/.claude/stats-cache.json` からセッション/ツール呼び出し数を補足。複数ルート対応。 |
 | **Codex** | `~/.codex/sessions/**/*.jsonl` | 複数ルート対応。 |
 | **OpenCode** | `~/.local/share/opencode/**/*.jsonl` | 内蔵プライシングレジストリでモデル別コスト計算。 |
-| **Grok** | `~/.grok/logs/unified.jsonl` | `shell.turn.inference_done` のリクエスト単位の実測トークン。モデル・プロジェクトは `~/.grok/sessions` から結合。Grok がこのローリングログの先頭を切り詰めるため、日別集計をローカルスナップショットに蓄積します。 現在 macOS のみ — Windows のログ構造は未検証です。 |
+| **Grok** | `~/.grok/logs/unified.jsonl` | `shell.turn.inference_done` のリクエスト単位の実測トークン。モデル・プロジェクトは `~/.grok/sessions` から結合。Grok がこのローリングログの先頭を切り詰めるため、日別集計をローカルスナップショットに蓄積します。 macOS、Linux、Windows（`%USERPROFILE%\\.grok`）に対応。SuperGrok の週間クレジットは `billing: fetched credits config` から読みます。 |
 | **Kiro** | `~/.kiro/sessions/cli/*.json` + `data.sqlite3` | **トークンではなくクレジット** — Kiro はターン単位の「作業量」で計量し、トークン数をどこにも記録しないため、コストはクレジット（× $0.04、超過レート）から算出します。対話型と非対話型でキー名の異なる 2 つのストアに書き込まれるため、両方を読みます。Auto のターンは実際のモデルが記録されません。 |
 
 **ネットワークリクエスト**：リーダーボード/チャットをオプトインした場合のみ Supabase に集計データを送信し、Webhook 発火時に外部へ送信します。これらの機能を使わなければ、アプリは完全にオフラインで動作します。AI 翻訳キーを設定した場合のみ、該当プロバイダーへ直接リクエストが送信されます。

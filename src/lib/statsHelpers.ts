@@ -196,6 +196,10 @@ export function shortenModelName(name: string): string {
   if (name === "codex-mini" || name === "codex-mini-latest") return "Codex Mini";
   if (name === "codex") return "Codex";
 
+  if (name.startsWith("grok-code-fast") || name.startsWith("grok-build")) {
+    return "Grok Code Fast";
+  }
+
   // `gpt-4o` glues a letter to the version, so it has no `major.minor` to rebuild.
   const gpt4o = name.match(/^gpt-4o(?:-(.+))?$/);
   if (gpt4o) return `GPT-4o${gpt4o[1] ? " " + titleCase(gpt4o[1]) : ""}`;
