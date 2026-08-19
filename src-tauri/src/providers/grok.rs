@@ -57,7 +57,8 @@ const UNKNOWN_MODEL: &str = "grok";
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GrokCredits {
     pub subscription_tier: Option<String>,
-    /// 0–100, matching the Usage bar. The log stores this as a 0–1 fraction.
+    /// 0–100, matching the Usage bar. The log already stores this as a
+    /// percentage (`creditUsagePercent: 76.0` = 76%), not a 0–1 fraction.
     pub credit_usage_percent: Option<f64>,
     pub period_start: Option<String>,
     pub period_end: Option<String>,
@@ -469,7 +470,7 @@ fn parse_credits(value: &Value) -> Option<GrokCredits> {
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
             .map(str::to_string),
-        credit_usage_percent: percent.map(|p| if p <= 1.0 { p * 100.0 } else { p }),
+        credit_usage_percent: percent,
         period_start,
         period_end,
         on_demand_cap: object_val(config, "onDemandCap"),
@@ -1377,14 +1378,24 @@ mod tests {
 
     #[test]
     fn parses_credits_config_as_percent() {
-        let line = r#"{"ts":"2026-08-18T08:14:17.100Z","src":"shell","msg":"billing: fetched credits config","ctx":{"config":{"creditUsagePercent":1.0,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","start":"2026-08-15T00:00:00+00:00","end":"2026-08-22T00:00:00+00:00"},"onDemandCap":{"val":10},"onDemandUsed":{"val":2},"prepaidBalance":{"val":0}},"subscriptionTier":"SuperGrok Lite"}}"#;
+        // Live logs write 0–100 percentages (`76.0` = 76%). A 1.0 value is 1%,
+        // not a 0–1 fraction — multiplying it would show 100% for a 1% user.
+        let line = r#"{"ts":"2026-08-18T08:14:17.100Z","src":"shell","msg":"billing: fetched credits config","ctx":{"config":{"creditUsagePercent":76.0,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","start":"2026-08-15T00:00:00+00:00","end":"2026-08-22T00:00:00+00:00"},"onDemandCap":{"val":10},"onDemandUsed":{"val":2},"prepaidBalance":{"val":0}},"subscriptionTier":"SuperGrok Lite"}}"#;
         let value: Value = serde_json::from_str(line).unwrap();
         let credits = parse_credits(&value).expect("credits");
         assert_eq!(credits.subscription_tier.as_deref(), Some("SuperGrok Lite"));
-        assert!((credits.credit_usage_percent.unwrap() - 100.0).abs() < 1e-9);
+        assert!((credits.credit_usage_percent.unwrap() - 76.0).abs() < 1e-9);
         assert_eq!(credits.on_demand_cap, 10.0);
         assert_eq!(credits.on_demand_used, 2.0);
         assert_eq!(credits.period_end.as_deref(), Some("2026-08-22T00:00:00+00:00"));
+    }
+
+    #[test]
+    fn one_percent_credits_is_not_scaled_to_one_hundred() {
+        let line = r#"{"ts":"2026-08-18T08:14:17.100Z","src":"shell","msg":"billing: fetched credits config","ctx":{"config":{"creditUsagePercent":1.0,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","start":"2026-08-15T00:00:00+00:00","end":"2026-08-22T00:00:00+00:00"}}}}"#;
+        let value: Value = serde_json::from_str(line).unwrap();
+        let credits = parse_credits(&value).expect("credits");
+        assert!((credits.credit_usage_percent.unwrap() - 1.0).abs() < 1e-9);
     }
 
     #[test]
