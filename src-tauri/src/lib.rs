@@ -475,8 +475,9 @@ fn get_all_watch_dirs() -> Vec<PathBuf> {
         dirs.push(kimi_sessions);
     }
 
-    // Add Grok's rolling usage log directory. Watching `logs` rather than
-    // `sessions` — token counts only ever land in logs/unified.jsonl.
+    // Grok: watch the provider's own dirs so GROK_HOME is honoured. `logs`
+    // carries tokens and billing; `sessions` carries model/project metadata
+    // that may arrive after the matching inference_done line.
     //
     // Gated on include_grok, unlike the session-based providers above: Grok's
     // log is mostly trace chatter (~92% of lines carry no tokens) written tens
@@ -484,9 +485,14 @@ fn get_all_watch_dirs() -> Vec<PathBuf> {
     // would fire the debounced refresh — which invalidates and re-parses *every*
     // provider, including Codex's ~175k session files — for nothing.
     if providers::grok::platform_supported() && prefs.include_grok {
-        let grok_logs = home.join(".grok").join("logs");
+        let grok = providers::grok::GrokProvider::new();
+        let grok_logs = grok.logs_dir();
         if grok_logs.exists() {
             dirs.push(grok_logs);
+        }
+        let grok_sessions = grok.session_root();
+        if grok_sessions.exists() {
+            dirs.push(grok_sessions);
         }
     }
 
@@ -1086,6 +1092,7 @@ pub fn run() {
             commands::is_kimi_available,
             commands::get_grok_stats,
             commands::is_grok_available,
+            commands::get_grok_usage,
             commands::get_kiro_stats,
             commands::get_kiro_breakdown,
             commands::is_kiro_available,

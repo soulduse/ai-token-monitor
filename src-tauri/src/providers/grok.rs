@@ -15,7 +15,8 @@
 //! The log carries no model or project name; both come from joining each record's
 //! `sid` against `~/.grok/sessions/*/{sid}/summary.json`.
 //!
-//! **macOS only for now** — see [`platform_supported`].
+//! Desktop platforms (macOS, Linux, Windows). Windows paths use `\\` in
+//! `cwd`; [`project_name_from_cwd`] accepts both separators.
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -31,12 +32,13 @@ use serde_json::Value;
 use super::pricing;
 use super::resilience::{lock_unpoisoned, ParsingGuard};
 use super::traits::TokenProvider;
-use super::types::{AllStats, AnalyticsData, DailyUsage, ModelUsage, ProjectUsage};
+use super::types::{AllStats, AnalyticsData, DailyUsage, ModelUsage, ProjectUsage, ToolCount};
 
 // --- Cache infrastructure (mirrors codex.rs / kimi.rs patterns) ---
 
 struct IncrementalCache {
     stats: AllStats,
+    credits: Option<GrokCredits>,
     computed_at: Instant,
     /// mtime/size of the rolling log at the time `stats` was computed.
     log_meta: Option<(SystemTime, u64)>,
@@ -50,21 +52,25 @@ const CACHE_TTL: Duration = Duration::from_secs(30);
 /// Fallback model name for records whose session metadata is gone.
 const UNKNOWN_MODEL: &str = "grok";
 
-/// Whether this build's platform is supported. Grok is gated to macOS because
-/// nothing here has been verified on Windows, and two things would likely break:
-///
-/// - It is unconfirmed that the Windows Grok CLI writes the same
-///   `~/.grok/logs/unified.jsonl` layout and `shell.turn.inference_done` fields.
-///   If it does not, parsing yields nothing regardless of path handling.
-/// - [`project_name_from_cwd`] splits on `/` only, so a `C:\Users\me\proj` cwd
-///   would surface the whole path as the project name.
-///
-/// Reporting unavailable is better than surfacing a toggle that silently shows
-/// zero. Lift this once the Windows layout is confirmed on a real machine —
-/// public so the file watcher gates on the same definition instead of repeating
-/// the `cfg!`, which would leave the watcher off after the gate is lifted.
+/// SuperGrok / unified-billing snapshot parsed from
+/// `billing: fetched credits config` in the rolling log.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GrokCredits {
+    pub subscription_tier: Option<String>,
+    /// 0–100, matching the Usage bar. The log stores this as a 0–1 fraction.
+    pub credit_usage_percent: Option<f64>,
+    pub period_start: Option<String>,
+    pub period_end: Option<String>,
+    pub on_demand_cap: f64,
+    pub on_demand_used: f64,
+    pub prepaid_balance: f64,
+    pub fetched_at: String,
+}
+
+/// Desktop Grok CLI installs (macOS, Linux, Windows via `%USERPROFILE%\\.grok`).
+/// Public so the file watcher gates on the same definition.
 pub const fn platform_supported() -> bool {
-    cfg!(target_os = "macos")
+    cfg!(any(target_os = "macos", target_os = "linux", target_os = "windows"))
 }
 
 /// Invalidate cache — called by file watcher on ~/.grok/ changes.
@@ -75,6 +81,13 @@ pub fn invalidate_stats_cache() {
 /// Return cached stats without triggering a re-parse (used by tray update).
 pub fn get_cached_stats() -> Option<AllStats> {
     lock_unpoisoned(&STATS_CACHE).as_ref().map(|c| c.stats.clone())
+}
+
+/// Latest SuperGrok credits snapshot, if one has been parsed this process.
+pub fn get_cached_credits() -> Option<GrokCredits> {
+    lock_unpoisoned(&STATS_CACHE)
+        .as_ref()
+        .and_then(|c| c.credits.clone())
 }
 
 /// Cost for one request. xAI bills every token in a request at the higher rate
@@ -127,6 +140,29 @@ struct HistoryDay {
     session_ids: HashSet<String>,
     #[serde(default)]
     messages: u32,
+    #[serde(default)]
+    tools: HashMap<String, u32>,
+}
+
+/// An inference record folded without session metadata. Held aside so a
+/// later `summary.json` can stamp the real model/project instead of locking
+/// the tokens under [`UNKNOWN_MODEL`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PendingRecord {
+    ts_ms: i64,
+    date: String,
+    sid: String,
+    loop_index: i64,
+    prompt_tokens: u64,
+    cached_prompt_tokens: u64,
+    completion_tokens: u64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct ToolCursor {
+    ts_ms: i64,
+    sid: String,
+    tool_name: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -136,6 +172,12 @@ struct GrokHistory {
     /// local `YYYY-MM-DD` → aggregates
     #[serde(default)]
     days: HashMap<String, HistoryDay>,
+    #[serde(default)]
+    pending: Vec<PendingRecord>,
+    #[serde(default)]
+    tool_cursor: Option<ToolCursor>,
+    #[serde(default)]
+    credits: Option<GrokCredits>,
 }
 
 /// Snapshot location. Kept beside the hydration store so all app-owned state
@@ -257,11 +299,184 @@ impl LogRecord {
     }
 }
 
+impl PendingRecord {
+    fn from_log(record: &LogRecord) -> Self {
+        Self {
+            ts_ms: record.ts_ms,
+            date: record.date.clone(),
+            sid: record.sid.clone(),
+            loop_index: record.loop_index,
+            prompt_tokens: record.prompt_tokens,
+            cached_prompt_tokens: record.cached_prompt_tokens,
+            completion_tokens: record.completion_tokens,
+        }
+    }
+
+    fn to_log(&self) -> LogRecord {
+        LogRecord {
+            ts_ms: self.ts_ms,
+            date: self.date.clone(),
+            sid: self.sid.clone(),
+            loop_index: self.loop_index,
+            prompt_tokens: self.prompt_tokens,
+            cached_prompt_tokens: self.cached_prompt_tokens,
+            completion_tokens: self.completion_tokens,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ToolRecord {
+    ts_ms: i64,
+    date: String,
+    sid: String,
+    tool_name: String,
+}
+
+impl ToolRecord {
+    fn cursor(&self) -> ToolCursor {
+        ToolCursor {
+            ts_ms: self.ts_ms,
+            sid: self.sid.clone(),
+            tool_name: self.tool_name.clone(),
+        }
+    }
+}
+
+fn tool_order(record: &ToolRecord) -> (i64, &str, &str) {
+    (record.ts_ms, record.sid.as_str(), record.tool_name.as_str())
+}
+
+fn tool_cursor_key(cursor: &ToolCursor) -> (i64, &str, &str) {
+    (cursor.ts_ms, cursor.sid.as_str(), cursor.tool_name.as_str())
+}
+
+struct ParsedLog {
+    records: Vec<LogRecord>,
+    tools: Vec<ToolRecord>,
+    credits: Option<GrokCredits>,
+}
+
 /// Session metadata joined in from `~/.grok/sessions`.
 #[derive(Debug, Clone, Default)]
 struct SessionMeta {
     model: String,
     project: String,
+}
+
+fn local_date_from_rfc3339(ts_raw: &str) -> Option<(i64, String)> {
+    let ts = chrono::DateTime::parse_from_rfc3339(ts_raw).ok()?;
+    let date = ts
+        .with_timezone(&chrono::Local)
+        .format("%Y-%m-%d")
+        .to_string();
+    Some((ts.timestamp_millis(), date))
+}
+
+fn parse_inference(value: &Value) -> Option<LogRecord> {
+    let ctx = value.get("ctx")?;
+    let prompt_tokens = ctx.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+    let completion_tokens = ctx
+        .get("completion_tokens")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    if prompt_tokens == 0 && completion_tokens == 0 {
+        return None;
+    }
+    // `reasoning_tokens` is deliberately not added on top: xAI counts
+    // reasoning inside completion_tokens, so summing both double-counts.
+    let cached_prompt_tokens = ctx
+        .get("cached_prompt_tokens")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0)
+        .min(prompt_tokens);
+    let ts_raw = value.get("ts").and_then(|v| v.as_str())?;
+    let (ts_ms, date) = local_date_from_rfc3339(ts_raw)?;
+    Some(LogRecord {
+        ts_ms,
+        date,
+        sid: value
+            .get("sid")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        loop_index: ctx.get("loop_index").and_then(|v| v.as_i64()).unwrap_or(0),
+        prompt_tokens,
+        cached_prompt_tokens,
+        completion_tokens,
+    })
+}
+
+fn parse_tool(value: &Value) -> Option<ToolRecord> {
+    let ctx = value.get("ctx")?;
+    let tool_name = ctx.get("tool_name").and_then(|v| v.as_str()).filter(|s| !s.is_empty())?;
+    let ts_raw = value.get("ts").and_then(|v| v.as_str())?;
+    let (ts_ms, date) = local_date_from_rfc3339(ts_raw)?;
+    Some(ToolRecord {
+        ts_ms,
+        date,
+        sid: value
+            .get("sid")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        tool_name: tool_name.to_string(),
+    })
+}
+
+fn object_val(obj: &Value, key: &str) -> f64 {
+    obj.get(key)
+        .and_then(|v| v.get("val").and_then(|n| n.as_f64()).or_else(|| v.as_f64()))
+        .unwrap_or(0.0)
+}
+
+fn parse_credits(value: &Value) -> Option<GrokCredits> {
+    let ctx = value.get("ctx")?;
+    let config = ctx.get("config")?;
+    let period = config.get("currentPeriod");
+    let percent = config.get("creditUsagePercent").and_then(|v| v.as_f64());
+    if period.is_none() && percent.is_none() {
+        return None;
+    }
+    let period_start = period
+        .and_then(|p| p.get("start"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .or_else(|| {
+            config
+                .get("billingPeriodStart")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        });
+    let period_end = period
+        .and_then(|p| p.get("end"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .or_else(|| {
+            config
+                .get("billingPeriodEnd")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        });
+    let fetched_at = value
+        .get("ts")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    Some(GrokCredits {
+        subscription_tier: ctx
+            .get("subscriptionTier")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+        credit_usage_percent: percent.map(|p| if p <= 1.0 { p * 100.0 } else { p }),
+        period_start,
+        period_end,
+        on_demand_cap: object_val(config, "onDemandCap"),
+        on_demand_used: object_val(config, "onDemandUsed"),
+        prepaid_balance: object_val(config, "prepaidBalance"),
+        fetched_at,
+    })
 }
 
 // --- Provider ---
@@ -280,11 +495,15 @@ impl GrokProvider {
         Self { grok_dir }
     }
 
-    fn log_path(&self) -> PathBuf {
-        self.grok_dir.join("logs").join("unified.jsonl")
+    pub fn logs_dir(&self) -> PathBuf {
+        self.grok_dir.join("logs")
     }
 
-    fn session_root(&self) -> PathBuf {
+    fn log_path(&self) -> PathBuf {
+        self.logs_dir().join("unified.jsonl")
+    }
+
+    pub fn session_root(&self) -> PathBuf {
         self.grok_dir.join("sessions")
     }
 
@@ -293,79 +512,62 @@ impl GrokProvider {
         Some((m.modified().unwrap_or(SystemTime::UNIX_EPOCH), m.len()))
     }
 
-    /// Parse every `shell.turn.inference_done` record in the rolling log.
+    /// Parse inference, tool, and billing records from the rolling log.
     ///
     /// The whole file is scanned each time rather than tailing from a byte
     /// offset: truncation rewrites the file from the front, so a stored offset
     /// would point into the middle of an unrelated record. At a few MB a full
     /// scan costs milliseconds, and the cursor keeps the fold idempotent.
-    fn parse_log(path: &Path) -> Vec<LogRecord> {
-        let mut records = Vec::new();
+    fn parse_all(path: &Path) -> ParsedLog {
+        let mut parsed = ParsedLog {
+            records: Vec::new(),
+            tools: Vec::new(),
+            credits: None,
+        };
         let Ok(file) = fs::File::open(path) else {
-            return records;
+            return parsed;
         };
 
         let reader = BufReader::with_capacity(64 * 1024, file);
         for line in reader.lines().map_while(Result::ok) {
-            // Cheap prefilter — the log is mostly phase/tool chatter.
-            if !line.contains("inference_done") {
+            if !line.contains("inference_done")
+                && !line.contains("tool.exec_done")
+                && !line.contains("fetched credits")
+            {
                 continue;
             }
             let Ok(value) = serde_json::from_str::<Value>(&line) else {
                 continue;
             };
-            if value.get("msg").and_then(|v| v.as_str()) != Some("shell.turn.inference_done") {
+            let Some(msg) = value.get("msg").and_then(|v| v.as_str()) else {
                 continue;
+            };
+
+            match msg {
+                "shell.turn.inference_done" => {
+                    if let Some(record) = parse_inference(&value) {
+                        parsed.records.push(record);
+                    }
+                }
+                "shell.tool.exec_done" => {
+                    if let Some(tool) = parse_tool(&value) {
+                        parsed.tools.push(tool);
+                    }
+                }
+                "billing: fetched credits config" => {
+                    if let Some(credits) = parse_credits(&value) {
+                        parsed.credits = Some(credits);
+                    }
+                }
+                _ => {}
             }
-            let Some(ctx) = value.get("ctx") else {
-                continue;
-            };
-
-            let prompt_tokens = ctx.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-            let completion_tokens = ctx
-                .get("completion_tokens")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
-            if prompt_tokens == 0 && completion_tokens == 0 {
-                continue;
-            }
-            // `reasoning_tokens` is deliberately not added on top: xAI counts
-            // reasoning inside completion_tokens, so summing both double-counts.
-            let cached_prompt_tokens = ctx
-                .get("cached_prompt_tokens")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0)
-                .min(prompt_tokens);
-
-            let Some(ts_raw) = value.get("ts").and_then(|v| v.as_str()) else {
-                continue;
-            };
-            let Ok(ts) = chrono::DateTime::parse_from_rfc3339(ts_raw) else {
-                continue;
-            };
-            // Log timestamps are UTC; days are bucketed in local time so a late
-            // evening session lands on the day the user actually worked.
-            let date = ts
-                .with_timezone(&chrono::Local)
-                .format("%Y-%m-%d")
-                .to_string();
-
-            records.push(LogRecord {
-                ts_ms: ts.timestamp_millis(),
-                date,
-                sid: value
-                    .get("sid")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default()
-                    .to_string(),
-                loop_index: ctx.get("loop_index").and_then(|v| v.as_i64()).unwrap_or(0),
-                prompt_tokens,
-                cached_prompt_tokens,
-                completion_tokens,
-            });
         }
 
-        records
+        parsed
+    }
+
+    fn parse_log(path: &Path) -> Vec<LogRecord> {
+        Self::parse_all(path).records
     }
 
     /// Look up model and project for the given session ids.
@@ -431,8 +633,50 @@ impl GrokProvider {
         out
     }
 
+    /// Fold one inference record into the snapshot. `session` is `None` when
+    /// the metadata is gone for good — the tokens still count, under
+    /// [`UNKNOWN_MODEL`].
+    fn fold_one(history: &mut GrokHistory, record: &LogRecord, session: Option<&SessionMeta>) {
+        let model = session
+            .map(|m| m.model.clone())
+            .unwrap_or_else(|| UNKNOWN_MODEL.to_string());
+        let cost = calculate_cost(
+            &model,
+            record.prompt_tokens,
+            record.cached_prompt_tokens,
+            record.completion_tokens,
+        );
+        let uncached = record.prompt_tokens.saturating_sub(record.cached_prompt_tokens);
+        let total_tokens = record.prompt_tokens + record.completion_tokens;
+
+        let day = history.days.entry(record.date.clone()).or_default();
+        day.messages += 1;
+        if !record.sid.is_empty() {
+            day.session_ids.insert(record.sid.clone());
+        }
+
+        let m = day.models.entry(model).or_default();
+        m.input_tokens += uncached;
+        m.output_tokens += record.completion_tokens;
+        m.cache_read_tokens += record.cached_prompt_tokens;
+        m.cost_usd += cost;
+
+        if let Some(name) = session.map(|s| s.project.clone()).filter(|p| !p.is_empty()) {
+            let p = day.projects.entry(name).or_default();
+            p.tokens += total_tokens;
+            p.cost_usd += cost;
+            p.messages += 1;
+            if !record.sid.is_empty() {
+                p.session_ids.insert(record.sid.clone());
+            }
+        }
+    }
+
     /// Fold records newer than the cursor into the snapshot. Returns true when
     /// anything changed, so an unchanged snapshot is never rewritten.
+    ///
+    /// Records whose session metadata is not yet available go into
+    /// `history.pending` instead of being stamped as [`UNKNOWN_MODEL`].
     fn fold_into_history(
         history: &mut GrokHistory,
         records: &[LogRecord],
@@ -444,43 +688,63 @@ impl GrokProvider {
         }
 
         for record in &fresh {
-            let session = meta.get(&record.sid);
-            let model = session
-                .map(|m| m.model.clone())
-                .unwrap_or_else(|| UNKNOWN_MODEL.to_string());
-            let cost = calculate_cost(
-                &model,
-                record.prompt_tokens,
-                record.cached_prompt_tokens,
-                record.completion_tokens,
-            );
-            let uncached = record.prompt_tokens.saturating_sub(record.cached_prompt_tokens);
-            let total_tokens = record.prompt_tokens + record.completion_tokens;
-
-            let day = history.days.entry(record.date.clone()).or_default();
-            day.messages += 1;
-            if !record.sid.is_empty() {
-                day.session_ids.insert(record.sid.clone());
+            if !record.sid.is_empty() && !meta.contains_key(&record.sid) {
+                history.pending.push(PendingRecord::from_log(record));
+                continue;
             }
-
-            let m = day.models.entry(model).or_default();
-            m.input_tokens += uncached;
-            m.output_tokens += record.completion_tokens;
-            m.cache_read_tokens += record.cached_prompt_tokens;
-            m.cost_usd += cost;
-
-            if let Some(name) = session.map(|s| s.project.clone()).filter(|p| !p.is_empty()) {
-                let p = day.projects.entry(name).or_default();
-                p.tokens += total_tokens;
-                p.cost_usd += cost;
-                p.messages += 1;
-                if !record.sid.is_empty() {
-                    p.session_ids.insert(record.sid.clone());
-                }
-            }
+            Self::fold_one(history, record, meta.get(&record.sid));
         }
 
         history.cursor = fresh.last().map(|r| r.cursor());
+        true
+    }
+
+    /// Retry pending records once their `summary.json` appears. Records whose
+    /// sid is no longer in the live log *and* has no session file are folded
+    /// as [`UNKNOWN_MODEL`] — the session is gone, not late.
+    fn resolve_pending(
+        history: &mut GrokHistory,
+        meta: &HashMap<String, SessionMeta>,
+        live_sids: &HashSet<String>,
+    ) -> bool {
+        if history.pending.is_empty() {
+            return false;
+        }
+        let waiting = std::mem::take(&mut history.pending);
+        let mut still = Vec::new();
+        let mut changed = false;
+        for pending in waiting {
+            if let Some(session) = meta.get(&pending.sid) {
+                Self::fold_one(history, &pending.to_log(), Some(session));
+                changed = true;
+            } else if !live_sids.contains(&pending.sid) {
+                Self::fold_one(history, &pending.to_log(), None);
+                changed = true;
+            } else {
+                still.push(pending);
+            }
+        }
+        history.pending = still;
+        changed
+    }
+
+    fn fold_tools(history: &mut GrokHistory, tools: &[ToolRecord]) -> bool {
+        let mut fresh: Vec<&ToolRecord> = match history.tool_cursor.as_ref() {
+            Some(c) => tools
+                .iter()
+                .filter(|t| tool_order(t) > tool_cursor_key(c))
+                .collect(),
+            None => tools.iter().collect(),
+        };
+        if fresh.is_empty() {
+            return false;
+        }
+        fresh.sort_by(|a, b| tool_order(a).cmp(&tool_order(b)));
+        for tool in &fresh {
+            let day = history.days.entry(tool.date.clone()).or_default();
+            *day.tools.entry(tool.tool_name.clone()).or_insert(0) += 1;
+        }
+        history.tool_cursor = fresh.last().map(|t| t.cursor());
         true
     }
 
@@ -503,6 +767,7 @@ impl GrokProvider {
                 date: date.clone(),
                 messages: day.messages,
                 sessions: day.session_ids.len() as u32,
+                tool_calls: day.tools.values().copied().sum(),
                 ..Default::default()
             };
 
@@ -550,12 +815,34 @@ impl GrokProvider {
         let mut project_usage: Vec<ProjectUsage> = projects.into_values().collect();
         project_usage.sort_by(|a, b| b.cost_usd.total_cmp(&a.cost_usd));
 
-        // Only project breakdown is derivable from the log; tool/shell/MCP
-        // activity lives in per-session event logs and is not collected yet.
-        let analytics = (!project_usage.is_empty()).then(|| AnalyticsData {
+        let mut tool_map: HashMap<String, u32> = HashMap::new();
+        let mut shell_map: HashMap<String, u32> = HashMap::new();
+        for day in history.days.values() {
+            for (name, count) in &day.tools {
+                if is_shell_tool(name) {
+                    *shell_map.entry(name.clone()).or_insert(0) += count;
+                } else {
+                    *tool_map.entry(name.clone()).or_insert(0) += count;
+                }
+            }
+        }
+        let mut tool_usage: Vec<ToolCount> = tool_map
+            .into_iter()
+            .map(|(name, count)| ToolCount { name, count })
+            .collect();
+        tool_usage.sort_by(|a, b| b.count.cmp(&a.count));
+        let mut shell_commands: Vec<ToolCount> = shell_map
+            .into_iter()
+            .map(|(name, count)| ToolCount { name, count })
+            .collect();
+        shell_commands.sort_by(|a, b| b.count.cmp(&a.count));
+
+        let has_analytics =
+            !project_usage.is_empty() || !tool_usage.is_empty() || !shell_commands.is_empty();
+        let analytics = has_analytics.then(|| AnalyticsData {
             project_usage,
-            tool_usage: Vec::new(),
-            shell_commands: Vec::new(),
+            tool_usage,
+            shell_commands,
             mcp_usage: Vec::new(),
             activity_breakdown: Vec::new(),
         });
@@ -574,13 +861,12 @@ impl GrokProvider {
     fn do_fetch_stats(&self) -> Result<AllStats, String> {
         let start = Instant::now();
         let current_meta = self.log_meta();
+        let mut history = load_history();
 
-        // Nothing new in the log — the snapshot cannot have changed either. This
-        // holds for a missing log too (both sides None): once Grok is gone, only
-        // the snapshot remains and nothing can add to it. Refresh computed_at on
-        // the way out (as codex.rs does) so the TTL check keeps absorbing calls
-        // instead of routing every one of them back through here.
-        {
+        // Nothing new in the log — and no pending session-meta to retry — so
+        // the snapshot cannot have changed. Refresh computed_at on the way out
+        // (as codex.rs does) so the TTL check keeps absorbing calls.
+        if history.pending.is_empty() {
             let mut cache = lock_unpoisoned(&STATS_CACHE);
             if let Some(ref mut cached) = *cache {
                 if cached.log_meta == current_meta {
@@ -590,31 +876,62 @@ impl GrokProvider {
             }
         }
 
-        let mut history = load_history();
-        let records = if current_meta.is_some() {
-            Self::parse_log(&self.log_path())
+        let parsed = if current_meta.is_some() {
+            Self::parse_all(&self.log_path())
         } else {
-            Vec::new()
+            ParsedLog {
+                records: Vec::new(),
+                tools: Vec::new(),
+                credits: None,
+            }
         };
 
-        if !records.is_empty() {
-            let wanted: HashSet<String> = fresh_records(history.cursor.as_ref(), &records)
+        let mut dirty = false;
+        let live_sids: HashSet<String> = parsed
+            .records
+            .iter()
+            .map(|r| r.sid.clone())
+            .filter(|s| !s.is_empty())
+            .collect();
+        let mut wanted = live_sids.clone();
+        for pending in &history.pending {
+            if !pending.sid.is_empty() {
+                wanted.insert(pending.sid.clone());
+            }
+        }
+        wanted.extend(
+            fresh_records(history.cursor.as_ref(), &parsed.records)
                 .into_iter()
                 .map(|r| r.sid.clone())
-                .filter(|s| !s.is_empty())
-                .collect();
-            let meta = self.load_session_meta(&wanted);
-            if Self::fold_into_history(&mut history, &records, &meta) {
-                save_history(&history);
+                .filter(|s| !s.is_empty()),
+        );
+        let meta = self.load_session_meta(&wanted);
+
+        if !parsed.records.is_empty() {
+            dirty |= Self::fold_into_history(&mut history, &parsed.records, &meta);
+        }
+        dirty |= Self::resolve_pending(&mut history, &meta, &live_sids);
+        if !parsed.tools.is_empty() {
+            dirty |= Self::fold_tools(&mut history, &parsed.tools);
+        }
+        if let Some(credits) = parsed.credits {
+            if history.credits.as_ref() != Some(&credits) {
+                history.credits = Some(credits);
+                dirty = true;
             }
+        }
+        if dirty {
+            save_history(&history);
         }
 
         let stats = Self::build_stats(&history);
+        let credits = history.credits.clone();
 
         {
             let mut cache = lock_unpoisoned(&STATS_CACHE);
             *cache = Some(IncrementalCache {
                 stats: stats.clone(),
+                credits,
                 computed_at: Instant::now(),
                 log_meta: current_meta,
             });
@@ -623,7 +940,7 @@ impl GrokProvider {
         eprintln!(
             "[PERF][Grok] fetch_stats: {:?} ({} log records, {} days)",
             start.elapsed(),
-            records.len(),
+            parsed.records.len(),
             history.days.len()
         );
         Ok(stats)
@@ -680,17 +997,19 @@ impl TokenProvider for GrokProvider {
     }
 }
 
+fn is_shell_tool(name: &str) -> bool {
+    matches!(name, "run_terminal_command" | "bash" | "shell")
+}
+
 /// Project label for a session's working directory: its trailing path segment.
-///
-/// Splits on `/` only, which holds for the macOS paths this provider is gated
-/// to — see [`platform_supported`].
+/// Accepts `/` and `\\` so Windows `C:\\Users\\me\\proj` cwd values work.
 fn project_name_from_cwd(cwd: &str) -> String {
-    let trimmed = cwd.trim_end_matches('/');
+    let trimmed = cwd.trim_end_matches(['/', '\\']);
     if trimmed.is_empty() {
         return String::new();
     }
     trimmed
-        .rsplit('/')
+        .rsplit(['/', '\\'])
         .next()
         .unwrap_or(trimmed)
         .to_string()
@@ -898,11 +1217,34 @@ mod tests {
     }
 
     #[test]
+    fn holds_records_pending_until_session_meta_arrives() {
+        let records = vec![rec(1_000, "2026-07-24", "late", 1_000, 0, 100)];
+
+        let mut history = GrokHistory::default();
+        GrokProvider::fold_into_history(&mut history, &records, &HashMap::new());
+        assert!(history.days.is_empty(), "must not stamp UNKNOWN while the session may still appear");
+        assert_eq!(history.pending.len(), 1);
+
+        let meta = meta_for("late", "grok-4.6", "proj");
+        let live = HashSet::from(["late".to_string()]);
+        assert!(GrokProvider::resolve_pending(&mut history, &meta, &live));
+        assert!(history.pending.is_empty());
+        assert!(history.days["2026-07-24"].models.contains_key("grok-4-6"));
+    }
+
+    #[test]
     fn falls_back_to_a_generic_model_when_the_session_is_gone() {
         let records = vec![rec(1_000, "2026-07-24", "vanished", 1_000, 0, 100)];
 
         let mut history = GrokHistory::default();
         GrokProvider::fold_into_history(&mut history, &records, &HashMap::new());
+        // Sid is not in the live log anymore — the session store will never
+        // grow a summary for it, so fold as UNKNOWN rather than hide the tokens.
+        assert!(GrokProvider::resolve_pending(
+            &mut history,
+            &HashMap::new(),
+            &HashSet::new(),
+        ));
         assert!(history.days["2026-07-24"].models.contains_key(UNKNOWN_MODEL));
     }
 
@@ -984,19 +1326,99 @@ mod tests {
     }
 
     #[test]
-    fn reports_unavailable_off_macos() {
-        // Parsing is unverified on Windows, so the toggle must stay hidden there
-        // rather than surfacing a source that silently reports zero.
+    fn reports_unavailable_off_supported_desktops() {
         if !platform_supported() {
             assert!(!GrokProvider::new().is_available());
         }
-        assert_eq!(platform_supported(), cfg!(target_os = "macos"));
+        assert_eq!(
+            platform_supported(),
+            cfg!(any(target_os = "macos", target_os = "linux", target_os = "windows"))
+        );
     }
 
     #[test]
     fn names_projects_after_the_trailing_path_segment() {
         assert_eq!(project_name_from_cwd("/Users/me/Workspace/ausage"), "ausage");
         assert_eq!(project_name_from_cwd("/Users/me/Workspace/ausage/"), "ausage");
+        assert_eq!(project_name_from_cwd(r"C:\Users\me\Workspace\ausage"), "ausage");
+        assert_eq!(project_name_from_cwd(r"C:\Users\me\Workspace\ausage\"), "ausage");
         assert_eq!(project_name_from_cwd(""), "");
+    }
+
+    fn tool(ts_ms: i64, date: &str, sid: &str, name: &str) -> ToolRecord {
+        ToolRecord {
+            ts_ms,
+            date: date.to_string(),
+            sid: sid.to_string(),
+            tool_name: name.to_string(),
+        }
+    }
+
+    #[test]
+    fn folds_tool_events_into_analytics() {
+        let mut history = GrokHistory::default();
+        let tools = vec![
+            tool(1_000, "2026-07-24", "s1", "read_file"),
+            tool(2_000, "2026-07-24", "s1", "run_terminal_command"),
+            tool(3_000, "2026-07-24", "s1", "read_file"),
+        ];
+        assert!(GrokProvider::fold_tools(&mut history, &tools));
+        assert!(!GrokProvider::fold_tools(&mut history, &tools));
+
+        let stats = GrokProvider::build_stats(&history);
+        let analytics = stats.analytics.expect("tools");
+        assert_eq!(analytics.tool_usage.len(), 1);
+        assert_eq!(analytics.tool_usage[0].name, "read_file");
+        assert_eq!(analytics.tool_usage[0].count, 2);
+        assert_eq!(analytics.shell_commands.len(), 1);
+        assert_eq!(analytics.shell_commands[0].name, "run_terminal_command");
+        assert_eq!(stats.daily[0].tool_calls, 3);
+    }
+
+    #[test]
+    fn parses_credits_config_as_percent() {
+        let line = r#"{"ts":"2026-08-18T08:14:17.100Z","src":"shell","msg":"billing: fetched credits config","ctx":{"config":{"creditUsagePercent":1.0,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","start":"2026-08-15T00:00:00+00:00","end":"2026-08-22T00:00:00+00:00"},"onDemandCap":{"val":10},"onDemandUsed":{"val":2},"prepaidBalance":{"val":0}},"subscriptionTier":"SuperGrok Lite"}}"#;
+        let value: Value = serde_json::from_str(line).unwrap();
+        let credits = parse_credits(&value).expect("credits");
+        assert_eq!(credits.subscription_tier.as_deref(), Some("SuperGrok Lite"));
+        assert!((credits.credit_usage_percent.unwrap() - 100.0).abs() < 1e-9);
+        assert_eq!(credits.on_demand_cap, 10.0);
+        assert_eq!(credits.on_demand_used, 2.0);
+        assert_eq!(credits.period_end.as_deref(), Some("2026-08-22T00:00:00+00:00"));
+    }
+
+    #[test]
+    fn skips_incomplete_credits_config() {
+        let line = r#"{"ts":"2026-08-18T08:04:32.091Z","msg":"billing: fetched credits config","ctx":{"config":{"historyLen":0},"subscriptionTier":null}}"#;
+        let value: Value = serde_json::from_str(line).unwrap();
+        assert!(parse_credits(&value).is_none());
+    }
+
+    #[test]
+    fn load_session_meta_reads_summary_json() {
+        let root = std::env::temp_dir().join(format!(
+            "grok-session-meta-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let sid = "sess-abc";
+        let dir = root.join("sessions").join("%2Ftmp%2Fproj").join(sid);
+        fs::create_dir_all(&dir).expect("create session dir");
+        fs::write(
+            dir.join("summary.json"),
+            r#"{"current_model_id":"grok-4.6","info":{"cwd":"/Users/me/Workspace/ausage"}}"#,
+        )
+        .expect("write summary");
+
+        let provider = GrokProvider { grok_dir: root.clone() };
+        let wanted = HashSet::from([sid.to_string()]);
+        let meta = provider.load_session_meta(&wanted);
+        let session = meta.get(sid).expect("sid present");
+        assert_eq!(session.model, "grok-4-6");
+        assert_eq!(session.project, "ausage");
+        let _ = fs::remove_dir_all(&root);
     }
 }
