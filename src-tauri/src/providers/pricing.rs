@@ -528,16 +528,36 @@ pub fn get_grok_pricing(model: &str) -> GrokPricing {
             high_cached_input: high.map_or(p.cached_input, |h| h.cached_input),
         };
     }
-    // Fallback defaults (Grok 4.5 rates) when pricing.json has no grok section.
+    // Fallback defaults (Grok 4.6 rates) when pricing.json has no grok section.
     GrokPricing {
         input: 2.00,
         output: 6.00,
-        cached_input: 0.30,
+        cached_input: 0.50,
         high_threshold_tokens: 200_000,
         high_input: 4.00,
         high_output: 12.00,
-        high_cached_input: 0.60,
+        high_cached_input: 1.00,
     }
+}
+
+/// Claude-log cost lookup that applies Grok's per-request high-context tier.
+///
+/// [`get_claude_pricing`] can only return one flat rate, so a Grok id found in
+/// a Claude-shaped log would otherwise skip the 200k doubling. Call this at
+/// cost time with the full prompt size (`input + cache_read`).
+pub fn claude_pricing_for(model: &str, prompt_tokens: u64) -> ClaudePricing {
+    let canonical = canonical_model(model);
+    if foreign_table(&canonical) == Some("grok") {
+        let tier = get_grok_pricing(model).tier_for(prompt_tokens);
+        return ClaudePricing {
+            input: tier.input,
+            output: tier.output,
+            cache_read: tier.cached_input,
+            cache_write_5m: 0.0,
+            cache_write_1h: 0.0,
+        };
+    }
+    get_claude_pricing(model)
 }
 
 pub fn get_opencode_pricing(model: &str) -> OpenCodePricing {
@@ -707,9 +727,28 @@ mod tests {
     }
 
     #[test]
-    fn grok_unknown_model_defaults_to_45() {
+    fn grok_unknown_model_defaults_to_46() {
         let unknown = get_grok_pricing("grok-9.9-experimental");
-        assert_eq!(unknown.input, get_grok_pricing("grok-4.5").input);
+        assert_eq!(unknown.input, get_grok_pricing("grok-4.6").input);
+        assert_eq!(unknown.cached_input, get_grok_pricing("grok-4.6").cached_input);
+    }
+
+    #[test]
+    fn grok_46_not_billed_as_45() {
+        let p46 = get_grok_pricing("grok-4.6");
+        let p45 = get_grok_pricing("grok-4.5");
+        assert_eq!(p46.input, p45.input);
+        assert_eq!(p46.output, p45.output);
+        assert!(p46.cached_input > p45.cached_input);
+        assert_eq!(p46.cached_input, 0.50);
+        assert_eq!(p46.high_cached_input, 1.00);
+    }
+
+    #[test]
+    fn grok_46_build_variant_bills_as_46() {
+        let variant = get_grok_pricing("grok-4.6-build");
+        let base = get_grok_pricing("grok-4.6");
+        assert_eq!(variant.cached_input, base.cached_input);
     }
 
     #[test]
@@ -1087,7 +1126,7 @@ mod tests {
         let ids = [
             "claude-opus-5", "claude-opus-4-8", "claude-opus-4-1", "claude-sonnet-5",
             "claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-fable-5",
-            "claude-mythos-5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5-codex", "grok-4.5",
+            "claude-mythos-5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5-codex", "grok-4.5", "grok-4.6",
         ];
         let mut seen = std::collections::HashMap::new();
         for id in ids {
@@ -1173,10 +1212,17 @@ mod tests {
 
     #[test]
     fn claude_log_foreign_families_route_to_their_tables() {
-        let grok = get_claude_pricing("grok-4.5");
-        let grok_ref = get_grok_pricing("grok-4.5");
+        let grok = get_claude_pricing("grok-4.6");
+        let grok_ref = get_grok_pricing("grok-4.6");
         assert!((grok.input - grok_ref.input).abs() < 0.001);
         assert!((grok.output - grok_ref.output).abs() < 0.001);
+        assert!((grok.cache_read - grok_ref.cached_input).abs() < 0.001);
+
+        let grok_high = claude_pricing_for("grok-4.6", 200_000);
+        assert!((grok_high.input - grok_ref.high_input).abs() < 0.001);
+        assert!((grok_high.cache_read - grok_ref.high_cached_input).abs() < 0.001);
+        let grok_low = claude_pricing_for("grok-4.6", 199_999);
+        assert!((grok_low.cache_read - grok_ref.cached_input).abs() < 0.001);
 
         let kimi = get_claude_pricing("kimi-k2");
         let kimi_ref = get_kimi_pricing("kimi-k2");
