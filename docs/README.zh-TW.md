@@ -149,7 +149,7 @@ npm run tauri build   # 生產建置
 | **Claude Code** | `~/.claude/projects/**/*.jsonl` | 從 `~/.claude/stats-cache.json` 補充工作階段/工具呼叫數。支援多個根目錄。 |
 | **Codex** | `~/.codex/sessions/**/*.jsonl` | 支援多個根目錄。 |
 | **OpenCode** | `~/.local/share/opencode/**/*.jsonl` | 內建價格資料按模型計算費用。 |
-| **Grok** | `~/.grok/logs/unified.jsonl` | 來自 `shell.turn.inference_done` 的每次請求實測 token；模型與專案從 `~/.grok/sessions` 關聯。Grok 會截斷此滾動日誌的開頭，因此將每日彙總累積到本機快照。 目前僅支援 macOS — Windows 的日誌結構尚未驗證。 |
+| **Grok** | `~/.grok/logs/unified.jsonl` | 來自 `shell.turn.inference_done` 的每次請求實測 token；模型與專案從 `~/.grok/sessions` 關聯。Grok 會截斷此滾動日誌的開頭，因此將每日彙總累積到本機快照。 支援 macOS、Linux 與 Windows（`%USERPROFILE%\\.grok`）。SuperGrok 每週額度從 `billing: fetched credits config` 讀取。 |
 | **Kiro** | `~/.kiro/sessions/cli/*.json` + `data.sqlite3` | **計費單位是點數而非 token** — Kiro 以每輪「工作量」計量，且不在任何位置記錄 token 數，因此成本由點數換算（× $0.04，超額費率）。互動式與非互動式執行分別寫入鍵名不同的兩個儲存，兩者都會讀取。使用 Auto 的輪次不會記錄實際使用的模型。 |
 
 **網路請求**:僅在啟用排行榜/聊天時(向 Supabase 傳送彙總資料)或 Webhook 觸發時才會發起網路請求。未使用這些功能時,應用完全離線運作。設定 AI 翻譯金鑰後,才會直接向對應供應商傳送請求。

@@ -11,7 +11,7 @@ use crate::providers::claude_code::ClaudeCodeProvider;
 use crate::providers::codex::CodexProvider;
 use crate::providers::gjc::GjcProvider;
 use crate::providers::glm::GlmProvider;
-use crate::providers::grok::GrokProvider;
+use crate::providers::grok::{GrokCredits, GrokProvider};
 use crate::providers::kiro::{KiroBreakdown, KiroProvider};
 use crate::providers::kimi::KimiProvider;
 use crate::providers::opencode::OpenCodeProvider;
@@ -161,6 +161,24 @@ pub async fn get_grok_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
 #[tauri::command]
 pub fn is_grok_available() -> bool {
     GrokProvider::new().is_available()
+}
+
+#[tauri::command]
+pub async fn get_grok_usage() -> Option<GrokCredits> {
+    tauri::async_runtime::spawn_blocking(|| {
+        if let Some(credits) = crate::providers::grok::get_cached_credits() {
+            return Some(credits);
+        }
+        let provider = GrokProvider::new();
+        if !provider.is_available() {
+            return None;
+        }
+        let _ = provider.fetch_stats();
+        crate::providers::grok::get_cached_credits()
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 #[tauri::command]

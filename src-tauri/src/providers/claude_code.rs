@@ -382,7 +382,8 @@ impl ClaudeCodeProvider {
                 first_date = Some(entry.date.clone());
             }
 
-            let pricing = pricing::get_claude_pricing(&entry.model);
+            let prompt = entry.input_tokens + entry.cache_read_input_tokens;
+            let pricing = pricing::claude_pricing_for(&entry.model, prompt);
             let cost = calculate_cost(
                 &pricing, entry.input_tokens, entry.output_tokens,
                 entry.cache_read_input_tokens,
@@ -668,7 +669,8 @@ fn build_analytics(entries: &HashMap<String, SessionEntry>) -> AnalyticsData {
         // Project usage — derive project name from cwd
         if !entry.cwd.is_empty() {
             let project_name = entry.cwd.rsplit('/').next().unwrap_or(&entry.cwd).to_string();
-            let pricing = pricing::get_claude_pricing(&entry.model);
+            let prompt = entry.input_tokens + entry.cache_read_input_tokens;
+            let pricing = pricing::claude_pricing_for(&entry.model, prompt);
             let cost = calculate_cost(
                 &pricing, entry.input_tokens, entry.output_tokens,
                 entry.cache_read_input_tokens,
@@ -709,7 +711,8 @@ fn build_analytics(entries: &HashMap<String, SessionEntry>) -> AnalyticsData {
 
         // Activity classification (tool-pattern based)
         let category = classify_activity(&entry.tool_names, &entry.bash_commands);
-        let pricing = pricing::get_claude_pricing(&entry.model);
+        let prompt = entry.input_tokens + entry.cache_read_input_tokens;
+        let pricing = pricing::claude_pricing_for(&entry.model, prompt);
         let entry_cost = calculate_cost(
             &pricing, entry.input_tokens, entry.output_tokens,
             entry.cache_read_input_tokens,
@@ -824,7 +827,8 @@ fn aggregate_entries(
             first_date = Some(entry.date.clone());
         }
 
-        let pricing = pricing::get_claude_pricing(&entry.model);
+        let prompt = entry.input_tokens + entry.cache_read_input_tokens;
+        let pricing = pricing::claude_pricing_for(&entry.model, prompt);
         let cost = calculate_cost(
             &pricing, entry.input_tokens, entry.output_tokens,
             entry.cache_read_input_tokens,

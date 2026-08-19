@@ -1,6 +1,6 @@
 {
-  "version": "1.10.0",
-  "last_updated": "2026-07-28",
+  "version": "1.11.0",
+  "last_updated": "2026-08-19",
   "sources": {
     "claude": "https://platform.claude.com/docs/en/about-claude/pricing",
     "codex": "https://developers.openai.com/api/docs/pricing",
@@ -147,8 +147,10 @@
     ]
   },
   "grok": {
-    "default": "grok-4.5",
+    "default": "grok-4.6",
     "models": [
+      { "match": "grok-4.6",       "label": "Grok 4.6",        "input": 2.00, "output": 6.00, "cached_input": 0.50,
+        "high_context": { "threshold_tokens": 200000, "input": 4.00, "output": 12.00, "cached_input": 1.00 } },
       { "match": "grok-4.5",       "label": "Grok 4.5",        "input": 2.00, "output": 6.00, "cached_input": 0.30,
         "high_context": { "threshold_tokens": 200000, "input": 4.00, "output": 12.00, "cached_input": 0.60 } },
       { "match": "grok-4.3",       "label": "Grok 4.3",        "input": 1.25, "output": 2.50, "cached_input": 0.20,
@@ -158,9 +160,7 @@
       { "match": "grok-code-fast", "label": "Grok Code Fast",  "input": 1.00, "output": 2.00, "cached_input": 0.20,
         "high_context": { "threshold_tokens": 200000, "input": 2.00, "output": 4.00, "cached_input": 0.40 } },
       { "match": "grok-build",     "label": "Grok Code Fast",  "input": 1.00, "output": 2.00, "cached_input": 0.20,
-        "high_context": { "threshold_tokens": 200000, "input": 2.00, "output": 4.00, "cached_input": 0.40 } },
-      { "match": "grok",           "label": "Grok 4.5",        "input": 2.00, "output": 6.00, "cached_input": 0.30,
-        "high_context": { "threshold_tokens": 200000, "input": 4.00, "output": 12.00, "cached_input": 0.60 } }
+        "high_context": { "threshold_tokens": 200000, "input": 2.00, "output": 4.00, "cached_input": 0.40 } }
     ]
   }
 }
