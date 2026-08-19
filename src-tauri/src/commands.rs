@@ -1,6 +1,6 @@
 use std::fmt::Write as _;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -329,42 +329,60 @@ pub fn detect_codex_dirs() -> Vec<String> {
     found
 }
 
+/// `starts_with(home)` must compare like-for-like: on Windows `canonicalize()`
+/// returns verbatim paths (`\\?\C:\...`) whose prefix component never matches
+/// the plain `C:\...` from `dirs::home_dir()`, so home must be canonicalized too.
+fn is_under_home(canonical: &Path) -> bool {
+    let Some(home) = dirs::home_dir() else {
+        return false;
+    };
+    let home_canonical = home.canonicalize().unwrap_or(home);
+    canonical.starts_with(&home_canonical)
+}
+
+/// WSL UNC shares (`\\wsl.localhost\...`, `\\wsl$\...`) live outside the Windows
+/// home directory but are legitimate config-dir roots (issue #182).
+fn is_wsl_unc(path: &Path) -> bool {
+    use std::path::{Component, Prefix};
+    match path.components().next() {
+        Some(Component::Prefix(p)) => match p.kind() {
+            Prefix::UNC(server, _) | Prefix::VerbatimUNC(server, _) => {
+                let server = server.to_string_lossy().to_ascii_lowercase();
+                server == "wsl.localhost" || server == "wsl$"
+            }
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+/// Expand `~/`, canonicalize, and guard against path traversal outside the
+/// allowed roots (home directory, or a WSL share on Windows).
+fn canonicalize_config_dir(path: &str) -> Option<PathBuf> {
+    let expanded = if let Some(rest) = path.strip_prefix("~/") {
+        dirs::home_dir().unwrap_or_default().join(rest)
+    } else {
+        PathBuf::from(path)
+    };
+    match expanded.canonicalize() {
+        Ok(canonical) if is_under_home(&canonical) || is_wsl_unc(&canonical) => Some(canonical),
+        Ok(_) => None,
+        // canonicalize() can fail on WSL's 9P-backed shares even when the
+        // directory exists (rust-lang/rust#42869), so fall back to the raw path.
+        Err(_) if is_wsl_unc(&expanded) && expanded.is_dir() => Some(expanded),
+        Err(_) => None,
+    }
+}
+
 #[tauri::command]
 pub fn validate_codex_dir(path: String) -> bool {
-    let home = dirs::home_dir().unwrap_or_default();
-    let expanded = if path.starts_with("~/") {
-        home.join(path.strip_prefix("~/").unwrap_or(&path))
-    } else {
-        PathBuf::from(&path)
-    };
-    // Guard against path traversal outside home directory
-    let canonical = match expanded.canonicalize() {
-        Ok(p) => p,
-        Err(_) => return false,
-    };
-    if !canonical.starts_with(&home) {
-        return false;
-    }
-    canonical.join("sessions").is_dir() || canonical.join("archived_sessions").is_dir()
+    canonicalize_config_dir(&path)
+        .is_some_and(|dir| dir.join("sessions").is_dir() || dir.join("archived_sessions").is_dir())
 }
 
 #[tauri::command]
 pub fn validate_claude_dir(path: String) -> bool {
-    let home = dirs::home_dir().unwrap_or_default();
-    let expanded = if path.starts_with("~/") {
-        home.join(path.strip_prefix("~/").unwrap_or(&path))
-    } else {
-        PathBuf::from(&path)
-    };
-    // Guard against path traversal outside home directory
-    let canonical = match expanded.canonicalize() {
-        Ok(p) => p,
-        Err(_) => return false,
-    };
-    if !canonical.starts_with(&home) {
-        return false;
-    }
-    canonical.join("projects").is_dir()
+    canonicalize_config_dir(&path).is_some_and(|dir| dir.join("projects").is_dir())
 }
 
 const APP_SALT: &[u8] = b"ai-token-monitor-v1";
@@ -644,8 +662,7 @@ pub fn save_png_to_file(png_data: Vec<u8>, path: String) -> Result<(), String> {
     let canonical_parent = parent
         .canonicalize()
         .map_err(|_| "Invalid destination directory".to_string())?;
-    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
-    if !canonical_parent.starts_with(&home) {
+    if !is_under_home(&canonical_parent) {
         return Err("Destination must be within home directory".to_string());
     }
     fs::write(&path, &png_data).map_err(|e| format!("Failed to save PNG: {}", e))
@@ -913,4 +930,40 @@ pub fn clear_server_history(app: tauri::AppHandle) -> Result<(), String> {
     crate::hydration::clear_store()?;
     let _ = app.emit("stats-updated", ());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn under_home_accepts_canonical_home() {
+        let home = dirs::home_dir().expect("home dir");
+        let canonical = home.canonicalize().expect("canonicalize home");
+        assert!(is_under_home(&canonical));
+    }
+
+    #[test]
+    fn under_home_rejects_filesystem_root() {
+        let root = Path::new("/").canonicalize().expect("canonicalize root");
+        assert!(!is_under_home(&root));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn wsl_unc_paths_are_recognized() {
+        assert!(is_wsl_unc(Path::new(r"\\wsl.localhost\Ubuntu-24.04\home\user\.codex")));
+        assert!(is_wsl_unc(Path::new(r"\\wsl$\Ubuntu\home\user\.claude")));
+        assert!(is_wsl_unc(Path::new(r"\\?\UNC\wsl.localhost\Ubuntu\home\user\.codex")));
+        assert!(!is_wsl_unc(Path::new(r"\\server\share\dir")));
+        assert!(!is_wsl_unc(Path::new(r"C:\Users\user\.codex")));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn wsl_unc_is_never_matched_on_unix() {
+        // UNC prefixes only exist in Windows path parsing.
+        assert!(!is_wsl_unc(Path::new(r"\\wsl.localhost\Ubuntu\home\user")));
+        assert!(!is_wsl_unc(Path::new("/home/user/.codex")));
+    }
 }
