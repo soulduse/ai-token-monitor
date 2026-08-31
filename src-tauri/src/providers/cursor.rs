@@ -4,7 +4,7 @@ use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use super::traits::TokenProvider;
-use super::types::{AllStats, DailyUsage};
+use super::types::{AllStats, DailyUsage, ModelUsage};
 
 const CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 const FAILURE_RETRY_BACKOFF: Duration = Duration::from_secs(10 * 60);
@@ -12,6 +12,7 @@ const FAILURE_RETRY_BACKOFF: Duration = Duration::from_secs(10 * 60);
 /// total tokens, so treating every token as a cache read gives a transparent,
 /// deliberately conservative API-value floor rather than a billing estimate.
 const OPUS_CACHE_READ_USD_PER_MILLION: f64 = 0.50;
+const CURSOR_PUBLIC_USAGE_KEY: &str = "cursor-public-tokens";
 
 #[derive(Clone)]
 struct CachedProfileRows {
@@ -116,7 +117,7 @@ fn build_stats(profile_rows: Vec<Vec<ActivityCount>>, estimate_cost: bool) -> Al
         .into_iter()
         .map(|(date, count)| DailyUsage {
             date,
-            tokens: HashMap::from([("cursor-public-tokens".to_string(), count)]),
+            tokens: HashMap::from([(CURSOR_PUBLIC_USAGE_KEY.to_string(), count)]),
             cost_usd: if estimate_cost {
                 count as f64 / 1_000_000.0 * OPUS_CACHE_READ_USD_PER_MILLION
             } else {
@@ -134,9 +135,34 @@ fn build_stats(profile_rows: Vec<Vec<ActivityCount>>, estimate_cost: bool) -> Al
         .collect();
     let first_session_date = daily.first().map(|row| row.date.clone());
 
+    let total_tokens = daily
+        .iter()
+        .map(|day| day.tokens[CURSOR_PUBLIC_USAGE_KEY])
+        .sum();
+    let total_cost = daily.iter().map(|day| day.cost_usd).sum();
+    // Model attribution is unavailable. Keep one clearly named source bucket
+    // so receipts/exports can preserve the aggregate token count and optional
+    // cost. `cache_read` denotes this synthetic estimate's pricing bucket, not
+    // measured cache behavior; daily cache fields stay zero so cache-efficiency
+    // statistics are not distorted.
+    let model_usage = if total_tokens > 0 {
+        HashMap::from([(
+            CURSOR_PUBLIC_USAGE_KEY.to_string(),
+            ModelUsage {
+                input_tokens: 0,
+                output_tokens: 0,
+                cache_read: total_tokens,
+                cache_write: 0,
+                cost_usd: total_cost,
+            },
+        )])
+    } else {
+        HashMap::new()
+    };
+
     AllStats {
         daily,
-        model_usage: HashMap::new(),
+        model_usage,
         total_sessions: 0,
         total_messages: 0,
         first_session_date,
@@ -279,7 +305,10 @@ pub fn get_cached_stats(profiles: &[String], estimate_cost: bool) -> Option<AllS
     for handle in handles {
         match fresh_cached_result(cache, &handle).ok()?? {
             Ok(profile_rows) => rows.push(profile_rows),
-            Err(_) => {}
+            // A partial aggregate would lower the persisted tray snapshot.
+            // Keep the previous known-good value until every configured
+            // profile has a fresh successful cache entry.
+            Err(_) => return None,
         }
     }
     Some(build_stats(rows, estimate_cost))
@@ -435,7 +464,9 @@ mod tests {
         assert_eq!(stats.daily[0].input_tokens, 0);
         assert!(stats.daily[0].hydrated);
         assert_eq!(stats.first_session_date.as_deref(), Some("2026-01-01"));
-        assert!(stats.model_usage.is_empty());
+        let usage = &stats.model_usage["cursor-public-tokens"];
+        assert_eq!(usage.cache_read, 165);
+        assert_eq!(usage.cost_usd, 0.0);
     }
 
     #[test]
@@ -451,7 +482,9 @@ mod tests {
         assert!((stats.daily[0].cost_usd - 1.0).abs() < f64::EPSILON);
         assert_eq!(stats.daily[0].input_tokens, 0);
         assert_eq!(stats.daily[0].cache_read_tokens, 0);
-        assert!(stats.model_usage.is_empty());
+        let usage = &stats.model_usage["cursor-public-tokens"];
+        assert_eq!(usage.cache_read, 2_000_000);
+        assert!((usage.cost_usd - 1.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -584,6 +617,40 @@ mod tests {
     }
 
     #[test]
+    fn cached_tray_aggregate_waits_for_every_profile_to_succeed() {
+        let good = "coverage-tray-good-profile";
+        let failed = "coverage-tray-failed-profile";
+        let cache = PROFILE_ROWS_CACHE
+            .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+        {
+            let mut cache = cache.lock().expect("cache lock");
+            cache.insert(
+                good.to_string(),
+                super::CachedProfileRows {
+                    fetched_at: Instant::now(),
+                    result: Ok(vec![ActivityCount {
+                        date: "2026-01-15".into(),
+                        count: 321,
+                    }]),
+                },
+            );
+            cache.insert(
+                failed.to_string(),
+                super::CachedProfileRows {
+                    fetched_at: Instant::now(),
+                    result: Err("temporary failure".into()),
+                },
+            );
+        }
+
+        assert!(get_cached_stats(&[good.to_string(), failed.to_string()], true).is_none());
+
+        let mut cache = cache.lock().expect("cache lock");
+        cache.remove(good);
+        cache.remove(failed);
+    }
+
+    #[test]
     fn coalesces_concurrent_requests_for_the_same_profile() {
         let handle = "coverage-concurrent-profile";
         let cache = PROFILE_ROWS_CACHE
@@ -631,7 +698,9 @@ mod tests {
     #[test]
     fn provider_is_available_only_with_a_valid_profile() {
         assert!(!CursorProvider::new(vec!["bad handle".into()]).is_available());
-        assert!(CursorProvider::new(vec!["https://cursor.com/@valid-handle".into()]).is_available());
+        assert!(
+            CursorProvider::new(vec!["https://cursor.com/@valid-handle".into()]).is_available()
+        );
     }
 
     #[test]

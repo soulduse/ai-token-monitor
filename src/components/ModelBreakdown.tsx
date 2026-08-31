@@ -13,7 +13,8 @@ export function ModelBreakdown({ modelUsage }: Props) {
   const t = useI18n();
   const models = Object.entries(modelUsage).sort(
     ([, a], [, b]) =>
-      b.input_tokens + b.output_tokens - (a.input_tokens + a.output_tokens)
+      b.input_tokens + b.output_tokens + b.cache_read
+      - (a.input_tokens + a.output_tokens + a.cache_read)
   );
 
   if (models.length === 0) return null;

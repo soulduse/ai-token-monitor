@@ -185,6 +185,8 @@ function titleCase(s: string): string {
  * versions.
  */
 export function shortenModelName(name: string): string {
+  if (name === "cursor-public-tokens") return "Cursor Public";
+
   const claude = name.match(
     /(opus|sonnet|haiku|fable|mythos)-(\d{1,2})(?:-(\d{1,2}))?(?!\d)/
   );

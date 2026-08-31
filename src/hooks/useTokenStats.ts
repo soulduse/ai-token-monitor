@@ -29,30 +29,41 @@ export function useTokenStats(
   const [loading, setLoading] = useState(true);
   const hasDataRef = useRef(false);
   const requestIdRef = useRef(0);
+  const inFlightRef = useRef<Promise<void> | null>(null);
 
-  const fetchStats = useCallback(async () => {
-    if (!enabled) return;
-    const requestId = ++requestIdRef.current;
+  const fetchStats = useCallback((): Promise<void> => {
+    if (!enabled) return Promise.resolve();
+    // File events and polling can land while a provider is still parsing.
+    // Reuse that request instead of letting a fast stale/error response make
+    // the earlier successful parse look obsolete.
+    if (inFlightRef.current) return inFlightRef.current;
+    const requestId = requestIdRef.current;
     if (!hasDataRef.current) setLoading(true);
-    try {
-      const command = STATS_COMMANDS[provider] ?? STATS_COMMANDS.claude;
-      const data = await invoke<AllStats>(command, invokeArgs);
-      if (requestId !== requestIdRef.current) return;
-      setStats(data);
-      setError(null);
-      setRefreshError(null);
-      hasDataRef.current = true;
-    } catch (e) {
-      if (requestId !== requestIdRef.current) return;
-      setRefreshError(String(e));
-      // Only show error if we never had valid data — keeps last known data on transient failures
-      if (!hasDataRef.current) {
-        setError(String(e));
+    const request = (async () => {
+      try {
+        const command = STATS_COMMANDS[provider] ?? STATS_COMMANDS.claude;
+        const data = await invoke<AllStats>(command, invokeArgs);
+        if (requestId !== requestIdRef.current) return;
+        setStats(data);
+        setError(null);
+        setRefreshError(null);
+        hasDataRef.current = true;
+      } catch (e) {
+        if (requestId !== requestIdRef.current) return;
+        setRefreshError(String(e));
+        // Only show error if we never had valid data — keeps last known data on transient failures
+        if (!hasDataRef.current) {
+          setError(String(e));
+        }
+      } finally {
+        if (requestId === requestIdRef.current) setLoading(false);
       }
-    } finally {
-      if (requestId !== requestIdRef.current) return;
-      setLoading(false);
-    }
+    })();
+    const tracked = request.finally(() => {
+      if (inFlightRef.current === tracked) inFlightRef.current = null;
+    });
+    inFlightRef.current = tracked;
+    return tracked;
   }, [provider, enabled, scopeKey, invokeArgs]);
 
   const previousScopeRef = useRef(scopeKey);
@@ -60,6 +71,7 @@ export function useTokenStats(
     if (previousScopeRef.current === scopeKey) return;
     previousScopeRef.current = scopeKey;
     requestIdRef.current += 1;
+    inFlightRef.current = null;
     hasDataRef.current = false;
     setStats(null);
     setError(null);
@@ -70,6 +82,7 @@ export function useTokenStats(
   useEffect(() => {
     if (!enabled) {
       requestIdRef.current += 1;
+      inFlightRef.current = null;
       hasDataRef.current = false;
       setStats(null);
       setError(null);
