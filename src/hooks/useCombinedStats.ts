@@ -13,9 +13,10 @@ interface UseCombinedStatsProps {
   includeKiro: boolean;
   includeCursor: boolean;
   cursorProfiles: string[];
+  cursorEstimateCost: boolean;
 }
 
-export function useCombinedStats({ includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeCursor, cursorProfiles }: UseCombinedStatsProps) {
+export function useCombinedStats({ includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeCursor, cursorProfiles, cursorEstimateCost }: UseCombinedStatsProps) {
   const claude = useTokenStats("claude");
   const codex = useTokenStats("codex");
   const opencode = useTokenStats("opencode");
@@ -25,10 +26,13 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
   const grok = useTokenStats("grok");
   const kiro = useTokenStats("kiro");
   const cursorScopeKey = useMemo(
-    () => [...cursorProfiles].map((profile) => profile.trim().toLowerCase()).sort().join(","),
-    [cursorProfiles],
+    () => `${[...cursorProfiles].map((profile) => profile.trim().toLowerCase()).sort().join(",")}|cost:${cursorEstimateCost}`,
+    [cursorProfiles, cursorEstimateCost],
   );
-  const cursorArgs = useMemo(() => ({ profiles: [...cursorProfiles] }), [cursorScopeKey]);
+  const cursorArgs = useMemo(() => ({
+    profiles: [...cursorProfiles],
+    estimateCost: cursorEstimateCost,
+  }), [cursorScopeKey]);
   const cursor = useTokenStats("cursor", includeCursor, cursorScopeKey, cursorArgs);
 
   const stats = useMemo<AllStats | null>(() => {

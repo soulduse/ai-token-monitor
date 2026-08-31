@@ -76,6 +76,7 @@ function AppContent() {
     includeKiro: prefs.include_kiro,
     includeCursor: prefs.include_cursor,
     cursorProfiles: prefs.cursor_profiles,
+    cursorEstimateCost: prefs.cursor_estimate_cost,
   });
   const t = useI18n();
   const { user, profile } = useAuth();
@@ -138,6 +139,7 @@ function AppContent() {
     if (!cursorStats || cursorStats.daily.length === 0) return null;
     return {
       total: cursorStats.daily.reduce((sum, day) => sum + getTotalTokens(day.tokens), 0),
+      estimatedCost: cursorStats.daily.reduce((sum, day) => sum + day.cost_usd, 0),
       lastDate: cursorStats.daily[cursorStats.daily.length - 1].date,
     };
   }, [cursorStats]);
@@ -239,6 +241,13 @@ function AppContent() {
                     profiles: prefs.cursor_profiles.length,
                     tokens: formatTokens(cursorRollup.total, prefs.number_format),
                     date: cursorRollup.lastDate,
+                    estimate: prefs.cursor_estimate_cost
+                      ? t("cursor.publicCostIncluded", { cost: cursorRollup.estimatedCost.toLocaleString(undefined, {
+                          style: "currency",
+                          currency: "USD",
+                          maximumFractionDigits: 0,
+                        }) })
+                      : t("cursor.publicCostOmitted"),
                   })
                 : t("cursor.publicNotice")}
         </div>

@@ -146,6 +146,12 @@ pub struct UserPreferences {
     pub include_cursor: bool,
     #[serde(default)]
     pub cursor_profiles: Vec<String>,
+    /// Opt-in lower-bound API-value estimate for Cursor public tokens. Public
+    /// profiles do not expose token categories, so this prices every token at
+    /// the Opus 4.5–4.8 cache-read rate ($0.50/MTok), the cheapest published
+    /// rate for the model family, instead of presenting a guessed bill.
+    #[serde(default)]
+    pub cursor_estimate_cost: bool,
     #[serde(default = "default_gjc_dirs")]
     pub gjc_dirs: Vec<String>,
     #[serde(default = "default_codex_dirs")]
@@ -314,6 +320,7 @@ impl Default for UserPreferences {
             include_kiro: false,
             include_cursor: false,
             cursor_profiles: vec![],
+            cursor_estimate_cost: false,
             gjc_dirs: default_gjc_dirs(),
             codex_dirs: default_codex_dirs(),
             salary_enabled: false,
@@ -340,5 +347,6 @@ mod tests {
 
         assert!(!prefs.include_cursor);
         assert!(prefs.cursor_profiles.is_empty());
+        assert!(!prefs.cursor_estimate_cost);
     }
 }

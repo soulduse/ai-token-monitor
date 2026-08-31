@@ -114,6 +114,8 @@ export interface UserPreferences {
   include_kiro: boolean;
   include_cursor: boolean;
   cursor_profiles: string[];
+  /** Price public Cursor tokens at the opt-in Opus cache-read floor ($0.50/MTok). */
+  cursor_estimate_cost: boolean;
   theme: "github" | "purple" | "ocean" | "sunset";
   color_mode: "system" | "light" | "dark";
   language: "en" | "ko" | "ja" | "zh-CN" | "zh-TW" | "fr" | "es" | "de" | "tr" | "it";

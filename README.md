@@ -7,7 +7,7 @@
 
 ![AI Token Monitor — real-time token & cost tracking for AI coding tools, right from your menu bar](docs/images/hero.png)
 
-**AI Token Monitor** is a lightweight system tray app for macOS and Windows that answers one question, all day long: *how much are my AI coding tools actually costing me?* It reads the local session logs that **Claude Code**, **Codex**, **OpenCode**, **GJC**, **Grok**, and **Kiro** already write, and can optionally merge daily token totals from **Cursor public profiles**. Known models are priced with per-model rates (cache reads included), while Cursor's public totals remain unpriced because the profile does not expose model attribution. The result sits right next to your clock — with charts, plan-limit alerts, an opt-in leaderboard, chat, and webhook notifications one click away.
+**AI Token Monitor** is a lightweight system tray app for macOS and Windows that answers one question, all day long: *how much are my AI coding tools actually costing me?* It reads the local session logs that **Claude Code**, **Codex**, **OpenCode**, **GJC**, **Grok**, and **Kiro** already write, and can optionally merge daily token totals from **Cursor public profiles**. Known models are priced with per-model rates (cache reads included); Cursor's public totals remain unpriced by default, with an opt-in conservative Opus API-value floor when a rough comparison is useful. The result sits right next to your clock — with charts, plan-limit alerts, an opt-in leaderboard, chat, and webhook notifications one click away.
 
 - **Zero setup** — no API keys, no proxies. If you've run Claude Code or Codex once, it just works.
 - **Spend at a glance** — live cost in the menu bar / system tray, full dashboard on click.
@@ -46,7 +46,7 @@
 ![How AI Token Monitor works — reads local session logs, parses & prices locally, shows cost in the tray and dashboard](docs/images/how-it-works.png)
 
 1. **Reads usage sources** — watches the JSONL files your AI CLIs already write and, when explicitly enabled, fetches configured Cursor public profiles (see [Data Sources](#data-sources))
-2. **Parses & prices locally** — a Rust engine deduplicates entries, applies per-model pricing where the model is known, and keeps Cursor's model/cost fields empty instead of guessing
+2. **Parses & prices locally** — a Rust engine deduplicates entries and applies per-model pricing where the model is known; Cursor cost stays empty unless its conservative Opus cache-read floor is explicitly enabled
 3. **Shows it everywhere** — tray cost ticker, dashboard charts, plan-limit alert bar, and optional webhook notifications
 
 Everything above happens on your machine. The app makes **zero network requests** unless you enable Cursor public profiles or opt in to the leaderboard, chat, or webhooks. Cursor requests only read the public profile URLs you configure; shared features send aggregated counts, never code or conversation content.
@@ -166,7 +166,7 @@ Shared data: daily token count, cost, messages/sessions. **No code or conversati
 | **GJC (Gajae Code)** | `~/.gjc/agent/sessions/**/*.jsonl` | Per-message usage (`message.usage`) with pre-computed cost; dedup by API response id. Supports multiple roots. |
 | **Grok** | `~/.grok/logs/unified.jsonl` | Exact per-request tokens from `shell.turn.inference_done`; model/project joined from `~/.grok/sessions`. Grok truncates this rolling log, so days are accumulated into a local snapshot. SuperGrok weekly credits are read from `billing: fetched credits config`. macOS, Linux, and Windows (`%USERPROFILE%\\.grok`). |
 | **Kiro** | `~/.kiro/sessions/cli/*.json` + `data.sqlite3` | **Credits, not tokens** — Kiro meters a per-turn "unit of work" and records no token counts anywhere, so cost comes from credits (× $0.04, the overage rate). Interactive and non-interactive runs write to two separate stores with different key names; both are read. Turns left on Auto never record which model ran. |
-| **Cursor** | `https://cursor.com/@handle` | **Public-profile tokens, opt-in** — exact daily token totals reported by the configured public profiles. Supports multiple profiles and caches complete results for 6 hours. Cursor does not expose model attribution or billing cost here, so the app does not estimate either. |
+| **Cursor** | `https://cursor.com/@handle` | **Public-profile tokens, opt-in** — exact daily token totals reported by the configured public profiles. Supports multiple profiles and caches complete results for 6 hours. Cursor does not expose model attribution or billing cost. Cost is omitted by default; an additional opt-in lower-bound estimate prices every token at the published Opus 4.5–4.8 cache-read rate ($0.50/MTok). It is API-value context, not a Cursor bill. |
 
 **Network requests**: when Cursor public profiles are enabled (reads those public pages), leaderboard/chat is opted in (sends aggregated data to Supabase), a webhook fires, or an AI translation provider is configured. Without these features, the app runs completely offline.
 

@@ -8,6 +8,10 @@ use super::types::{AllStats, DailyUsage};
 
 const CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 const FAILURE_RETRY_BACKOFF: Duration = Duration::from_secs(10 * 60);
+/// Claude Opus 4.5–4.8 cache-hit list price. Public Cursor profiles only expose
+/// total tokens, so treating every token as a cache read gives a transparent,
+/// deliberately conservative API-value floor rather than a billing estimate.
+const OPUS_CACHE_READ_USD_PER_MILLION: f64 = 0.50;
 
 #[derive(Clone)]
 struct CachedProfileRows {
@@ -97,7 +101,7 @@ fn parse_activity_counts(page: &str) -> Result<Vec<ActivityCount>, String> {
     serde_json::from_str(&json).map_err(|e| format!("Failed to parse Cursor activity data: {e}"))
 }
 
-fn build_stats(profile_rows: Vec<Vec<ActivityCount>>) -> AllStats {
+fn build_stats(profile_rows: Vec<Vec<ActivityCount>>, estimate_cost: bool) -> AllStats {
     let mut by_date: BTreeMap<String, u64> = BTreeMap::new();
     for rows in profile_rows {
         for row in rows {
@@ -111,7 +115,11 @@ fn build_stats(profile_rows: Vec<Vec<ActivityCount>>) -> AllStats {
         .map(|(date, count)| DailyUsage {
             date,
             tokens: HashMap::from([("cursor-public-tokens".to_string(), count)]),
-            cost_usd: 0.0,
+            cost_usd: if estimate_cost {
+                count as f64 / 1_000_000.0 * OPUS_CACHE_READ_USD_PER_MILLION
+            } else {
+                0.0
+            },
             messages: 0,
             sessions: 0,
             tool_calls: 0,
@@ -209,11 +217,20 @@ where
 
 pub struct CursorProvider {
     profiles: Vec<String>,
+    estimate_cost: bool,
 }
 
 impl CursorProvider {
     pub fn new(profiles: Vec<String>) -> Self {
-        Self { profiles }
+        Self {
+            profiles,
+            estimate_cost: false,
+        }
+    }
+
+    pub fn with_cost_estimate(mut self, estimate_cost: bool) -> Self {
+        self.estimate_cost = estimate_cost;
+        self
     }
 
     fn normalized_profiles(&self) -> Vec<String> {
@@ -258,7 +275,7 @@ impl CursorProvider {
                     .map_err(|e| format!("response could not be read: {e}"))
             })
         })?;
-        let stats = build_stats(fetched.rows);
+        let stats = build_stats(fetched.rows, self.estimate_cost);
 
         Ok(CursorStats {
             stats,
@@ -319,22 +336,25 @@ mod tests {
 
     #[test]
     fn combines_multiple_profiles_as_unpriced_public_tokens() {
-        let stats = build_stats(vec![
+        let stats = build_stats(
             vec![
-                ActivityCount {
+                vec![
+                    ActivityCount {
+                        date: "2026-01-01".into(),
+                        count: 100,
+                    },
+                    ActivityCount {
+                        date: "2026-01-02".into(),
+                        count: 40,
+                    },
+                ],
+                vec![ActivityCount {
                     date: "2026-01-01".into(),
-                    count: 100,
-                },
-                ActivityCount {
-                    date: "2026-01-02".into(),
-                    count: 40,
-                },
+                    count: 25,
+                }],
             ],
-            vec![ActivityCount {
-                date: "2026-01-01".into(),
-                count: 25,
-            }],
-        ]);
+            false,
+        );
 
         assert_eq!(stats.daily.len(), 2);
         assert_eq!(stats.daily[0].tokens["cursor-public-tokens"], 125);
@@ -342,6 +362,22 @@ mod tests {
         assert_eq!(stats.daily[0].input_tokens, 0);
         assert!(stats.daily[0].hydrated);
         assert_eq!(stats.first_session_date.as_deref(), Some("2026-01-01"));
+        assert!(stats.model_usage.is_empty());
+    }
+
+    #[test]
+    fn optionally_prices_public_tokens_at_the_opus_cache_read_floor() {
+        let stats = build_stats(
+            vec![vec![ActivityCount {
+                date: "2026-01-01".into(),
+                count: 2_000_000,
+            }]],
+            true,
+        );
+
+        assert!((stats.daily[0].cost_usd - 1.0).abs() < f64::EPSILON);
+        assert_eq!(stats.daily[0].input_tokens, 0);
+        assert_eq!(stats.daily[0].cache_read_tokens, 0);
         assert!(stats.model_usage.is_empty());
     }
 

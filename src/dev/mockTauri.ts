@@ -72,6 +72,7 @@ const mockPrefs: UserPreferences = {
   include_kiro: false,
   include_cursor: false,
   cursor_profiles: [],
+  cursor_estimate_cost: false,
   theme: "github",
   color_mode: "dark",
   language: "en",

@@ -435,6 +435,8 @@ function AccountTab({
 
       <CursorProfilesSection
         profiles={prefs.cursor_profiles}
+        estimateCost={prefs.cursor_estimate_cost}
+        onEstimateCostChange={(cursor_estimate_cost) => updatePrefs({ cursor_estimate_cost })}
         onChange={(profiles) => {
           const hasOtherSource = prefs.include_claude
             || prefs.include_codex
@@ -876,9 +878,13 @@ function normalizeCursorProfileInput(value: string): string | null {
 
 function CursorProfilesSection({
   profiles,
+  estimateCost,
+  onEstimateCostChange,
   onChange,
 }: {
   profiles: string[];
+  estimateCost: boolean;
+  onEstimateCostChange: (enabled: boolean) => void;
   onChange: (profiles: string[]) => void;
 }) {
   const t = useI18n();
@@ -1012,6 +1018,32 @@ function CursorProfilesSection({
           {message}
         </div>
       )}
+
+      <label style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 7,
+        marginTop: 9,
+        padding: "7px 8px",
+        borderRadius: 6,
+        background: "var(--heat-0)",
+        cursor: "pointer",
+      }}>
+        <input
+          type="checkbox"
+          checked={estimateCost}
+          onChange={(event) => onEstimateCostChange(event.target.checked)}
+          style={{ margin: "1px 0 0" }}
+        />
+        <span style={{ minWidth: 0 }}>
+          <span style={{ display: "block", fontSize: 10.5, fontWeight: 650, color: "var(--text-secondary)" }}>
+            {t("settings.cursorEstimateCost")}
+          </span>
+          <span style={{ display: "block", marginTop: 2, fontSize: 9, lineHeight: 1.35, color: "var(--text-muted)" }}>
+            {t("settings.cursorEstimateCostNotice")}
+          </span>
+        </span>
+      </label>
     </div>
   );
 }
