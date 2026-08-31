@@ -396,12 +396,12 @@ mod tests {
     #[test]
     fn normalizes_handle_or_public_profile_url() {
         assert_eq!(
-            normalize_profile_handle(" @Parentlyze "),
-            Some("parentlyze".into())
+            normalize_profile_handle(" @Example_User "),
+            Some("example_user".into())
         );
         assert_eq!(
-            normalize_profile_handle("https://cursor.com/@invera/?tab=activity"),
-            Some("invera".into())
+            normalize_profile_handle("https://cursor.com/@sample-handle/?tab=activity"),
+            Some("sample-handle".into())
         );
         assert_eq!(normalize_profile_handle("https://example.com/@nope"), None);
         assert_eq!(normalize_profile_handle("bad handle"), None);
@@ -631,14 +631,20 @@ mod tests {
     #[test]
     fn provider_is_available_only_with_a_valid_profile() {
         assert!(!CursorProvider::new(vec!["bad handle".into()]).is_available());
-        assert!(CursorProvider::new(vec!["https://cursor.com/@raehy19".into()]).is_available());
+        assert!(CursorProvider::new(vec!["https://cursor.com/@valid-handle".into()]).is_available());
     }
 
     #[test]
     #[ignore = "live Cursor public profile smoke test"]
     fn fetches_live_configured_profiles() {
-        let provider =
-            CursorProvider::new(vec!["parentlyze".into(), "invera".into(), "raehy19".into()]);
+        let profiles = std::env::var("CURSOR_PUBLIC_PROFILES")
+            .expect("set CURSOR_PUBLIC_PROFILES to a comma-separated handle list")
+            .split(',')
+            .map(str::trim)
+            .filter(|profile| !profile.is_empty())
+            .map(str::to_string)
+            .collect();
+        let provider = CursorProvider::new(profiles);
         let stats = provider.fetch_stats().expect("live profiles");
         let total: u64 = stats.daily.iter().flat_map(|day| day.tokens.values()).sum();
 
