@@ -206,7 +206,11 @@ impl TokenProvider for CursorProvider {
 
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(15))
-            .user_agent("AI-Token-Monitor/0.20.5 (Cursor public profile estimate)")
+            .user_agent(concat!(
+                "AI-Token-Monitor/",
+                env!("CARGO_PKG_VERSION"),
+                " (Cursor public profile tokens)"
+            ))
             .build()
             .map_err(|e| format!("Failed to create Cursor profile client: {e}"))?;
 
@@ -247,9 +251,10 @@ impl TokenProvider for CursorProvider {
 mod tests {
     use super::{
         build_stats, fetch_profile_rows_with, normalize_profile_handle, parse_activity_counts,
-        ActivityCount, CursorProvider,
+        ActivityCount, CachedStats, CursorProvider, STATS_CACHE,
     };
     use crate::providers::traits::TokenProvider;
+    use std::time::Instant;
 
     #[test]
     fn parses_activity_counts_from_next_stream_payload() {
@@ -326,6 +331,47 @@ mod tests {
         assert_eq!(requested, vec!["good", "broken"]);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0][0].count, 7);
+    }
+
+    #[test]
+    fn reports_empty_or_all_failed_profile_sets() {
+        let empty = fetch_profile_rows_with(&[], |_| panic!("empty input must not fetch"));
+        assert_eq!(empty.unwrap_err(), "No Cursor public profiles configured");
+
+        let profiles = vec!["bad handle".to_string(), "missing".to_string()];
+        let failed = fetch_profile_rows_with(&profiles, |handle| {
+            assert_eq!(handle, "missing");
+            Err("HTTP 404".into())
+        });
+
+        let error = failed.unwrap_err();
+        assert!(error.contains("bad handle: invalid Cursor profile"));
+        assert!(error.contains("@missing: HTTP 404"));
+    }
+
+    #[test]
+    fn reuses_fresh_cached_stats_without_a_network_request() {
+        let provider = CursorProvider::new(vec!["coverage-cache-profile".into()]);
+        let cache_key = provider.cache_key();
+        let cached_stats = build_stats(vec![vec![ActivityCount {
+            date: "2026-01-15".into(),
+            count: 321,
+        }]]);
+        let cache =
+            STATS_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+        cache.lock().expect("cache lock").insert(
+            cache_key.clone(),
+            CachedStats {
+                fetched_at: Instant::now(),
+                stats: cached_stats,
+            },
+        );
+
+        let stats = provider.fetch_stats().expect("fresh cache hit");
+
+        cache.lock().expect("cache lock").remove(&cache_key);
+        assert_eq!(stats.daily.len(), 1);
+        assert_eq!(stats.daily[0].tokens["cursor-public-tokens"], 321);
     }
 
     #[test]

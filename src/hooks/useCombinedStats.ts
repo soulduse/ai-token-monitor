@@ -63,7 +63,13 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
     return null;
   }, [stats, includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeCursor, claude.error, codex.error, opencode.error, kimi.error, glm.error, gjc.error, grok.error, kiro.error, cursor.error]);
 
-  return { stats, loading, error, cursorStats: cursor.stats };
+  return {
+    stats,
+    loading,
+    error,
+    cursorStats: cursor.stats,
+    cursorError: includeCursor ? cursor.error : null,
+  };
 }
 
 function mergeStats(statsList: AllStats[]): AllStats {

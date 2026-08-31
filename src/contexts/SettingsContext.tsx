@@ -27,7 +27,7 @@ const defaultPrefs: UserPreferences = {
   include_grok: false,
   include_kiro: false,
   include_cursor: false,
-  cursor_profiles: ["parentlyze", "invera", "raehy19"],
+  cursor_profiles: [],
   theme: "github",
   color_mode: "system",
   language: "en",

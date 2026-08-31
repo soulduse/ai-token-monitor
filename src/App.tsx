@@ -65,7 +65,7 @@ function AppContent() {
   // survives React crashes; modal handlers still preempt it via capture-phase
   // preventDefault.
   const { prefs } = useSettings();
-  const { stats, error, loading, cursorStats } = useCombinedStats({
+  const { stats, error, loading, cursorStats, cursorError } = useCombinedStats({
     includeClaude: prefs.include_claude,
     includeCodex: prefs.include_codex,
     includeOpencode: prefs.include_opencode,
@@ -235,6 +235,8 @@ function AppContent() {
                 tokens: formatTokens(cursorRollup.total, prefs.number_format),
                 date: cursorRollup.lastDate,
               })
+            : cursorError
+              ? t("cursor.publicError")
             : t("cursor.publicNotice")}
         </div>
       )}

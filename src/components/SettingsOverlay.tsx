@@ -974,7 +974,6 @@ function CursorProfilesSection({
             border: "1px solid var(--heat-1)",
             background: "var(--heat-0)",
             color: "var(--text-primary)",
-            outline: "none",
           }}
         />
         <button
