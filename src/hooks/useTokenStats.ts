@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { AllStats } from "../lib/types";
 
-export type StatsProvider = "claude" | "codex" | "opencode" | "kimi" | "glm" | "gjc" | "grok" | "kiro";
+export type StatsProvider = "claude" | "codex" | "opencode" | "kimi" | "glm" | "gjc" | "grok" | "kiro" | "cursor";
 
 const STATS_COMMANDS: Record<StatsProvider, string> = {
   claude: "get_all_stats",
@@ -14,9 +14,10 @@ const STATS_COMMANDS: Record<StatsProvider, string> = {
   gjc: "get_gjc_stats",
   grok: "get_grok_stats",
   kiro: "get_kiro_stats",
+  cursor: "get_cursor_stats",
 };
 
-export function useTokenStats(provider: StatsProvider = "claude") {
+export function useTokenStats(provider: StatsProvider = "claude", enabled = true) {
   const [stats, setStats] = useState<AllStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -24,7 +25,9 @@ export function useTokenStats(provider: StatsProvider = "claude") {
   const requestIdRef = useRef(0);
 
   const fetchStats = useCallback(async () => {
+    if (!enabled) return;
     const requestId = ++requestIdRef.current;
+    if (!hasDataRef.current) setLoading(true);
     try {
       const command = STATS_COMMANDS[provider] ?? STATS_COMMANDS.claude;
       const data = await invoke<AllStats>(command);
@@ -42,9 +45,18 @@ export function useTokenStats(provider: StatsProvider = "claude") {
       if (requestId !== requestIdRef.current) return;
       setLoading(false);
     }
-  }, [provider]);
+  }, [provider, enabled]);
 
   useEffect(() => {
+    if (!enabled) {
+      requestIdRef.current += 1;
+      hasDataRef.current = false;
+      setStats(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
     fetchStats();
 
     // Listen for file watcher events
@@ -59,7 +71,7 @@ export function useTokenStats(provider: StatsProvider = "claude") {
       unlisten.then((fn) => fn?.());
       clearInterval(interval);
     };
-  }, [fetchStats]);
+  }, [fetchStats, enabled]);
 
   return { stats, error, loading, refetch: fetchStats };
 }

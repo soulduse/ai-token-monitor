@@ -142,6 +142,10 @@ pub struct UserPreferences {
     pub include_grok: bool,
     #[serde(default)]
     pub include_kiro: bool,
+    #[serde(default)]
+    pub include_cursor: bool,
+    #[serde(default = "default_cursor_profiles")]
+    pub cursor_profiles: Vec<String>,
     #[serde(default = "default_gjc_dirs")]
     pub gjc_dirs: Vec<String>,
     #[serde(default = "default_codex_dirs")]
@@ -223,6 +227,14 @@ fn default_codex_dirs() -> Vec<String> {
 
 fn default_gjc_dirs() -> Vec<String> {
     vec!["~/.gjc".to_string()]
+}
+
+fn default_cursor_profiles() -> Vec<String> {
+    vec![
+        "parentlyze".to_string(),
+        "invera".to_string(),
+        "raehy19".to_string(),
+    ]
 }
 
 fn default_true() -> bool {
@@ -308,6 +320,8 @@ impl Default for UserPreferences {
             include_gjc: false,
             include_grok: false,
             include_kiro: false,
+            include_cursor: false,
+            cursor_profiles: default_cursor_profiles(),
             gjc_dirs: default_gjc_dirs(),
             codex_dirs: default_codex_dirs(),
             salary_enabled: false,
@@ -321,5 +335,18 @@ impl Default for UserPreferences {
             autostart_enabled: false,
             quick_action_items: vec![],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::UserPreferences;
+
+    #[test]
+    fn cursor_public_profiles_are_present_but_opt_in_by_default() {
+        let prefs = UserPreferences::default();
+
+        assert!(!prefs.include_cursor);
+        assert_eq!(prefs.cursor_profiles, vec!["parentlyze", "invera", "raehy19"]);
     }
 }

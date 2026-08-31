@@ -110,6 +110,8 @@ export interface UserPreferences {
   include_gjc: boolean;
   include_grok: boolean;
   include_kiro: boolean;
+  include_cursor: boolean;
+  cursor_profiles: string[];
   theme: "github" | "purple" | "ocean" | "sunset";
   color_mode: "system" | "light" | "dark";
   language: "en" | "ko" | "ja" | "zh-CN" | "zh-TW" | "fr" | "es" | "de" | "tr" | "it";

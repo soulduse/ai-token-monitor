@@ -26,6 +26,8 @@ const defaultPrefs: UserPreferences = {
   include_gjc: false,
   include_grok: false,
   include_kiro: false,
+  include_cursor: false,
+  cursor_profiles: ["parentlyze", "invera", "raehy19"],
   theme: "github",
   color_mode: "system",
   language: "en",
@@ -70,6 +72,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         skipNextPersist.current = true;
         prevConfigDirsRef.current = JSON.stringify(merged.config_dirs);
         prevCodexDirsRef.current = JSON.stringify(merged.codex_dirs);
+        prevCursorProfilesRef.current = JSON.stringify(merged.cursor_profiles);
       } finally {
         setReady(true);
       }
@@ -131,11 +134,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   // Persist to disk when prefs change
   const prevConfigDirsRef = useRef<string>(JSON.stringify(defaultPrefs.config_dirs));
   const prevCodexDirsRef = useRef<string>(JSON.stringify(defaultPrefs.codex_dirs));
+  const prevCursorProfilesRef = useRef<string>(JSON.stringify(defaultPrefs.cursor_profiles));
   useEffect(() => {
     if (skipNextPersist.current) {
       skipNextPersist.current = false;
       prevConfigDirsRef.current = JSON.stringify(prefs.config_dirs);
       prevCodexDirsRef.current = JSON.stringify(prefs.codex_dirs);
+      prevCursorProfilesRef.current = JSON.stringify(prefs.cursor_profiles);
       return;
     }
     if (!ready) return;
@@ -144,9 +149,15 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     // If config_dirs or codex_dirs changed, trigger stats refresh
     const newDirsJson = JSON.stringify(prefs.config_dirs);
     const newCodexDirsJson = JSON.stringify(prefs.codex_dirs);
-    if (newDirsJson !== prevConfigDirsRef.current || newCodexDirsJson !== prevCodexDirsRef.current) {
+    const newCursorProfilesJson = JSON.stringify(prefs.cursor_profiles);
+    if (
+      newDirsJson !== prevConfigDirsRef.current
+      || newCodexDirsJson !== prevCodexDirsRef.current
+      || newCursorProfilesJson !== prevCursorProfilesRef.current
+    ) {
       prevConfigDirsRef.current = newDirsJson;
       prevCodexDirsRef.current = newCodexDirsJson;
+      prevCursorProfilesRef.current = newCursorProfilesJson;
       emit("stats-updated").catch(() => {});
     }
   }, [prefs, ready]);
@@ -162,6 +173,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       skipNextPersist.current = true;
       prevConfigDirsRef.current = JSON.stringify(p.config_dirs);
       prevCodexDirsRef.current = JSON.stringify(p.codex_dirs);
+      prevCursorProfilesRef.current = JSON.stringify(p.cursor_profiles);
       setPrefs(p);
     } catch {
       // ignore

@@ -4,7 +4,7 @@ import { useToday } from "./hooks/useToday";
 import { useDateNav } from "./hooks/useDateNav";
 import { useUnreadChat } from "./hooks/useUnreadChat";
 import { useChatNotification } from "./hooks/useChatNotification";
-import { getTotalTokens } from "./lib/format";
+import { formatTokens, getTotalTokens } from "./lib/format";
 import { SettingsProvider, useSettings } from "./contexts/SettingsContext";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { MiniProfileProvider } from "./contexts/MiniProfileContext";
@@ -65,7 +65,7 @@ function AppContent() {
   // survives React crashes; modal handlers still preempt it via capture-phase
   // preventDefault.
   const { prefs } = useSettings();
-  const { stats, error, loading } = useCombinedStats({
+  const { stats, error, loading, cursorStats } = useCombinedStats({
     includeClaude: prefs.include_claude,
     includeCodex: prefs.include_codex,
     includeOpencode: prefs.include_opencode,
@@ -74,6 +74,7 @@ function AppContent() {
     includeGjc: prefs.include_gjc,
     includeGrok: prefs.include_grok,
     includeKiro: prefs.include_kiro,
+    includeCursor: prefs.include_cursor,
   });
   const t = useI18n();
   const { user, profile } = useAuth();
@@ -132,6 +133,13 @@ function AppContent() {
   const dateNav = useDateNav(todayStr, minDataDate);
   const selectedDate = dateNav.date;
 
+  const cursorRollup = useMemo(() => {
+    if (!cursorStats || cursorStats.daily.length === 0) return null;
+    return {
+      total: cursorStats.daily.reduce((sum, day) => sum + getTotalTokens(day.tokens), 0),
+      lastDate: cursorStats.daily[cursorStats.daily.length - 1].date,
+    };
+  }, [cursorStats]);
   const { today, weekAvg } = useMemo(() => {
     if (!stats) return { today: null, weekAvg: 0 };
 
@@ -210,6 +218,26 @@ function AppContent() {
     <PopoverShell>
       <Header stats={stats} updater={updater} />
       <SourceSelector />
+      {prefs.include_cursor && (
+        <div style={{
+          marginTop: -2,
+          padding: "6px 8px",
+          borderRadius: 7,
+          border: "1px solid rgba(245, 158, 11, 0.22)",
+          background: "rgba(245, 158, 11, 0.08)",
+          color: "var(--text-secondary)",
+          fontSize: 9.5,
+          lineHeight: 1.4,
+        }}>
+          {cursorRollup
+            ? t("cursor.publicSummary", {
+                profiles: prefs.cursor_profiles.length,
+                tokens: formatTokens(cursorRollup.total, prefs.number_format),
+                date: cursorRollup.lastDate,
+              })
+            : t("cursor.publicNotice")}
+        </div>
+      )}
       <TabBar activeTab={activeTab} onChange={setActiveTab} chatBadge={unreadCount} />
 
       {/* Keep mounted tabs alive to avoid remount/recalculation on switch */}

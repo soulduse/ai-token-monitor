@@ -1085,6 +1085,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_all_stats,
             commands::get_codex_stats,
+            commands::get_cursor_stats,
             commands::is_codex_available,
             commands::get_opencode_stats,
             commands::is_opencode_available,
