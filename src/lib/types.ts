@@ -78,6 +78,8 @@ export interface AllStats {
   first_session_date: string | null;
   analytics?: AnalyticsData;
   rate_limits?: CodexRateLimits | null;
+  /** Provider-specific non-fatal fetch warnings (currently Cursor partial results). */
+  warnings?: string[];
 }
 
 export type LeaderboardProvider = "claude" | "codex" | "opencode" | "kimi" | "glm" | "gjc" | "grok" | "kiro";

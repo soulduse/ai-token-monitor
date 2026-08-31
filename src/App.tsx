@@ -75,6 +75,7 @@ function AppContent() {
     includeGrok: prefs.include_grok,
     includeKiro: prefs.include_kiro,
     includeCursor: prefs.include_cursor,
+    cursorProfiles: prefs.cursor_profiles,
   });
   const t = useI18n();
   const { user, profile } = useAuth();
@@ -229,15 +230,17 @@ function AppContent() {
           fontSize: 9.5,
           lineHeight: 1.4,
         }}>
-          {cursorRollup
-            ? t("cursor.publicSummary", {
+          {cursorStats?.warnings?.length
+            ? t("cursor.publicPartial")
+            : cursorRollup
+              ? t("cursor.publicSummary", {
                 profiles: prefs.cursor_profiles.length,
                 tokens: formatTokens(cursorRollup.total, prefs.number_format),
                 date: cursorRollup.lastDate,
               })
-            : cursorError
-              ? t("cursor.publicError")
-            : t("cursor.publicNotice")}
+              : cursorError
+                ? t("cursor.publicError")
+                : t("cursor.publicNotice")}
         </div>
       )}
       <TabBar activeTab={activeTab} onChange={setActiveTab} chatBadge={unreadCount} />

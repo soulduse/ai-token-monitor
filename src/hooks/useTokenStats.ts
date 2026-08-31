@@ -17,7 +17,12 @@ const STATS_COMMANDS: Record<StatsProvider, string> = {
   cursor: "get_cursor_stats",
 };
 
-export function useTokenStats(provider: StatsProvider = "claude", enabled = true) {
+export function useTokenStats(
+  provider: StatsProvider = "claude",
+  enabled = true,
+  scopeKey: string = provider,
+  invokeArgs?: Record<string, unknown>,
+) {
   const [stats, setStats] = useState<AllStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -30,7 +35,7 @@ export function useTokenStats(provider: StatsProvider = "claude", enabled = true
     if (!hasDataRef.current) setLoading(true);
     try {
       const command = STATS_COMMANDS[provider] ?? STATS_COMMANDS.claude;
-      const data = await invoke<AllStats>(command);
+      const data = await invoke<AllStats>(command, invokeArgs);
       if (requestId !== requestIdRef.current) return;
       setStats(data);
       setError(null);
@@ -45,7 +50,18 @@ export function useTokenStats(provider: StatsProvider = "claude", enabled = true
       if (requestId !== requestIdRef.current) return;
       setLoading(false);
     }
-  }, [provider, enabled]);
+  }, [provider, enabled, scopeKey, invokeArgs]);
+
+  const previousScopeRef = useRef(scopeKey);
+  useEffect(() => {
+    if (previousScopeRef.current === scopeKey) return;
+    previousScopeRef.current = scopeKey;
+    requestIdRef.current += 1;
+    hasDataRef.current = false;
+    setStats(null);
+    setError(null);
+    setLoading(enabled);
+  }, [scopeKey, enabled]);
 
   useEffect(() => {
     if (!enabled) {

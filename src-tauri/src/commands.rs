@@ -84,14 +84,15 @@ pub fn is_codex_available() -> bool {
 }
 
 #[tauri::command]
-pub async fn get_cursor_stats() -> Result<AllStats, String> {
-    tauri::async_runtime::spawn_blocking(|| {
-        let prefs = get_preferences();
-        let provider = CursorProvider::new(prefs.cursor_profiles);
+pub async fn get_cursor_stats(
+    profiles: Vec<String>,
+) -> Result<crate::providers::cursor::CursorStats, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let provider = CursorProvider::new(profiles);
         if !provider.is_available() {
             return Err("Cursor public profiles not configured".to_string());
         }
-        provider.fetch_stats()
+        provider.fetch_stats_with_warnings()
     })
     .await
     .map_err(|e| e.to_string())?

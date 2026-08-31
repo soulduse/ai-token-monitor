@@ -12,9 +12,10 @@ interface UseCombinedStatsProps {
   includeGrok: boolean;
   includeKiro: boolean;
   includeCursor: boolean;
+  cursorProfiles: string[];
 }
 
-export function useCombinedStats({ includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeCursor }: UseCombinedStatsProps) {
+export function useCombinedStats({ includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeCursor, cursorProfiles }: UseCombinedStatsProps) {
   const claude = useTokenStats("claude");
   const codex = useTokenStats("codex");
   const opencode = useTokenStats("opencode");
@@ -23,7 +24,12 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
   const gjc = useTokenStats("gjc");
   const grok = useTokenStats("grok");
   const kiro = useTokenStats("kiro");
-  const cursor = useTokenStats("cursor", includeCursor);
+  const cursorScopeKey = useMemo(
+    () => [...cursorProfiles].map((profile) => profile.trim().toLowerCase()).sort().join(","),
+    [cursorProfiles],
+  );
+  const cursorArgs = useMemo(() => ({ profiles: [...cursorProfiles] }), [cursorScopeKey]);
+  const cursor = useTokenStats("cursor", includeCursor, cursorScopeKey, cursorArgs);
 
   const stats = useMemo<AllStats | null>(() => {
     const sources: (AllStats | null)[] = [];

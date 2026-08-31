@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -12,6 +12,20 @@ const CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 struct CachedStats {
     fetched_at: Instant,
     stats: AllStats,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CursorStats {
+    #[serde(flatten)]
+    pub stats: AllStats,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug)]
+struct ProfileRows {
+    rows: Vec<Vec<ActivityCount>>,
+    failures: Vec<String>,
 }
 
 static STATS_CACHE: OnceLock<Mutex<HashMap<String, CachedStats>>> = OnceLock::new();
@@ -120,10 +134,7 @@ fn build_stats(profile_rows: Vec<Vec<ActivityCount>>) -> AllStats {
     }
 }
 
-fn fetch_profile_rows_with<F>(
-    profiles: &[String],
-    mut fetch_page: F,
-) -> Result<Vec<Vec<ActivityCount>>, String>
+fn fetch_profile_rows_with<F>(profiles: &[String], mut fetch_page: F) -> Result<ProfileRows, String>
 where
     F: FnMut(&str) -> Result<String, String>,
 {
@@ -154,7 +165,7 @@ where
         };
         Err(detail)
     } else {
-        Ok(rows)
+        Ok(ProfileRows { rows, failures })
     }
 }
 
@@ -181,14 +192,8 @@ impl CursorProvider {
     fn cache_key(&self) -> String {
         self.normalized_profiles().join(",")
     }
-}
 
-impl TokenProvider for CursorProvider {
-    fn name(&self) -> &str {
-        "cursor"
-    }
-
-    fn fetch_stats(&self) -> Result<AllStats, String> {
+    pub fn fetch_stats_with_warnings(&self) -> Result<CursorStats, String> {
         let profiles = self.normalized_profiles();
         if profiles.is_empty() {
             return Err("No valid Cursor public profiles configured".to_string());
@@ -199,7 +204,10 @@ impl TokenProvider for CursorProvider {
         if let Ok(cache) = cache.lock() {
             if let Some(cached) = cache.get(&cache_key) {
                 if cached.fetched_at.elapsed() < CACHE_TTL {
-                    return Ok(cached.stats.clone());
+                    return Ok(CursorStats {
+                        stats: cached.stats.clone(),
+                        warnings: Vec::new(),
+                    });
                 }
             }
         }
@@ -214,7 +222,7 @@ impl TokenProvider for CursorProvider {
             .build()
             .map_err(|e| format!("Failed to create Cursor profile client: {e}"))?;
 
-        let rows = fetch_profile_rows_with(&profiles, |handle| {
+        let fetched = fetch_profile_rows_with(&profiles, |handle| {
             let url = format!("https://cursor.com/@{handle}");
             let response = client
                 .get(&url)
@@ -227,19 +235,37 @@ impl TokenProvider for CursorProvider {
                 .text()
                 .map_err(|e| format!("response could not be read: {e}"))
         })?;
-        let stats = build_stats(rows);
+        let stats = build_stats(fetched.rows);
 
-        if let Ok(mut cache) = cache.lock() {
-            cache.insert(
-                cache_key,
-                CachedStats {
-                    fetched_at: Instant::now(),
-                    stats: stats.clone(),
-                },
-            );
+        // A partial aggregate must not become authoritative for six hours.
+        // Return the successful rows with a warning, but leave the cache empty
+        // so the normal frontend refresh can retry the failed profiles.
+        if fetched.failures.is_empty() {
+            if let Ok(mut cache) = cache.lock() {
+                cache.insert(
+                    cache_key,
+                    CachedStats {
+                        fetched_at: Instant::now(),
+                        stats: stats.clone(),
+                    },
+                );
+            }
         }
 
-        Ok(stats)
+        Ok(CursorStats {
+            stats,
+            warnings: fetched.failures,
+        })
+    }
+}
+
+impl TokenProvider for CursorProvider {
+    fn name(&self) -> &str {
+        "cursor"
+    }
+
+    fn fetch_stats(&self) -> Result<AllStats, String> {
+        self.fetch_stats_with_warnings().map(|result| result.stats)
     }
 
     fn is_available(&self) -> bool {
@@ -329,8 +355,9 @@ mod tests {
         .expect("one valid profile should be enough");
 
         assert_eq!(requested, vec!["good", "broken"]);
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0][0].count, 7);
+        assert_eq!(rows.rows.len(), 1);
+        assert_eq!(rows.rows[0][0].count, 7);
+        assert_eq!(rows.failures, vec!["@broken: not found"]);
     }
 
     #[test]
