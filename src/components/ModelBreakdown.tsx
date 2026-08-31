@@ -1,6 +1,6 @@
 import type { ModelUsage } from "../lib/types";
 import { formatTokens, formatCost } from "../lib/format";
-import { shortenModelName } from "../lib/statsHelpers";
+import { isUnclassifiedUsage, shortenModelName } from "../lib/statsHelpers";
 import { useSettings } from "../contexts/SettingsContext";
 import { useI18n } from "../i18n/I18nContext";
 
@@ -44,9 +44,10 @@ export function ModelBreakdown({ modelUsage }: Props) {
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {models.map(([model, usage]) => {
           const total = usage.input_tokens + usage.output_tokens + usage.cache_read;
-          const inputPct = (usage.input_tokens / total) * 100;
-          const outputPct = (usage.output_tokens / total) * 100;
-          const cachePct = (usage.cache_read / total) * 100;
+          const unclassified = isUnclassifiedUsage(model);
+          const inputPct = unclassified ? 0 : (usage.input_tokens / total) * 100;
+          const outputPct = unclassified ? 0 : (usage.output_tokens / total) * 100;
+          const cachePct = unclassified ? 0 : (usage.cache_read / total) * 100;
           const barWidth = (total / maxTotal) * 100;
 
           return (
@@ -91,6 +92,13 @@ export function ModelBreakdown({ modelUsage }: Props) {
                     background: "var(--accent-mint)",
                     borderRadius: "0 4px 4px 0",
                   }} />
+                  {unclassified && (
+                    <div style={{
+                      width: "100%",
+                      background: "var(--accent-orange)",
+                      borderRadius: 4,
+                    }} />
+                  )}
                 </div>
               </div>
             </div>
@@ -107,6 +115,9 @@ export function ModelBreakdown({ modelUsage }: Props) {
         <LegendItem color="var(--accent-purple)" label={t("model.input")} />
         <LegendItem color="var(--accent-pink)" label={t("model.output")} />
         <LegendItem color="var(--accent-mint)" label={t("model.cache")} />
+        {models.some(([model]) => isUnclassifiedUsage(model)) && (
+          <LegendItem color="var(--accent-orange)" label={t("model.publicTotal")} />
+        )}
       </div>
     </div>
   );

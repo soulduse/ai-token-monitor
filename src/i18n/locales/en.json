@@ -89,6 +89,7 @@
   "model.input": "Input",
   "model.output": "Output",
   "model.cache": "Cache",
+  "model.publicTotal": "Public total",
   "cache.title": "Cache Efficiency",
   "cache.cached": "cached",
   "cache.read": "Cache Read",

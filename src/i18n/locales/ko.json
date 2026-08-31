@@ -89,6 +89,7 @@
   "model.input": "입력",
   "model.output": "출력",
   "model.cache": "캐시",
+  "model.publicTotal": "공개 합계",
   "cache.title": "캐시 효율성",
   "cache.cached": "캐시됨",
   "cache.read": "캐시 읽기",

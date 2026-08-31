@@ -30,34 +30,43 @@ export function useTokenStats(
   const hasDataRef = useRef(false);
   const requestIdRef = useRef(0);
   const inFlightRef = useRef<Promise<void> | null>(null);
+  const refreshQueuedRef = useRef(false);
 
-  const fetchStats = useCallback((): Promise<void> => {
+  const fetchStats = useCallback((queueIfInFlight = true): Promise<void> => {
     if (!enabled) return Promise.resolve();
     // File events and polling can land while a provider is still parsing.
     // Reuse that request instead of letting a fast stale/error response make
     // the earlier successful parse look obsolete.
-    if (inFlightRef.current) return inFlightRef.current;
+    if (inFlightRef.current) {
+      if (queueIfInFlight) refreshQueuedRef.current = true;
+      return inFlightRef.current;
+    }
     const requestId = requestIdRef.current;
     if (!hasDataRef.current) setLoading(true);
     const request = (async () => {
-      try {
-        const command = STATS_COMMANDS[provider] ?? STATS_COMMANDS.claude;
-        const data = await invoke<AllStats>(command, invokeArgs);
-        if (requestId !== requestIdRef.current) return;
-        setStats(data);
-        setError(null);
-        setRefreshError(null);
-        hasDataRef.current = true;
-      } catch (e) {
-        if (requestId !== requestIdRef.current) return;
-        setRefreshError(String(e));
-        // Only show error if we never had valid data — keeps last known data on transient failures
-        if (!hasDataRef.current) {
-          setError(String(e));
+      do {
+        refreshQueuedRef.current = false;
+        try {
+          const command = STATS_COMMANDS[provider] ?? STATS_COMMANDS.claude;
+          const data = await invoke<AllStats>(command, invokeArgs);
+          if (requestId !== requestIdRef.current) return;
+          setStats(data);
+          setError(null);
+          setRefreshError(null);
+          hasDataRef.current = true;
+        } catch (e) {
+          if (requestId !== requestIdRef.current) return;
+          setRefreshError(String(e));
+          // Only show error if we never had valid data — keeps last known data on transient failures
+          if (!hasDataRef.current) {
+            setError(String(e));
+          }
         }
-      } finally {
-        if (requestId === requestIdRef.current) setLoading(false);
-      }
+        // Coalesce any number of events that arrived during the request into
+        // one follow-up fetch so changed settings/history cannot wait for the
+        // next polling interval.
+      } while (requestId === requestIdRef.current && refreshQueuedRef.current);
+      if (requestId === requestIdRef.current) setLoading(false);
     })();
     const tracked = request.finally(() => {
       if (inFlightRef.current === tracked) inFlightRef.current = null;
@@ -72,6 +81,7 @@ export function useTokenStats(
     previousScopeRef.current = scopeKey;
     requestIdRef.current += 1;
     inFlightRef.current = null;
+    refreshQueuedRef.current = false;
     hasDataRef.current = false;
     setStats(null);
     setError(null);
@@ -83,6 +93,7 @@ export function useTokenStats(
     if (!enabled) {
       requestIdRef.current += 1;
       inFlightRef.current = null;
+      refreshQueuedRef.current = false;
       hasDataRef.current = false;
       setStats(null);
       setError(null);
@@ -91,7 +102,10 @@ export function useTokenStats(
       return;
     }
 
-    fetchStats();
+    // React Strict Mode intentionally re-runs effect setup in development.
+    // Reuse the first startup request without treating that setup pass as a
+    // real data-change event that needs a follow-up fetch.
+    fetchStats(false);
 
     // Listen for file watcher events
     const unlisten = listen("stats-updated", () => {

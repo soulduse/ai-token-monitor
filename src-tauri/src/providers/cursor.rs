@@ -143,8 +143,8 @@ fn build_stats(profile_rows: Vec<Vec<ActivityCount>>, estimate_cost: bool) -> Al
     // Model attribution is unavailable. Keep one clearly named source bucket
     // so receipts/exports can preserve the aggregate token count and optional
     // cost. `cache_read` denotes this synthetic estimate's pricing bucket, not
-    // measured cache behavior; daily cache fields stay zero so cache-efficiency
-    // statistics are not distorted.
+    // measured cache behavior; daily cache fields stay zero and frontend cache
+    // metrics explicitly exclude this named source bucket.
     let model_usage = if total_tokens > 0 {
         HashMap::from([(
             CURSOR_PUBLIC_USAGE_KEY.to_string(),

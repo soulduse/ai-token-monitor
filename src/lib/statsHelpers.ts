@@ -3,6 +3,10 @@ import { getTotalTokens, toLocalDateStr } from "./format";
 
 export type Period = "today" | "week" | "month" | "year" | "all";
 
+export function isUnclassifiedUsage(name: string): boolean {
+  return name === "cursor-public-tokens";
+}
+
 export function filterByPeriod(daily: DailyUsage[], period: Period, year?: number): DailyUsage[] {
   const now = new Date();
   const todayStr = toLocalDateStr(now);
@@ -62,7 +66,8 @@ export function getMostUsedModel(modelUsage: Record<string, ModelUsage>): { name
 export function computeCacheHitRate(modelUsage: Record<string, ModelUsage>): number {
   let totalInput = 0;
   let totalCacheRead = 0;
-  for (const u of Object.values(modelUsage)) {
+  for (const [name, u] of Object.entries(modelUsage)) {
+    if (isUnclassifiedUsage(name)) continue;
     totalInput += u.input_tokens;
     totalCacheRead += u.cache_read;
   }

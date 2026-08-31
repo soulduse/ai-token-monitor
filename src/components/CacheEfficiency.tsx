@@ -1,4 +1,5 @@
 import type { AllStats } from "../lib/types";
+import { isUnclassifiedUsage } from "../lib/statsHelpers";
 import { InfoTooltip } from "./InfoTooltip";
 import { useI18n } from "../i18n/I18nContext";
 
@@ -12,7 +13,8 @@ export function CacheEfficiency({ stats }: Props) {
   let totalCacheRead = 0;
   let totalCacheWrite = 0;
 
-  for (const usage of Object.values(stats.model_usage)) {
+  for (const [name, usage] of Object.entries(stats.model_usage)) {
+    if (isUnclassifiedUsage(name)) continue;
     totalInput += usage.input_tokens;
     totalCacheRead += usage.cache_read;
     totalCacheWrite += usage.cache_write;
