@@ -7,11 +7,18 @@ use super::traits::TokenProvider;
 use super::types::{AllStats, DailyUsage};
 
 const CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
+const FAILURE_RETRY_BACKOFF: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Clone)]
 struct CachedStats {
     fetched_at: Instant,
     stats: AllStats,
+}
+
+#[derive(Clone)]
+struct CachedProfilePage {
+    fetched_at: Instant,
+    result: Result<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -29,6 +36,7 @@ struct ProfileRows {
 }
 
 static STATS_CACHE: OnceLock<Mutex<HashMap<String, CachedStats>>> = OnceLock::new();
+static PROFILE_PAGE_CACHE: OnceLock<Mutex<HashMap<String, CachedProfilePage>>> = OnceLock::new();
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 struct ActivityCount {
@@ -169,6 +177,37 @@ where
     }
 }
 
+fn fetch_profile_page_with_cache<F>(handle: &str, fetch_page: F) -> Result<String, String>
+where
+    F: FnOnce() -> Result<String, String>,
+{
+    let cache = PROFILE_PAGE_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(cache) = cache.lock() {
+        if let Some(cached) = cache.get(handle) {
+            let ttl = if cached.result.is_ok() {
+                CACHE_TTL
+            } else {
+                FAILURE_RETRY_BACKOFF
+            };
+            if cached.fetched_at.elapsed() < ttl {
+                return cached.result.clone();
+            }
+        }
+    }
+
+    let result = fetch_page();
+    if let Ok(mut cache) = cache.lock() {
+        cache.insert(
+            handle.to_string(),
+            CachedProfilePage {
+                fetched_at: Instant::now(),
+                result: result.clone(),
+            },
+        );
+    }
+    result
+}
+
 pub struct CursorProvider {
     profiles: Vec<String>,
 }
@@ -223,23 +262,25 @@ impl CursorProvider {
             .map_err(|e| format!("Failed to create Cursor profile client: {e}"))?;
 
         let fetched = fetch_profile_rows_with(&profiles, |handle| {
-            let url = format!("https://cursor.com/@{handle}");
-            let response = client
-                .get(&url)
-                .send()
-                .map_err(|e| format!("request failed: {e}"))?;
-            if !response.status().is_success() {
-                return Err(format!("HTTP {}", response.status()));
-            }
-            response
-                .text()
-                .map_err(|e| format!("response could not be read: {e}"))
+            fetch_profile_page_with_cache(handle, || {
+                let url = format!("https://cursor.com/@{handle}");
+                let response = client
+                    .get(&url)
+                    .send()
+                    .map_err(|e| format!("request failed: {e}"))?;
+                if !response.status().is_success() {
+                    return Err(format!("HTTP {}", response.status()));
+                }
+                response
+                    .text()
+                    .map_err(|e| format!("response could not be read: {e}"))
+            })
         })?;
         let stats = build_stats(fetched.rows);
 
         // A partial aggregate must not become authoritative for six hours.
-        // Return the successful rows with a warning, but leave the cache empty
-        // so the normal frontend refresh can retry the failed profiles.
+        // Successful profile pages stay cached while failures use a shorter
+        // retry backoff, so polling retries only the missing profiles.
         if fetched.failures.is_empty() {
             if let Ok(mut cache) = cache.lock() {
                 cache.insert(
@@ -276,8 +317,9 @@ impl TokenProvider for CursorProvider {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_stats, fetch_profile_rows_with, normalize_profile_handle, parse_activity_counts,
-        ActivityCount, CachedStats, CursorProvider, STATS_CACHE,
+        build_stats, fetch_profile_page_with_cache, fetch_profile_rows_with,
+        normalize_profile_handle, parse_activity_counts, ActivityCount, CachedStats,
+        CursorProvider, PROFILE_PAGE_CACHE, STATS_CACHE,
     };
     use crate::providers::traits::TokenProvider;
     use std::time::Instant;
@@ -399,6 +441,29 @@ mod tests {
         cache.lock().expect("cache lock").remove(&cache_key);
         assert_eq!(stats.daily.len(), 1);
         assert_eq!(stats.daily[0].tokens["cursor-public-tokens"], 321);
+    }
+
+    #[test]
+    fn backs_off_repeated_failed_profile_requests() {
+        let handle = "coverage-failed-profile";
+        let cache = PROFILE_PAGE_CACHE
+            .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+        cache.lock().expect("cache lock").remove(handle);
+        let mut attempts = 0;
+
+        let first = fetch_profile_page_with_cache(handle, || {
+            attempts += 1;
+            Err("HTTP 404".to_string())
+        });
+        let second = fetch_profile_page_with_cache(handle, || {
+            attempts += 1;
+            Ok("unexpected retry".to_string())
+        });
+
+        cache.lock().expect("cache lock").remove(handle);
+        assert_eq!(first.unwrap_err(), "HTTP 404");
+        assert_eq!(second.unwrap_err(), "HTTP 404");
+        assert_eq!(attempts, 1);
     }
 
     #[test]

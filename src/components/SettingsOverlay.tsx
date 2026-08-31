@@ -435,10 +435,23 @@ function AccountTab({
 
       <CursorProfilesSection
         profiles={prefs.cursor_profiles}
-        onChange={(profiles) => updatePrefs({
-          cursor_profiles: profiles,
-          ...(profiles.length === 0 ? { include_cursor: false } : {}),
-        })}
+        onChange={(profiles) => {
+          const hasOtherSource = prefs.include_claude
+            || prefs.include_codex
+            || prefs.include_opencode
+            || prefs.include_kimi
+            || prefs.include_glm
+            || prefs.include_gjc
+            || prefs.include_grok
+            || prefs.include_kiro;
+          updatePrefs({
+            cursor_profiles: profiles,
+            ...(profiles.length === 0 ? {
+              include_cursor: false,
+              ...(!hasOtherSource ? { include_claude: true } : {}),
+            } : {}),
+          });
+        }}
       />
 
       {leaderboardAvailable && (

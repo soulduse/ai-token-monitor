@@ -74,7 +74,7 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
     loading,
     error,
     cursorStats: cursor.stats,
-    cursorError: includeCursor ? cursor.error : null,
+    cursorError: includeCursor ? cursor.refreshError : null,
   };
 }
 

@@ -232,14 +232,14 @@ function AppContent() {
         }}>
           {cursorStats?.warnings?.length
             ? t("cursor.publicPartial")
-            : cursorRollup
-              ? t("cursor.publicSummary", {
-                profiles: prefs.cursor_profiles.length,
-                tokens: formatTokens(cursorRollup.total, prefs.number_format),
-                date: cursorRollup.lastDate,
-              })
-              : cursorError
-                ? t("cursor.publicError")
+            : cursorError
+              ? t("cursor.publicError")
+              : cursorRollup
+                ? t("cursor.publicSummary", {
+                    profiles: prefs.cursor_profiles.length,
+                    tokens: formatTokens(cursorRollup.total, prefs.number_format),
+                    date: cursorRollup.lastDate,
+                  })
                 : t("cursor.publicNotice")}
         </div>
       )}

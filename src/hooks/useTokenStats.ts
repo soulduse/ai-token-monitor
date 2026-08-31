@@ -25,6 +25,7 @@ export function useTokenStats(
 ) {
   const [stats, setStats] = useState<AllStats | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const hasDataRef = useRef(false);
   const requestIdRef = useRef(0);
@@ -39,9 +40,11 @@ export function useTokenStats(
       if (requestId !== requestIdRef.current) return;
       setStats(data);
       setError(null);
+      setRefreshError(null);
       hasDataRef.current = true;
     } catch (e) {
       if (requestId !== requestIdRef.current) return;
+      setRefreshError(String(e));
       // Only show error if we never had valid data — keeps last known data on transient failures
       if (!hasDataRef.current) {
         setError(String(e));
@@ -60,6 +63,7 @@ export function useTokenStats(
     hasDataRef.current = false;
     setStats(null);
     setError(null);
+    setRefreshError(null);
     setLoading(enabled);
   }, [scopeKey, enabled]);
 
@@ -69,6 +73,7 @@ export function useTokenStats(
       hasDataRef.current = false;
       setStats(null);
       setError(null);
+      setRefreshError(null);
       setLoading(false);
       return;
     }
@@ -89,5 +94,5 @@ export function useTokenStats(
     };
   }, [fetchStats, enabled]);
 
-  return { stats, error, loading, refetch: fetchStats };
+  return { stats, error, refreshError, loading, refetch: fetchStats };
 }
