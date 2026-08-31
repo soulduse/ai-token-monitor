@@ -10,15 +10,9 @@ const CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 const FAILURE_RETRY_BACKOFF: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Clone)]
-struct CachedStats {
+struct CachedProfileRows {
     fetched_at: Instant,
-    stats: AllStats,
-}
-
-#[derive(Clone)]
-struct CachedProfilePage {
-    fetched_at: Instant,
-    result: Result<String, String>,
+    result: Result<Vec<ActivityCount>, String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -35,8 +29,7 @@ struct ProfileRows {
     failures: Vec<String>,
 }
 
-static STATS_CACHE: OnceLock<Mutex<HashMap<String, CachedStats>>> = OnceLock::new();
-static PROFILE_PAGE_CACHE: OnceLock<Mutex<HashMap<String, CachedProfilePage>>> = OnceLock::new();
+static PROFILE_ROWS_CACHE: OnceLock<Mutex<HashMap<String, CachedProfileRows>>> = OnceLock::new();
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 struct ActivityCount {
@@ -142,9 +135,9 @@ fn build_stats(profile_rows: Vec<Vec<ActivityCount>>) -> AllStats {
     }
 }
 
-fn fetch_profile_rows_with<F>(profiles: &[String], mut fetch_page: F) -> Result<ProfileRows, String>
+fn fetch_profile_rows_with<F>(profiles: &[String], mut fetch_rows: F) -> Result<ProfileRows, String>
 where
-    F: FnMut(&str) -> Result<String, String>,
+    F: FnMut(&str) -> Result<Vec<ActivityCount>, String>,
 {
     let mut seen = HashSet::new();
     let mut rows = Vec::new();
@@ -159,7 +152,7 @@ where
             continue;
         }
 
-        match fetch_page(&handle).and_then(|page| parse_activity_counts(&page)) {
+        match fetch_rows(&handle) {
             Ok(profile_rows) => rows.push(profile_rows),
             Err(error) => failures.push(format!("@{handle}: {error}")),
         }
@@ -177,11 +170,14 @@ where
     }
 }
 
-fn fetch_profile_page_with_cache<F>(handle: &str, fetch_page: F) -> Result<String, String>
+fn fetch_profile_rows_with_cache<F>(
+    handle: &str,
+    fetch_page: F,
+) -> Result<Vec<ActivityCount>, String>
 where
     F: FnOnce() -> Result<String, String>,
 {
-    let cache = PROFILE_PAGE_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let cache = PROFILE_ROWS_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     if let Ok(cache) = cache.lock() {
         if let Some(cached) = cache.get(handle) {
             let ttl = if cached.result.is_ok() {
@@ -195,11 +191,14 @@ where
         }
     }
 
-    let result = fetch_page();
+    // Cache the parsed result, not merely an HTTP 200 body. Cursor can return a
+    // shell page without public activity data, and that must use the short
+    // failure backoff so a newly public or recovered profile is retried soon.
+    let result = fetch_page().and_then(|page| parse_activity_counts(&page));
     if let Ok(mut cache) = cache.lock() {
         cache.insert(
             handle.to_string(),
-            CachedProfilePage {
+            CachedProfileRows {
                 fetched_at: Instant::now(),
                 result: result.clone(),
             },
@@ -228,27 +227,10 @@ impl CursorProvider {
         profiles
     }
 
-    fn cache_key(&self) -> String {
-        self.normalized_profiles().join(",")
-    }
-
     pub fn fetch_stats_with_warnings(&self) -> Result<CursorStats, String> {
         let profiles = self.normalized_profiles();
         if profiles.is_empty() {
             return Err("No valid Cursor public profiles configured".to_string());
-        }
-
-        let cache_key = self.cache_key();
-        let cache = STATS_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-        if let Ok(cache) = cache.lock() {
-            if let Some(cached) = cache.get(&cache_key) {
-                if cached.fetched_at.elapsed() < CACHE_TTL {
-                    return Ok(CursorStats {
-                        stats: cached.stats.clone(),
-                        warnings: Vec::new(),
-                    });
-                }
-            }
         }
 
         let client = reqwest::blocking::Client::builder()
@@ -262,7 +244,7 @@ impl CursorProvider {
             .map_err(|e| format!("Failed to create Cursor profile client: {e}"))?;
 
         let fetched = fetch_profile_rows_with(&profiles, |handle| {
-            fetch_profile_page_with_cache(handle, || {
+            fetch_profile_rows_with_cache(handle, || {
                 let url = format!("https://cursor.com/@{handle}");
                 let response = client
                     .get(&url)
@@ -277,21 +259,6 @@ impl CursorProvider {
             })
         })?;
         let stats = build_stats(fetched.rows);
-
-        // A partial aggregate must not become authoritative for six hours.
-        // Successful profile pages stay cached while failures use a shorter
-        // retry backoff, so polling retries only the missing profiles.
-        if fetched.failures.is_empty() {
-            if let Ok(mut cache) = cache.lock() {
-                cache.insert(
-                    cache_key,
-                    CachedStats {
-                        fetched_at: Instant::now(),
-                        stats: stats.clone(),
-                    },
-                );
-            }
-        }
 
         Ok(CursorStats {
             stats,
@@ -317,12 +284,12 @@ impl TokenProvider for CursorProvider {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_stats, fetch_profile_page_with_cache, fetch_profile_rows_with,
-        normalize_profile_handle, parse_activity_counts, ActivityCount, CachedStats,
-        CursorProvider, PROFILE_PAGE_CACHE, STATS_CACHE,
+        build_stats, fetch_profile_rows_with, fetch_profile_rows_with_cache,
+        normalize_profile_handle, parse_activity_counts, ActivityCount, CursorProvider,
+        FAILURE_RETRY_BACKOFF, PROFILE_ROWS_CACHE,
     };
     use crate::providers::traits::TokenProvider;
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn parses_activity_counts_from_next_stream_payload() {
@@ -392,7 +359,10 @@ mod tests {
             if handle == "broken" {
                 return Err("not found".into());
             }
-            Ok(r#"\"activityCounts\":[{\"date\":\"2026-01-01\",\"count\":7}]"#.into())
+            Ok(vec![ActivityCount {
+                date: "2026-01-01".into(),
+                count: 7,
+            }])
         })
         .expect("one valid profile should be enough");
 
@@ -419,50 +389,88 @@ mod tests {
     }
 
     #[test]
-    fn reuses_fresh_cached_stats_without_a_network_request() {
-        let provider = CursorProvider::new(vec!["coverage-cache-profile".into()]);
-        let cache_key = provider.cache_key();
-        let cached_stats = build_stats(vec![vec![ActivityCount {
-            date: "2026-01-15".into(),
-            count: 321,
-        }]]);
-        let cache =
-            STATS_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
-        cache.lock().expect("cache lock").insert(
-            cache_key.clone(),
-            CachedStats {
-                fetched_at: Instant::now(),
-                stats: cached_stats,
-            },
-        );
-
-        let stats = provider.fetch_stats().expect("fresh cache hit");
-
-        cache.lock().expect("cache lock").remove(&cache_key);
-        assert_eq!(stats.daily.len(), 1);
-        assert_eq!(stats.daily[0].tokens["cursor-public-tokens"], 321);
-    }
-
-    #[test]
     fn backs_off_repeated_failed_profile_requests() {
         let handle = "coverage-failed-profile";
-        let cache = PROFILE_PAGE_CACHE
+        let cache = PROFILE_ROWS_CACHE
             .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
         cache.lock().expect("cache lock").remove(handle);
         let mut attempts = 0;
 
-        let first = fetch_profile_page_with_cache(handle, || {
+        let first = fetch_profile_rows_with_cache(handle, || {
             attempts += 1;
             Err("HTTP 404".to_string())
         });
-        let second = fetch_profile_page_with_cache(handle, || {
+        let second = fetch_profile_rows_with_cache(handle, || {
             attempts += 1;
-            Ok("unexpected retry".to_string())
+            Ok(r#"\"activityCounts\":[]"#.to_string())
         });
 
         cache.lock().expect("cache lock").remove(handle);
         assert_eq!(first.unwrap_err(), "HTTP 404");
         assert_eq!(second.unwrap_err(), "HTTP 404");
+        assert_eq!(attempts, 1);
+    }
+
+    #[test]
+    fn treats_unparseable_http_success_as_a_short_lived_failure() {
+        let handle = "coverage-malformed-profile";
+        let cache = PROFILE_ROWS_CACHE
+            .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+        cache.lock().expect("cache lock").remove(handle);
+        let mut attempts = 0;
+
+        let first = fetch_profile_rows_with_cache(handle, || {
+            attempts += 1;
+            Ok("temporary Cursor shell without activity data".to_string())
+        });
+        let second = fetch_profile_rows_with_cache(handle, || {
+            attempts += 1;
+            Ok(r#"\"activityCounts\":[{\"date\":\"2026-01-01\",\"count\":9}]"#.to_string())
+        });
+
+        cache
+            .lock()
+            .expect("cache lock")
+            .get_mut(handle)
+            .expect("cached parse failure")
+            .fetched_at = Instant::now()
+            .checked_sub(FAILURE_RETRY_BACKOFF + Duration::from_secs(1))
+            .expect("valid earlier instant");
+        let recovered = fetch_profile_rows_with_cache(handle, || {
+            attempts += 1;
+            Ok(r#"\"activityCounts\":[{\"date\":\"2026-01-01\",\"count\":9}]"#.to_string())
+        })
+        .expect("expired failure retries and recovers");
+
+        cache.lock().expect("cache lock").remove(handle);
+        assert!(first.unwrap_err().contains("activity data was not found"));
+        assert!(second.unwrap_err().contains("activity data was not found"));
+        assert_eq!(recovered[0].count, 9);
+        assert_eq!(attempts, 2);
+    }
+
+    #[test]
+    fn reuses_fresh_parsed_profile_rows_without_a_network_request() {
+        let handle = "coverage-successful-profile";
+        let cache = PROFILE_ROWS_CACHE
+            .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+        cache.lock().expect("cache lock").remove(handle);
+        let mut attempts = 0;
+
+        let first = fetch_profile_rows_with_cache(handle, || {
+            attempts += 1;
+            Ok(r#"\"activityCounts\":[{\"date\":\"2026-01-15\",\"count\":321}]"#.to_string())
+        })
+        .expect("first parse");
+        let second = fetch_profile_rows_with_cache(handle, || {
+            attempts += 1;
+            Err("unexpected retry".to_string())
+        })
+        .expect("cache hit");
+
+        cache.lock().expect("cache lock").remove(handle);
+        assert_eq!(first[0].count, 321);
+        assert_eq!(second[0].count, 321);
         assert_eq!(attempts, 1);
     }
 
