@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use super::traits::TokenProvider;
@@ -34,6 +34,8 @@ struct ProfileRows {
 }
 
 static PROFILE_ROWS_CACHE: OnceLock<Mutex<HashMap<String, CachedProfileRows>>> = OnceLock::new();
+static PROFILE_FETCH_GATES: OnceLock<Mutex<HashMap<String, Arc<(Mutex<bool>, Condvar)>>>> =
+    OnceLock::new();
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 struct ActivityCount {
@@ -186,18 +188,40 @@ where
     F: FnOnce() -> Result<String, String>,
 {
     let cache = PROFILE_ROWS_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Ok(cache) = cache.lock() {
-        if let Some(cached) = cache.get(handle) {
-            let ttl = if cached.result.is_ok() {
-                CACHE_TTL
-            } else {
-                FAILURE_RETRY_BACKOFF
-            };
-            if cached.fetched_at.elapsed() < ttl {
-                return cached.result.clone();
-            }
-        }
+    if let Some(result) = fresh_cached_result(cache, handle)? {
+        return result;
     }
+
+    // Only one blocking request per handle may run at a time. Callers that
+    // arrive while it is in flight wait for and reuse the parsed result, so a
+    // slower failure can never overwrite a successful refresh.
+    let gate = {
+        let gates = PROFILE_FETCH_GATES.get_or_init(|| Mutex::new(HashMap::new()));
+        let mut gates = gates
+            .lock()
+            .map_err(|_| "Cursor profile fetch gate lock failed".to_string())?;
+        gates
+            .entry(handle.to_string())
+            .or_insert_with(|| Arc::new((Mutex::new(false), Condvar::new())))
+            .clone()
+    };
+    let (in_flight_lock, completed) = &*gate;
+    let mut in_flight = in_flight_lock
+        .lock()
+        .map_err(|_| "Cursor profile fetch gate lock failed".to_string())?;
+    loop {
+        if let Some(result) = fresh_cached_result(cache, handle)? {
+            return result;
+        }
+        if !*in_flight {
+            *in_flight = true;
+            break;
+        }
+        in_flight = completed
+            .wait(in_flight)
+            .map_err(|_| "Cursor profile fetch gate lock failed".to_string())?;
+    }
+    drop(in_flight);
 
     // Cache the parsed result, not merely an HTTP 200 body. Cursor can return a
     // shell page without public activity data, and that must use the short
@@ -212,7 +236,53 @@ where
             },
         );
     }
+    if let Ok(mut in_flight) = in_flight_lock.lock() {
+        *in_flight = false;
+        completed.notify_all();
+    }
     result
+}
+
+fn fresh_cached_result(
+    cache: &Mutex<HashMap<String, CachedProfileRows>>,
+    handle: &str,
+) -> Result<Option<Result<Vec<ActivityCount>, String>>, String> {
+    let cache = cache
+        .lock()
+        .map_err(|_| "Cursor profile cache lock failed".to_string())?;
+    let Some(cached) = cache.get(handle) else {
+        return Ok(None);
+    };
+    let ttl = if cached.result.is_ok() {
+        CACHE_TTL
+    } else {
+        FAILURE_RETRY_BACKOFF
+    };
+    Ok((cached.fetched_at.elapsed() < ttl).then(|| cached.result.clone()))
+}
+
+/// Return the currently cached profile aggregate without performing network
+/// I/O. Used by the tray cost refresh after the dashboard fetch completes.
+pub fn get_cached_stats(profiles: &[String], estimate_cost: bool) -> Option<AllStats> {
+    let mut handles: Vec<String> = profiles
+        .iter()
+        .filter_map(|profile| normalize_profile_handle(profile))
+        .collect();
+    handles.sort();
+    handles.dedup();
+    if handles.is_empty() {
+        return None;
+    }
+
+    let cache = PROFILE_ROWS_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut rows = Vec::new();
+    for handle in handles {
+        match fresh_cached_result(cache, &handle).ok()?? {
+            Ok(profile_rows) => rows.push(profile_rows),
+            Err(_) => {}
+        }
+    }
+    Some(build_stats(rows, estimate_cost))
 }
 
 pub struct CursorProvider {
@@ -301,11 +371,14 @@ impl TokenProvider for CursorProvider {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_stats, fetch_profile_rows_with, fetch_profile_rows_with_cache,
+        build_stats, fetch_profile_rows_with, fetch_profile_rows_with_cache, get_cached_stats,
         normalize_profile_handle, parse_activity_counts, ActivityCount, CursorProvider,
-        FAILURE_RETRY_BACKOFF, PROFILE_ROWS_CACHE,
+        FAILURE_RETRY_BACKOFF, PROFILE_FETCH_GATES, PROFILE_ROWS_CACHE,
     };
     use crate::providers::traits::TokenProvider;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Barrier};
+    use std::thread;
     use std::time::{Duration, Instant};
 
     #[test]
@@ -508,6 +581,51 @@ mod tests {
         assert_eq!(first[0].count, 321);
         assert_eq!(second[0].count, 321);
         assert_eq!(attempts, 1);
+    }
+
+    #[test]
+    fn coalesces_concurrent_requests_for_the_same_profile() {
+        let handle = "coverage-concurrent-profile";
+        let cache = PROFILE_ROWS_CACHE
+            .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+        cache.lock().expect("cache lock").remove(handle);
+        let gates = PROFILE_FETCH_GATES
+            .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+        gates.lock().expect("gate lock").remove(handle);
+
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let start = Arc::new(Barrier::new(3));
+        let workers: Vec<_> = (0..2)
+            .map(|_| {
+                let attempts = Arc::clone(&attempts);
+                let start = Arc::clone(&start);
+                thread::spawn(move || {
+                    start.wait();
+                    fetch_profile_rows_with_cache(handle, || {
+                        attempts.fetch_add(1, Ordering::SeqCst);
+                        thread::sleep(Duration::from_millis(50));
+                        Ok(
+                            r#"\"activityCounts\":[{\"date\":\"2026-01-15\",\"count\":321}]"#
+                                .to_string(),
+                        )
+                    })
+                    .expect("coalesced fetch")
+                })
+            })
+            .collect();
+        start.wait();
+        let results: Vec<_> = workers
+            .into_iter()
+            .map(|worker| worker.join().expect("worker"))
+            .collect();
+
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+        assert_eq!(results[0], results[1]);
+        let stats = get_cached_stats(&[handle.to_string()], true).expect("cached aggregate");
+        assert!((stats.daily[0].cost_usd - 0.000_160_5).abs() < f64::EPSILON);
+
+        cache.lock().expect("cache lock").remove(handle);
+        gates.lock().expect("gate lock").remove(handle);
     }
 
     #[test]

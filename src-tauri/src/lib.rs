@@ -389,6 +389,13 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             (true, 0.0)
         };
 
+        let (cursor_warm, cursor_cost) = if prefs.include_cursor && prefs.cursor_estimate_cost {
+            let s = providers::cursor::get_cached_stats(&prefs.cursor_profiles, true);
+            (s.is_some(), today_cost_of(&s, &today))
+        } else {
+            (true, 0.0)
+        };
+
         let computed = claude_cost
             + codex_cost
             + opencode_cost
@@ -396,7 +403,8 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             + glm_cost
             + gjc_cost
             + grok_cost
-            + kiro_cost;
+            + kiro_cost
+            + cursor_cost;
         let warm = claude_warm
             && codex_warm
             && opencode_warm
@@ -404,7 +412,8 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             && glm_warm
             && gjc_warm
             && grok_warm
-            && kiro_warm;
+            && kiro_warm
+            && cursor_warm;
 
         let today_cost = if warm {
             // Every enabled provider has parsed — this is the real number.

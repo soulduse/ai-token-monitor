@@ -85,10 +85,11 @@ pub fn is_codex_available() -> bool {
 
 #[tauri::command]
 pub async fn get_cursor_stats(
+    app: tauri::AppHandle,
     profiles: Vec<String>,
     estimate_cost: bool,
 ) -> Result<crate::providers::cursor::CursorStats, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let result = tauri::async_runtime::spawn_blocking(move || {
         let provider = CursorProvider::new(profiles).with_cost_estimate(estimate_cost);
         if !provider.is_available() {
             return Err("Cursor public profiles not configured".to_string());
@@ -96,7 +97,12 @@ pub async fn get_cursor_stats(
         provider.fetch_stats_with_warnings()
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    if result.is_ok() {
+        crate::update_tray_title(&app);
+    }
+    result
 }
 
 #[tauri::command]
