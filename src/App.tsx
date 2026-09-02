@@ -208,10 +208,16 @@ function AppContent() {
               <path d="M12 8v4M12 16h.01"/>
             </svg>
           </div>
-          <div>{t("app.error.title")}</div>
-          <div style={{ fontSize: 10, color: "var(--text-secondary)" }}>
-            {t("app.error.description")}
+          <div>
+            {prefs.include_cursor && cursorError
+              ? t("cursor.publicError")
+              : t("app.error.title")}
           </div>
+          {!(prefs.include_cursor && cursorError) && (
+            <div style={{ fontSize: 10, color: "var(--text-secondary)" }}>
+              {t("app.error.description")}
+            </div>
+          )}
         </div>
       </PopoverShell>
     );
@@ -232,10 +238,10 @@ function AppContent() {
           fontSize: 9.5,
           lineHeight: 1.4,
         }}>
-          {cursorStats?.warnings?.length
-            ? t("cursor.publicPartial")
-            : cursorError
-              ? t("cursor.publicError")
+          {cursorError
+            ? t("cursor.publicError")
+            : cursorStats?.warnings?.length
+              ? t("cursor.publicPartial")
               : cursorRollup
                 ? t("cursor.publicSummary", {
                     profiles: prefs.cursor_profiles.length,

@@ -17,6 +17,35 @@ const STATS_COMMANDS: Record<StatsProvider, string> = {
   cursor: "get_cursor_stats",
 };
 
+// Several always-mounted consumers request the same provider (combined stats,
+// leaderboard upload, and usage alerts). Provider parsing is intentionally
+// single-flight in Rust, so letting each hook instance invoke independently can
+// make one consumer receive the full cold parse while another receives a
+// transient/stale response. Share the IPC promise across hook instances and
+// deliver the same result to every consumer.
+const SHARED_STATS_REQUESTS = new Map<string, Promise<AllStats>>();
+
+function invokeSharedStats(
+  provider: StatsProvider,
+  scopeKey: string,
+  invokeArgs?: Record<string, unknown>,
+): Promise<AllStats> {
+  const requestKey = `${provider}:${scopeKey}`;
+  const existing = SHARED_STATS_REQUESTS.get(requestKey);
+  if (existing) return existing;
+
+  const command = STATS_COMMANDS[provider] ?? STATS_COMMANDS.claude;
+  const request = invoke<AllStats>(command, invokeArgs);
+  SHARED_STATS_REQUESTS.set(requestKey, request);
+  const clearRequest = () => {
+    if (SHARED_STATS_REQUESTS.get(requestKey) === request) {
+      SHARED_STATS_REQUESTS.delete(requestKey);
+    }
+  };
+  request.then(clearRequest, clearRequest);
+  return request;
+}
+
 export function useTokenStats(
   provider: StatsProvider = "claude",
   enabled = true,
@@ -47,8 +76,7 @@ export function useTokenStats(
       do {
         refreshQueuedRef.current = false;
         try {
-          const command = STATS_COMMANDS[provider] ?? STATS_COMMANDS.claude;
-          const data = await invoke<AllStats>(command, invokeArgs);
+          const data = await invokeSharedStats(provider, scopeKey, invokeArgs);
           if (requestId !== requestIdRef.current) return;
           setStats(data);
           setError(null);
