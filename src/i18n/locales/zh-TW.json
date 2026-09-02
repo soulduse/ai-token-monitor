@@ -91,6 +91,7 @@
   "leaderboard.of": "/",
   "leaderboard.loading": "載入中...",
   "leaderboard.noData": "所選來源暫無數據。",
+  "leaderboard.noSupportedSource": "Cursor 公開總量不會上傳到排行榜。請啟用其他來源以查看排名。",
   "leaderboard.today": "今日",
   "leaderboard.thisWeek": "本週",
   "leaderboard.thisMonth": "本月",

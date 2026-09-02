@@ -115,6 +115,7 @@
   "leaderboard.of": "of",
   "leaderboard.loading": "Loading...",
   "leaderboard.noData": "No data yet for the selected source.",
+  "leaderboard.noSupportedSource": "Cursor public totals are kept out of the leaderboard. Enable another source to view rankings.",
   "leaderboard.today": "Today",
   "leaderboard.thisWeek": "This Week",
   "leaderboard.thisMonth": "This Month",

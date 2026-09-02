@@ -91,6 +91,7 @@
   "leaderboard.of": "sur",
   "leaderboard.loading": "Chargement...",
   "leaderboard.noData": "Aucune donnée pour la source sélectionnée.",
+  "leaderboard.noSupportedSource": "Les totaux publics Cursor ne sont pas envoyés au classement. Activez une autre source pour voir les rangs.",
   "leaderboard.today": "Aujourd'hui",
   "leaderboard.thisWeek": "Cette semaine",
   "leaderboard.thisMonth": "Ce mois",

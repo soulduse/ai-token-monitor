@@ -91,6 +91,7 @@
   "leaderboard.of": "/",
   "leaderboard.loading": "読み込み中...",
   "leaderboard.noData": "選択したソースのデータがまだありません。",
+  "leaderboard.noSupportedSource": "Cursorの公開合計はランキングに送信されません。ランキングを見るには別のソースを有効にしてください。",
   "leaderboard.today": "今日",
   "leaderboard.thisWeek": "今週",
   "leaderboard.thisMonth": "今月",

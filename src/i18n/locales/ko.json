@@ -115,6 +115,7 @@
   "leaderboard.of": "/",
   "leaderboard.loading": "로딩 중...",
   "leaderboard.noData": "선택한 소스에 대한 데이터가 아직 없습니다.",
+  "leaderboard.noSupportedSource": "Cursor 공개 합계는 리더보드에 올리지 않습니다. 순위를 보려면 다른 소스를 켜 주세요.",
   "leaderboard.today": "오늘",
   "leaderboard.thisWeek": "이번 주",
   "leaderboard.thisMonth": "이번 달",
