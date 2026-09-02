@@ -12,7 +12,7 @@
 - **Sıfır kurulum** — API anahtarı yok, proxy yok. Claude Code veya Codex'i bir kez çalıştırdıysanız hemen çalışır.
 - **Harcama bir bakışta** — menü çubuğunda / sistem tepsisinde canlı maliyet, tek tıkla tam gösterge paneli.
 - **Limitlerin bir adım önünde** — canlı 5 saatlik oturum ve haftalık plan limiti çubukları; limite dayanmadan önce Discord / Slack / Telegram uyarıları.
-- **Tasarım gereği gizli** — varsayılan olarak %100 çevrimdışı; liderlik tablosu, sohbet ve webhook'lar tamamen isteğe bağlıdır.
+- **Tasarım gereği gizli** — varsayılan olarak %100 çevrimdışı; Cursor genel profilleri, liderlik tablosu, sohbet ve webhook'lar tamamen isteğe bağlıdır.
 
 | Overview | Analytics | Leaderboard |
 |:---:|:---:|:---:|
@@ -36,7 +36,7 @@
 2. **Yerelde ayrıştırır ve fiyatlandırır** — Rust motoru kayıtları tekilleştirir, modele özgü fiyatları (önbellek okumaları dahil) uygular ve dosya değiştiği anda yeniden toplar
 3. **Her yerde gösterir** — tepside maliyet göstergesi, gösterge paneli grafikleri, plan limiti uyarı çubuğu ve isteğe bağlı webhook bildirimleri
 
-Bunların tamamı kendi makinenizde gerçekleşir. Liderlik tablosunu, sohbeti veya webhook'ları etkinleştirmediğiniz sürece uygulama **hiçbir ağ isteği göndermez** — etkinleştirseniz bile yalnızca toplu sayılar paylaşılır; kod veya konuşma içeriği asla paylaşılmaz.
+Bunların tamamı kendi makinenizde gerçekleşir. Cursor genel profillerini, liderlik tablosunu, sohbeti veya webhook'ları etkinleştirmediğiniz sürece uygulama **hiçbir ağ isteği göndermez**. Cursor yalnızca yapılandırdığınız genel profil URL'lerini okur; paylaşım özellikleri yalnızca toplu sayıları gönderir, kod veya konuşma içeriğini asla paylaşmaz.
 
 ## Özellikler
 
@@ -152,7 +152,7 @@ Paylaşılan veriler: günlük toplam token sayısı, maliyet, mesaj/oturum say�
 | **Grok** | `~/.grok/logs/unified.jsonl` | `shell.turn.inference_done` kaydından istek başına gerçek token; model ve proje `~/.grok/sessions` ile eşleştirilir. Grok bu döngüsel günlüğün başını kırptığı için günlük toplamlar yerel bir anlık görüntüde biriktirilir. macOS, Linux ve Windows (`%USERPROFILE%\\.grok`). SuperGrok haftalık kredileri `billing: fetched credits config` kaydından okunur. |
 | **Kiro** | `~/.kiro/sessions/cli/*.json` + `data.sqlite3` | **Token değil, kredi** — Kiro tur başına bir "iş birimi" ölçer ve hiçbir yerde token sayısı tutmaz; bu yüzden maliyet kredilerden (× $0.04, aşım oranı) hesaplanır. Etkileşimli ve etkileşimsiz çalışmalar farklı anahtar adlarına sahip iki ayrı depoya yazar; ikisi de okunur. Auto'da bırakılan turlar hangi modelin çalıştığını kaydetmez. |
 
-**Ağ istekleri**: yalnızca liderlik tablosu/sohbet etkinleştirildiğinde (Supabase'e toplu veri gönderilir) veya bir webhook tetiklendiğinde gerçekleşir. Bu özellikler kullanılmadığında uygulama tamamen çevrimdışı çalışır. Yapay zeka çeviri anahtarı ayarlandıysa, yalnızca seçtiğiniz sağlayıcıya doğrudan istek gönderilir.
+**Ağ istekleri**: Cursor genel profilleri etkinleştirildiğinde (yapılandırılan genel sayfaları okur), liderlik tablosu/sohbet açıldığında (Supabase'e toplu veri gönderir), bir webhook tetiklendiğinde veya yapay zeka çeviri sağlayıcısı ayarlandığında gerçekleşir. Bu özellikler kullanılmadığında uygulama tamamen çevrimdışı çalışır.
 
 ## Mimari
 
