@@ -427,6 +427,35 @@ function AccountTab({
         </>
       )}
 
+      <div style={{
+        height: 1,
+        background: "var(--heat-0)",
+        margin: "8px 0",
+      }} />
+
+      <CursorProfilesSection
+        profiles={prefs.cursor_profiles}
+        estimateCost={prefs.cursor_estimate_cost}
+        onEstimateCostChange={(cursor_estimate_cost) => updatePrefs({ cursor_estimate_cost })}
+        onChange={(profiles) => {
+          const hasOtherSource = prefs.include_claude
+            || prefs.include_codex
+            || prefs.include_opencode
+            || prefs.include_kimi
+            || prefs.include_glm
+            || prefs.include_gjc
+            || prefs.include_grok
+            || prefs.include_kiro;
+          updatePrefs({
+            cursor_profiles: profiles,
+            ...(profiles.length === 0 ? {
+              include_cursor: false,
+              ...(!hasOtherSource ? { include_claude: true } : {}),
+            } : {}),
+          });
+        }}
+      />
+
       {leaderboardAvailable && (
         <>
           <div style={{
@@ -838,6 +867,186 @@ const DIR_CONFIG: Record<ConfigDirProvider, {
     invalidKey: "settings.codexConfigDirsInvalid",
   },
 };
+
+function normalizeCursorProfileInput(value: string): string | null {
+  const trimmed = value.trim();
+  const urlMatch = trimmed.match(/^https?:\/\/(?:www\.)?cursor\.com\/@([^/?#]+)(?:[/?#].*)?$/i);
+  const candidate = urlMatch?.[1] ?? trimmed.replace(/^@/, "");
+  if (!/^[a-z0-9_-]+$/i.test(candidate)) return null;
+  return candidate.toLowerCase();
+}
+
+function CursorProfilesSection({
+  profiles,
+  estimateCost,
+  onEstimateCostChange,
+  onChange,
+}: {
+  profiles: string[];
+  estimateCost: boolean;
+  onEstimateCostChange: (enabled: boolean) => void;
+  onChange: (profiles: string[]) => void;
+}) {
+  const t = useI18n();
+  const [input, setInput] = useState("");
+  const [message, setMessage] = useState("");
+
+  const handleAdd = useCallback(() => {
+    const handle = normalizeCursorProfileInput(input);
+    if (!handle) {
+      setMessage(t("settings.cursorProfilesInvalid"));
+      return;
+    }
+    if (profiles.some((profile) => profile.toLowerCase() === handle)) {
+      setMessage(t("settings.cursorProfilesDuplicate"));
+      return;
+    }
+    onChange([...profiles, handle]);
+    setInput("");
+    setMessage("");
+  }, [input, onChange, profiles, t]);
+
+  return (
+    <div>
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 4,
+        fontSize: 11,
+        fontWeight: 700,
+        color: "var(--text-secondary)",
+        textTransform: "uppercase",
+        letterSpacing: "0.5px",
+        marginBottom: 6,
+      }}>
+        {t("settings.cursorProfiles")}
+        <InfoTooltip>{t("settings.cursorProfilesTooltip")}</InfoTooltip>
+      </div>
+
+      <div style={{
+        fontSize: 9.5,
+        lineHeight: 1.4,
+        color: "var(--text-muted)",
+        marginBottom: 7,
+      }}>
+        {t("settings.cursorProfilesNotice")}
+      </div>
+
+      <div style={{ maxHeight: 96, overflowY: "auto", marginBottom: 6 }}>
+        {profiles.map((profile) => (
+          <div
+            key={profile}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "3px 0",
+              fontSize: 11,
+              color: "var(--text-primary)",
+            }}
+          >
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", fontWeight: 500 }}>
+              @{profile}
+            </span>
+            <button
+              type="button"
+              aria-label={t("settings.cursorProfilesRemove", { profile })}
+              onClick={() => onChange(profiles.filter((item) => item !== profile))}
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                width: 18,
+                height: 18,
+                borderRadius: 4,
+                border: "none",
+                cursor: "pointer",
+                background: "transparent",
+                color: "var(--text-muted)",
+              }}
+            >
+              x
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", gap: 4 }}>
+        <input
+          value={input}
+          onChange={(event) => {
+            setInput(event.target.value);
+            setMessage("");
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              handleAdd();
+            }
+          }}
+          placeholder={t("settings.cursorProfilesPlaceholder")}
+          style={{
+            minWidth: 0,
+            flex: 1,
+            fontSize: 10,
+            padding: "4px 6px",
+            borderRadius: 4,
+            border: "1px solid var(--heat-1)",
+            background: "var(--heat-0)",
+            color: "var(--text-primary)",
+          }}
+        />
+        <button
+          type="button"
+          onClick={handleAdd}
+          style={{
+            fontSize: 10,
+            fontWeight: 600,
+            padding: "4px 8px",
+            borderRadius: 4,
+            border: "none",
+            cursor: "pointer",
+            background: "var(--heat-0)",
+            color: "var(--text-secondary)",
+          }}
+        >
+          + {t("settings.cursorProfilesAdd")}
+        </button>
+      </div>
+
+      {message && (
+        <div style={{ fontSize: 10, color: "#ef4444", marginTop: 4 }}>
+          {message}
+        </div>
+      )}
+
+      <label style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 7,
+        marginTop: 9,
+        padding: "7px 8px",
+        borderRadius: 6,
+        background: "var(--heat-0)",
+        cursor: "pointer",
+      }}>
+        <input
+          type="checkbox"
+          checked={estimateCost}
+          onChange={(event) => onEstimateCostChange(event.target.checked)}
+          style={{ margin: "1px 0 0" }}
+        />
+        <span style={{ minWidth: 0 }}>
+          <span style={{ display: "block", fontSize: 10.5, fontWeight: 650, color: "var(--text-secondary)" }}>
+            {t("settings.cursorEstimateCost")}
+          </span>
+          <span style={{ display: "block", marginTop: 2, fontSize: 9, lineHeight: 1.35, color: "var(--text-muted)" }}>
+            {t("settings.cursorEstimateCostNotice")}
+          </span>
+        </span>
+      </label>
+    </div>
+  );
+}
 
 function ConfigDirsSection({
   provider = "claude",

@@ -91,6 +91,7 @@
   "leaderboard.of": "di",
   "leaderboard.loading": "Caricamento...",
   "leaderboard.noData": "Nessun dato disponibile per la fonte selezionata.",
+  "leaderboard.noSupportedSource": "I totali pubblici di Cursor non vengono inviati alla classifica. Attiva un'altra fonte per vedere le posizioni.",
   "leaderboard.today": "Oggi",
   "leaderboard.thisWeek": "Questa settimana",
   "leaderboard.thisMonth": "Questo mese",

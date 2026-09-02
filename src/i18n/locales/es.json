@@ -91,6 +91,7 @@
   "leaderboard.of": "de",
   "leaderboard.loading": "Cargando...",
   "leaderboard.noData": "Aún no hay datos para la fuente seleccionada.",
+  "leaderboard.noSupportedSource": "Los totales públicos de Cursor no se envían a la clasificación. Activa otra fuente para ver los rangos.",
   "leaderboard.today": "Hoy",
   "leaderboard.thisWeek": "Esta semana",
   "leaderboard.thisMonth": "Este mes",

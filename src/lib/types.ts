@@ -78,6 +78,8 @@ export interface AllStats {
   first_session_date: string | null;
   analytics?: AnalyticsData;
   rate_limits?: CodexRateLimits | null;
+  /** Provider-specific non-fatal fetch warnings (currently Cursor partial results). */
+  warnings?: string[];
 }
 
 export type LeaderboardProvider = "claude" | "codex" | "opencode" | "kimi" | "glm" | "gjc" | "grok" | "kiro";
@@ -110,6 +112,10 @@ export interface UserPreferences {
   include_gjc: boolean;
   include_grok: boolean;
   include_kiro: boolean;
+  include_cursor: boolean;
+  cursor_profiles: string[];
+  /** Price public Cursor tokens at the opt-in Opus cache-read floor ($0.50/MTok). */
+  cursor_estimate_cost: boolean;
   theme: "github" | "purple" | "ocean" | "sunset";
   color_mode: "system" | "light" | "dark";
   language: "en" | "ko" | "ja" | "zh-CN" | "zh-TW" | "fr" | "es" | "de" | "tr" | "it";

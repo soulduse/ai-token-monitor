@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { AllStats } from "../lib/types";
 
-export type StatsProvider = "claude" | "codex" | "opencode" | "kimi" | "glm" | "gjc" | "grok" | "kiro";
+export type StatsProvider = "claude" | "codex" | "opencode" | "kimi" | "glm" | "gjc" | "grok" | "kiro" | "cursor";
 
 const STATS_COMMANDS: Record<StatsProvider, string> = {
   claude: "get_all_stats",
@@ -14,38 +14,126 @@ const STATS_COMMANDS: Record<StatsProvider, string> = {
   gjc: "get_gjc_stats",
   grok: "get_grok_stats",
   kiro: "get_kiro_stats",
+  cursor: "get_cursor_stats",
 };
 
-export function useTokenStats(provider: StatsProvider = "claude") {
+// Several always-mounted consumers request the same provider (combined stats,
+// leaderboard upload, and usage alerts). Provider parsing is intentionally
+// single-flight in Rust, so letting each hook instance invoke independently can
+// make one consumer receive the full cold parse while another receives a
+// transient/stale response. Share the IPC promise across hook instances and
+// deliver the same result to every consumer.
+const SHARED_STATS_REQUESTS = new Map<string, Promise<AllStats>>();
+
+function invokeSharedStats(
+  provider: StatsProvider,
+  scopeKey: string,
+  invokeArgs?: Record<string, unknown>,
+): Promise<AllStats> {
+  const requestKey = `${provider}:${scopeKey}`;
+  const existing = SHARED_STATS_REQUESTS.get(requestKey);
+  if (existing) return existing;
+
+  const command = STATS_COMMANDS[provider] ?? STATS_COMMANDS.claude;
+  const request = invoke<AllStats>(command, invokeArgs);
+  SHARED_STATS_REQUESTS.set(requestKey, request);
+  const clearRequest = () => {
+    if (SHARED_STATS_REQUESTS.get(requestKey) === request) {
+      SHARED_STATS_REQUESTS.delete(requestKey);
+    }
+  };
+  request.then(clearRequest, clearRequest);
+  return request;
+}
+
+export function useTokenStats(
+  provider: StatsProvider = "claude",
+  enabled = true,
+  scopeKey: string = provider,
+  invokeArgs?: Record<string, unknown>,
+) {
   const [stats, setStats] = useState<AllStats | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const hasDataRef = useRef(false);
   const requestIdRef = useRef(0);
+  const inFlightRef = useRef<Promise<void> | null>(null);
+  const refreshQueuedRef = useRef(false);
 
-  const fetchStats = useCallback(async () => {
-    const requestId = ++requestIdRef.current;
-    try {
-      const command = STATS_COMMANDS[provider] ?? STATS_COMMANDS.claude;
-      const data = await invoke<AllStats>(command);
-      if (requestId !== requestIdRef.current) return;
-      setStats(data);
-      setError(null);
-      hasDataRef.current = true;
-    } catch (e) {
-      if (requestId !== requestIdRef.current) return;
-      // Only show error if we never had valid data — keeps last known data on transient failures
-      if (!hasDataRef.current) {
-        setError(String(e));
-      }
-    } finally {
-      if (requestId !== requestIdRef.current) return;
-      setLoading(false);
+  const fetchStats = useCallback((queueIfInFlight = true): Promise<void> => {
+    if (!enabled) return Promise.resolve();
+    // File events and polling can land while a provider is still parsing.
+    // Reuse that request instead of letting a fast stale/error response make
+    // the earlier successful parse look obsolete.
+    if (inFlightRef.current) {
+      if (queueIfInFlight) refreshQueuedRef.current = true;
+      return inFlightRef.current;
     }
-  }, [provider]);
+    const requestId = requestIdRef.current;
+    if (!hasDataRef.current) setLoading(true);
+    const request = (async () => {
+      do {
+        refreshQueuedRef.current = false;
+        try {
+          const data = await invokeSharedStats(provider, scopeKey, invokeArgs);
+          if (requestId !== requestIdRef.current) return;
+          setStats(data);
+          setError(null);
+          setRefreshError(null);
+          hasDataRef.current = true;
+        } catch (e) {
+          if (requestId !== requestIdRef.current) return;
+          setRefreshError(String(e));
+          // Only show error if we never had valid data — keeps last known data on transient failures
+          if (!hasDataRef.current) {
+            setError(String(e));
+          }
+        }
+        // Coalesce any number of events that arrived during the request into
+        // one follow-up fetch so changed settings/history cannot wait for the
+        // next polling interval.
+      } while (requestId === requestIdRef.current && refreshQueuedRef.current);
+      if (requestId === requestIdRef.current) setLoading(false);
+    })();
+    const tracked = request.finally(() => {
+      if (inFlightRef.current === tracked) inFlightRef.current = null;
+    });
+    inFlightRef.current = tracked;
+    return tracked;
+  }, [provider, enabled, scopeKey, invokeArgs]);
+
+  const previousScopeRef = useRef(scopeKey);
+  useEffect(() => {
+    if (previousScopeRef.current === scopeKey) return;
+    previousScopeRef.current = scopeKey;
+    requestIdRef.current += 1;
+    inFlightRef.current = null;
+    refreshQueuedRef.current = false;
+    hasDataRef.current = false;
+    setStats(null);
+    setError(null);
+    setRefreshError(null);
+    setLoading(enabled);
+  }, [scopeKey, enabled]);
 
   useEffect(() => {
-    fetchStats();
+    if (!enabled) {
+      requestIdRef.current += 1;
+      inFlightRef.current = null;
+      refreshQueuedRef.current = false;
+      hasDataRef.current = false;
+      setStats(null);
+      setError(null);
+      setRefreshError(null);
+      setLoading(false);
+      return;
+    }
+
+    // React Strict Mode intentionally re-runs effect setup in development.
+    // Reuse the first startup request without treating that setup pass as a
+    // real data-change event that needs a follow-up fetch.
+    fetchStats(false);
 
     // Listen for file watcher events
     const unlisten = listen("stats-updated", () => {
@@ -59,7 +147,7 @@ export function useTokenStats(provider: StatsProvider = "claude") {
       unlisten.then((fn) => fn?.());
       clearInterval(interval);
     };
-  }, [fetchStats]);
+  }, [fetchStats, enabled]);
 
-  return { stats, error, loading, refetch: fetchStats };
+  return { stats, error, refreshError, loading, refetch: fetchStats };
 }

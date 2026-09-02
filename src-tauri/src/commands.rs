@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 
 use crate::providers::claude_code::ClaudeCodeProvider;
 use crate::providers::codex::CodexProvider;
+use crate::providers::cursor::CursorProvider;
 use crate::providers::gjc::GjcProvider;
 use crate::providers::glm::GlmProvider;
 use crate::providers::grok::{GrokCredits, GrokProvider};
@@ -80,6 +81,28 @@ pub async fn get_codex_stats(app: tauri::AppHandle) -> Result<AllStats, String> 
 pub fn is_codex_available() -> bool {
     let prefs = get_preferences();
     CodexProvider::new(prefs.codex_dirs).is_available()
+}
+
+#[tauri::command]
+pub async fn get_cursor_stats(
+    app: tauri::AppHandle,
+    profiles: Vec<String>,
+    estimate_cost: bool,
+) -> Result<crate::providers::cursor::CursorStats, String> {
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let provider = CursorProvider::new(profiles).with_cost_estimate(estimate_cost);
+        if !provider.is_available() {
+            return Err("Cursor public profiles not configured".to_string());
+        }
+        provider.fetch_stats_with_warnings()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if result.is_ok() {
+        crate::update_tray_title(&app);
+    }
+    result
 }
 
 #[tauri::command]

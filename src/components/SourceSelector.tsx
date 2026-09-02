@@ -11,7 +11,8 @@ type SourceKey =
   | "include_glm"
   | "include_gjc"
   | "include_grok"
-  | "include_kiro";
+  | "include_kiro"
+  | "include_cursor";
 
 interface SourceDef {
   key: SourceKey;
@@ -69,8 +70,9 @@ export function SourceSelector() {
     if (prefs.include_gjc && !gjcAvailable) patch.include_gjc = false;
     if (prefs.include_grok && !grokAvailable) patch.include_grok = false;
     if (prefs.include_kiro && !kiroAvailable) patch.include_kiro = false;
+    if (prefs.include_cursor && prefs.cursor_profiles.length === 0) patch.include_cursor = false;
     if (Object.keys(patch).length > 0) updatePrefs(patch);
-  }, [availabilityLoaded, codexAvailable, opencodeAvailable, kimiAvailable, glmAvailable, gjcAvailable, grokAvailable, kiroAvailable, prefs.include_codex, prefs.include_opencode, prefs.include_kimi, prefs.include_glm, prefs.include_gjc, prefs.include_grok, prefs.include_kiro, updatePrefs]);
+  }, [availabilityLoaded, codexAvailable, opencodeAvailable, kimiAvailable, glmAvailable, gjcAvailable, grokAvailable, kiroAvailable, prefs.include_codex, prefs.include_opencode, prefs.include_kimi, prefs.include_glm, prefs.include_gjc, prefs.include_grok, prefs.include_kiro, prefs.include_cursor, prefs.cursor_profiles.length, updatePrefs]);
 
   useEffect(() => {
     if (!open) return;
@@ -103,7 +105,8 @@ export function SourceSelector() {
     { key: "include_gjc", label: t("sources.gjc"), available: gjcAvailable },
     { key: "include_grok", label: t("sources.grok"), available: grokAvailable },
     { key: "include_kiro", label: t("sources.kiro"), available: kiroAvailable },
-  ], [t, codexAvailable, opencodeAvailable, kimiAvailable, glmAvailable, gjcAvailable, grokAvailable, kiroAvailable]);
+    { key: "include_cursor", label: t("sources.cursor"), available: prefs.cursor_profiles.length > 0 },
+  ], [t, codexAvailable, opencodeAvailable, kimiAvailable, glmAvailable, gjcAvailable, grokAvailable, kiroAvailable, prefs.cursor_profiles.length]);
 
   const visibleSources = sources.filter((s) => s.available);
   const totalCount = visibleSources.length;
