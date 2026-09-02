@@ -3,6 +3,16 @@ import { invoke } from "@tauri-apps/api/core";
 import { writeImage } from "@tauri-apps/plugin-clipboard-manager";
 import html2canvas from "html2canvas";
 
+const DEFAULT_EXPORT_SCALE = 2;
+const MAX_CANVAS_DIMENSION = 16_384;
+const MAX_CANVAS_PIXELS = 16_777_216;
+
+function safeExportScale(width: number, height: number): number {
+  const dimensionScale = MAX_CANVAS_DIMENSION / Math.max(width, height);
+  const areaScale = Math.sqrt(MAX_CANVAS_PIXELS / (width * height));
+  return Math.min(DEFAULT_EXPORT_SCALE, dimensionScale, areaScale);
+}
+
 async function renderElement(element: HTMLElement): Promise<HTMLCanvasElement> {
   await document.fonts?.ready;
 
@@ -12,13 +22,17 @@ async function renderElement(element: HTMLElement): Promise<HTMLCanvasElement> {
   const exportPadding = 16;
   const width = contentWidth + exportPadding * 2;
   const height = contentHeight + exportPadding * 2;
+  // Long Kiro histories and full-tab exports can exceed WebKit/Chromium canvas
+  // limits at a fixed 2x scale. Preserve 2x for normal views and reduce only as
+  // needed to stay within conservative cross-engine dimension and area caps.
+  const scale = safeExportScale(width, height);
   const backgroundColor = getComputedStyle(document.documentElement)
     .getPropertyValue("--bg-primary")
     .trim() || null;
 
   return html2canvas(element, {
     backgroundColor,
-    scale: 2,
+    scale,
     useCORS: true,
     logging: false,
     width,

@@ -712,12 +712,16 @@ pub async fn save_capture_png(
 
         crate::DIALOG_OPEN.store(true, std::sync::atomic::Ordering::Relaxed);
         let _dialog_guard = DialogOpenGuard;
-        let selected = app
+        let mut dialog = app
             .dialog()
             .file()
             .set_file_name(safe_name)
-            .add_filter("PNG Image", &["png"])
-            .blocking_save_file();
+            .add_filter("PNG Image", &["png"]);
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        if let Some(window) = app.get_webview_window("main") {
+            dialog = dialog.set_parent(&window);
+        }
+        let selected = dialog.blocking_save_file();
         let Some(selected) = selected else {
             return Ok(false);
         };
