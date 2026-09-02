@@ -57,7 +57,14 @@ export async function copyElementAsImage(element: HTMLElement): Promise<void> {
   if (!context) throw new Error("Failed to read capture canvas");
 
   const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-  const image = await Image.new(pixels.data, canvas.width, canvas.height);
+  // Tauri's IPC serializer recognizes Uint8Array, but not the
+  // Uint8ClampedArray returned by getImageData(). Convert explicitly so the
+  // clipboard path behaves consistently across plugin/runtime versions.
+  const image = await Image.new(
+    new Uint8Array(pixels.data),
+    canvas.width,
+    canvas.height,
+  );
 
   try {
     // The clipboard plugin handles the platform-specific bitmap conversion on
