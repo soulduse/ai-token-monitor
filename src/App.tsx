@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, type ReactNode } from "react";
 import { useCombinedStats } from "./hooks/useCombinedStats";
 import { useToday } from "./hooks/useToday";
 import { useDateNav } from "./hooks/useDateNav";
@@ -41,6 +41,8 @@ import { ToolUsage } from "./components/ToolUsage";
 import { ShellCommands } from "./components/ShellCommands";
 import { AnalyticsSummary } from "./components/AnalyticsSummary";
 import { ActivityBreakdown } from "./components/ActivityBreakdown";
+import { AnalyticsCaptureMenu } from "./components/AnalyticsCaptureMenu";
+import type { AnalyticsCaptureSection } from "./components/AnalyticsCaptureMenu";
 import { useUpdater } from "./hooks/useUpdater";
 import { setChatChannelUser, activateChatChannel } from "./realtime/chatChannel";
 
@@ -58,6 +60,10 @@ function AnalyticsEmptyState({ message }: { message: string }) {
       {message}
     </div>
   );
+}
+
+function CaptureSection({ id, children }: { id: string; children: ReactNode }) {
+  return <div data-analytics-capture-section={id}>{children}</div>;
 }
 
 function AppContent() {
@@ -82,6 +88,7 @@ function AppContent() {
   const [analyticsSubTab, setAnalyticsSubTab] = useState<AnalyticsSubTab>("usage");
   const [chatActivated, setChatActivated] = useState(false);
   const [leaderboardActivated, setLeaderboardActivated] = useState(false);
+  const analyticsCaptureRef = useRef<HTMLDivElement>(null);
   const todayStr = useToday();
   const { unreadCount } = useUnreadChat(activeTab === "chat", user?.id ?? null);
 
@@ -131,6 +138,46 @@ function AppContent() {
 
   const dateNav = useDateNav(todayStr, minDataDate);
   const selectedDate = dateNav.date;
+
+  const analyticsCaptureSections = useMemo<AnalyticsCaptureSection[]>(() => {
+    if (!stats) return [];
+
+    if (analyticsSubTab === "usage") {
+      return [
+        { id: "summary", label: t("analytics.capture.summary") },
+        { id: "activity-graph", label: t("activity.title") },
+        { id: "daily-30", label: t("daily.title", { days: 30 }) },
+        { id: "period-totals", label: t("analytics.capture.periodTotals") },
+        ...(stats.analytics?.activity_breakdown.length
+          ? [{ id: "activity-breakdown", label: t("analytics.activity.title") }]
+          : []),
+        ...(Object.keys(stats.model_usage).length
+          ? [{ id: "model-breakdown", label: t("model.title") }]
+          : []),
+        { id: "cache-efficiency", label: t("cache.title") },
+      ];
+    }
+
+    if (analyticsSubTab === "projects") {
+      return stats.analytics?.project_usage.length
+        ? [{ id: "projects", label: t("analytics.projects.title") }]
+        : [];
+    }
+
+    if (analyticsSubTab === "tools") {
+      if (!stats.analytics?.tool_usage.length) return [];
+      return [
+        { id: "tool-usage", label: t("analytics.tools.title") },
+        ...(stats.analytics.shell_commands.length > 0 || stats.analytics.mcp_usage.length > 0
+          ? [{ id: "shell-commands", label: t("analytics.capture.commandsAndMcp") }]
+          : []),
+      ];
+    }
+
+    return prefs.include_kiro
+      ? [{ id: "kiro", label: t("analytics.subtab.kiro") }]
+      : [];
+  }, [analyticsSubTab, prefs.include_kiro, stats, t]);
 
   const { today, weekAvg } = useMemo(() => {
     if (!stats) return { today: null, weekAvg: 0 };
@@ -223,41 +270,84 @@ function AppContent() {
       </div>
 
       <div style={{ display: activeTab === "analytics" ? "contents" : "none" }}>
-        <AnalyticsSubTabs active={analyticsSubTab} onChange={setAnalyticsSubTab} showKiro={prefs.include_kiro} />
+        <div style={{ display: "flex", alignItems: "stretch", gap: 8 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <AnalyticsSubTabs active={analyticsSubTab} onChange={setAnalyticsSubTab} showKiro={prefs.include_kiro} />
+          </div>
+          <AnalyticsCaptureMenu
+            captureRootRef={analyticsCaptureRef}
+            sections={analyticsCaptureSections}
+            subTab={analyticsSubTab}
+          />
+        </div>
 
-        {analyticsSubTab === "usage" && (
-          <>
-            <AnalyticsSummary stats={stats} />
-            <ActivityGraph daily={stats.daily} />
-            <DailyChart daily={stats.daily} days={30} />
-            <PeriodTotals daily={stats.daily} />
-            {stats.analytics && stats.analytics.activity_breakdown.length > 0 && (
-              <ActivityBreakdown data={stats.analytics.activity_breakdown} />
-            )}
-            <ModelBreakdown modelUsage={stats.model_usage} />
-            <CacheEfficiency stats={stats} />
-          </>
-        )}
+        <div
+          ref={analyticsCaptureRef}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+            background: "var(--bg-primary)",
+          }}
+        >
+          {analyticsSubTab === "usage" && (
+            <>
+              <CaptureSection id="summary">
+                <AnalyticsSummary stats={stats} />
+              </CaptureSection>
+              <CaptureSection id="activity-graph">
+                <ActivityGraph daily={stats.daily} />
+              </CaptureSection>
+              <CaptureSection id="daily-30">
+                <DailyChart daily={stats.daily} days={30} />
+              </CaptureSection>
+              <CaptureSection id="period-totals">
+                <PeriodTotals daily={stats.daily} />
+              </CaptureSection>
+              {stats.analytics && stats.analytics.activity_breakdown.length > 0 && (
+                <CaptureSection id="activity-breakdown">
+                  <ActivityBreakdown data={stats.analytics.activity_breakdown} />
+                </CaptureSection>
+              )}
+              {Object.keys(stats.model_usage).length > 0 && (
+                <CaptureSection id="model-breakdown">
+                  <ModelBreakdown modelUsage={stats.model_usage} />
+                </CaptureSection>
+              )}
+              <CaptureSection id="cache-efficiency">
+                <CacheEfficiency stats={stats} />
+              </CaptureSection>
+            </>
+          )}
 
-        {analyticsSubTab === "projects" && (
-          stats.analytics && stats.analytics.project_usage.length > 0
-            ? <ProjectBreakdown data={stats.analytics.project_usage} />
-            : <AnalyticsEmptyState message={t("analytics.empty.projects")} />
-        )}
+          {analyticsSubTab === "projects" && (
+            stats.analytics && stats.analytics.project_usage.length > 0
+              ? <CaptureSection id="projects"><ProjectBreakdown data={stats.analytics.project_usage} /></CaptureSection>
+              : <AnalyticsEmptyState message={t("analytics.empty.projects")} />
+          )}
 
-        {analyticsSubTab === "tools" && (
-          stats.analytics && stats.analytics.tool_usage.length > 0
-            ? <>
-                <ToolUsage data={stats.analytics.tool_usage} />
-                <ShellCommands
-                  commands={stats.analytics.shell_commands}
-                  mcp={stats.analytics.mcp_usage}
-                />
-              </>
-            : <AnalyticsEmptyState message={t("analytics.empty.tools")} />
-        )}
+          {analyticsSubTab === "tools" && (
+            stats.analytics && stats.analytics.tool_usage.length > 0
+              ? <>
+                  <CaptureSection id="tool-usage">
+                    <ToolUsage data={stats.analytics.tool_usage} />
+                  </CaptureSection>
+                  {(stats.analytics.shell_commands.length > 0 || stats.analytics.mcp_usage.length > 0) && (
+                    <CaptureSection id="shell-commands">
+                      <ShellCommands
+                        commands={stats.analytics.shell_commands}
+                        mcp={stats.analytics.mcp_usage}
+                      />
+                    </CaptureSection>
+                  )}
+                </>
+              : <AnalyticsEmptyState message={t("analytics.empty.tools")} />
+          )}
 
-        {analyticsSubTab === "kiro" && prefs.include_kiro && <KiroBreakdown />}
+          {analyticsSubTab === "kiro" && prefs.include_kiro && (
+            <CaptureSection id="kiro"><KiroBreakdown /></CaptureSection>
+          )}
+        </div>
       </div>
 
       {/* Leaderboard: defers mount (and its network requests) until first visit,

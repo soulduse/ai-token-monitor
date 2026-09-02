@@ -15,7 +15,7 @@ use std::thread;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 /// When true, the window will not auto-hide on focus loss (e.g. during dialog).
-static DIALOG_OPEN: AtomicBool = AtomicBool::new(false);
+pub(crate) static DIALOG_OPEN: AtomicBool = AtomicBool::new(false);
 
 /// Timestamp (ms) when the window was last shown — prevents immediate focus-loss hide.
 static LAST_SHOWN_MS: AtomicU64 = AtomicU64::new(0);
@@ -1120,6 +1120,7 @@ pub fn run() {
             commands::capture_window,
             commands::copy_png_to_clipboard,
             commands::save_png_to_file,
+            commands::save_capture_png,
             commands::get_pricing_table,
             commands::get_oauth_usage,
             commands::get_oauth_usage_status,

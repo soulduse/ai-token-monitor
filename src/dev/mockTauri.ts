@@ -217,6 +217,10 @@ export function installMockTauri(): void {
     "plugin:event|listen": () => ++callbackId,
     "plugin:event|unlisten": () => null,
     "plugin:event|emit": () => null,
+    "plugin:image|new": () => ++callbackId,
+    "plugin:resources|close": () => null,
+    "plugin:clipboard-manager|write_image": () => null,
+    "plugin:dialog|save": () => "/tmp/ai-token-monitor-capture.png",
     // Explicit no-ops for side-effect commands exercised during QA. They
     // resolve like the real commands do, but perform nothing in a browser.
     heartbeat: () => null,
@@ -225,6 +229,7 @@ export function installMockTauri(): void {
     enable_usage_tracking: () => null,
     copy_png_to_clipboard: () => null,
     save_png_to_file: () => null,
+    save_capture_png: () => true,
   };
 
   // Tauri's event API cleanup path calls this directly (outside invoke).
