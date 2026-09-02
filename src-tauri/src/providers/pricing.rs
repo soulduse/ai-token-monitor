@@ -46,9 +46,9 @@ struct PricingEntry {
     #[serde(default)]
     cached_input: f64,
     /// Date-scheduled price overrides. When a model's price changes on a known
-    /// future date (e.g. Sonnet 5's introductory pricing ending 2026-08-31),
-    /// list the new prices with a `from` date. On lookup, the latest schedule
-    /// whose `from` is on/before today (UTC) overrides the base fields.
+    /// future date (e.g. an introductory price ending), list the new prices
+    /// with a `from` date. On lookup, the latest schedule whose `from` is
+    /// on/before today (UTC) overrides the base fields.
     #[serde(default)]
     scheduled: Vec<ScheduledPrice>,
     /// Higher rates for long-context requests. xAI bills *every* token in a
@@ -865,6 +865,46 @@ mod tests {
         assert!((p.output - 50.0).abs() < 0.001);
     }
 
+    // Regression guard: "claude-fable-5-1" contains the substring "fable-5", so
+    // without its own entry it would fall back to Fable 5 and bill cache reads
+    // at $1.00 instead of $0.25 (Fable 5.1 cut cache reads to 0.025x base input;
+    // input/output/cache writes are unchanged). The 5-1 entry must sit above 5.
+    #[test]
+    fn claude_fable_51_cache_read_not_billed_as_fable_5() {
+        let p = get_claude_pricing("claude-fable-5-1");
+        assert!((p.input - 10.0).abs() < 0.001, "Fable 5.1 input must be $10/MTok, got ${}", p.input);
+        assert!((p.output - 50.0).abs() < 0.001, "Fable 5.1 output must be $50/MTok, got ${}", p.output);
+        assert!((p.cache_read - 0.25).abs() < 0.001, "Fable 5.1 cache read must be $0.25/MTok, got ${}", p.cache_read);
+        assert!((p.cache_write_5m - 12.5).abs() < 0.001);
+        assert!((p.cache_write_1h - 20.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn opencode_fable_51_cache_read_not_billed_as_fable_5() {
+        let p = get_opencode_pricing("anthropic/claude-fable-5-1");
+        assert!((p.input - 10.0).abs() < 0.001, "Opencode Fable 5.1 input must be $10/MTok, got ${}", p.input);
+        assert!((p.cache_read - 0.25).abs() < 0.001, "Opencode Fable 5.1 cache read must be $0.25/MTok, got ${}", p.cache_read);
+    }
+
+    #[test]
+    fn claude_mythos_51_cache_read_not_billed_as_mythos_5() {
+        let p = get_claude_pricing("claude-mythos-5-1");
+        assert!((p.input - 10.0).abs() < 0.001, "Mythos 5.1 input must be $10/MTok, got ${}", p.input);
+        assert!((p.cache_read - 0.25).abs() < 0.001, "Mythos 5.1 cache read must be $0.25/MTok, got ${}", p.cache_read);
+    }
+
+    // Plain "claude-fable-5" (and 1M-context "claude-fable-5-1[1m]") must keep
+    // landing on their own entries after the 5-1 entry was added above them.
+    #[test]
+    fn claude_fable_51_ordering_is_safe() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let fable5 = find_pricing(&cfg.claude, "claude-fable-5");
+        assert_eq!(fable5.label, "Fable 5");
+        assert!((fable5.cache_read - 1.00).abs() < 0.001, "Fable 5 cache read must stay $1.00/MTok");
+        let fable51_1m = find_pricing(&cfg.claude, "claude-fable-5-1[1m]");
+        assert_eq!(fable51_1m.label, "Fable 5.1");
+    }
+
     // Regression guard: "claude-mythos-5" (Project Glasswing, limited availability)
     // shares Fable 5 pricing ($10/$50) and must not fall through to the "sonnet"
     // default ($3/$15).
@@ -945,29 +985,23 @@ mod tests {
         assert!((intro.cache_write_1h - 4.0).abs() < 0.001);
     }
 
-    // Scheduled price transition: on/after 2026-09-01, Sonnet 5 moves to standard
-    // pricing ($3/$15) automatically, with no manual pricing.json edit.
+    // Anthropic cancelled the scheduled 2026-09-01 increase to $3/$15 — the
+    // introductory $2/$10 is now the standard price. The `scheduled` override
+    // was removed, so on/after 9/1 the price must stay $2/$10.
     #[test]
-    fn claude_sonnet_5_switches_to_standard_on_sept_1() {
+    fn claude_sonnet_5_stays_at_2_10_after_cancelled_increase() {
         let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
         let entry = find_pricing(&cfg.claude, "claude-sonnet-5");
 
-        // Day before the switch: still introductory.
-        let before = entry.resolve_for("2026-08-31");
-        assert!((before.input - 2.0).abs() < 0.001, "on 8/31 input must still be $2, got ${}", before.input);
-        assert!((before.output - 10.0).abs() < 0.001);
-
-        // Switch day (inclusive): standard.
         let on = entry.resolve_for("2026-09-01");
-        assert!((on.input - 3.0).abs() < 0.001, "on 9/1 input must be $3, got ${}", on.input);
-        assert!((on.output - 15.0).abs() < 0.001, "on 9/1 output must be $15, got ${}", on.output);
-        assert!((on.cache_read - 0.30).abs() < 0.001);
-        assert!((on.cache_write - 3.75).abs() < 0.001);
-        assert!((on.cache_write_1h - 6.0).abs() < 0.001);
+        assert!((on.input - 2.0).abs() < 0.001, "on 9/1 input must stay $2, got ${}", on.input);
+        assert!((on.output - 10.0).abs() < 0.001, "on 9/1 output must stay $10, got ${}", on.output);
+        assert!((on.cache_read - 0.20).abs() < 0.001);
+        assert!((on.cache_write - 2.50).abs() < 0.001);
+        assert!((on.cache_write_1h - 4.0).abs() < 0.001);
 
-        // Well after the switch: still standard.
         let after = entry.resolve_for("2027-01-01");
-        assert!((after.input - 3.0).abs() < 0.001);
+        assert!((after.input - 2.0).abs() < 0.001);
     }
 
     // Entries without a `scheduled` array resolve to their base values unchanged.
@@ -988,9 +1022,10 @@ mod tests {
         let intro = entry.resolve_for("2026-07-01");
         assert!((intro.input - 2.0).abs() < 0.001, "Opencode Sonnet 5 intro input must be $2/MTok, got ${}", intro.input);
         assert!((intro.output - 10.0).abs() < 0.001);
+        // The scheduled 9/1 increase was cancelled — $2/$10 stays after that date.
         let standard = entry.resolve_for("2026-09-01");
-        assert!((standard.input - 3.0).abs() < 0.001, "Opencode Sonnet 5 standard input must be $3/MTok, got ${}", standard.input);
-        assert!((standard.output - 15.0).abs() < 0.001);
+        assert!((standard.input - 2.0).abs() < 0.001, "Opencode Sonnet 5 input must stay $2/MTok, got ${}", standard.input);
+        assert!((standard.output - 10.0).abs() < 0.001);
     }
 
     #[test]
