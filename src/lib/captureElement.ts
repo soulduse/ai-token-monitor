@@ -1,6 +1,5 @@
 import { Image } from "@tauri-apps/api/image";
 import { invoke } from "@tauri-apps/api/core";
-import { save } from "@tauri-apps/plugin-dialog";
 import { writeImage } from "@tauri-apps/plugin-clipboard-manager";
 import html2canvas from "html2canvas";
 
@@ -74,15 +73,8 @@ export async function saveElementAsPng(
   element: HTMLElement,
   defaultName: string,
 ): Promise<boolean> {
-  const path = await save({
-    defaultPath: defaultName,
-    filters: [{ name: "PNG Image", extensions: ["png"] }],
-  });
-  if (!path) return false;
-
   const canvas = await renderElement(element);
   const blob = await canvasToPngBlob(canvas);
   const pngData = Array.from(new Uint8Array(await blob.arrayBuffer()));
-  await invoke("save_png_to_file", { pngData, path });
-  return true;
+  return invoke<boolean>("save_capture_png", { pngData, defaultName });
 }

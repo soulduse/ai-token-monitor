@@ -229,6 +229,7 @@ export function installMockTauri(): void {
     enable_usage_tracking: () => null,
     copy_png_to_clipboard: () => null,
     save_png_to_file: () => null,
+    save_capture_png: () => true,
   };
 
   // Tauri's event API cleanup path calls this directly (outside invoke).
