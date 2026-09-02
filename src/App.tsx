@@ -4,7 +4,7 @@ import { useToday } from "./hooks/useToday";
 import { useDateNav } from "./hooks/useDateNav";
 import { useUnreadChat } from "./hooks/useUnreadChat";
 import { useChatNotification } from "./hooks/useChatNotification";
-import { formatTokens, getTotalTokens } from "./lib/format";
+import { formatCost, formatTokens, getTotalTokens } from "./lib/format";
 import { SettingsProvider, useSettings } from "./contexts/SettingsContext";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { MiniProfileProvider } from "./contexts/MiniProfileContext";
@@ -248,11 +248,7 @@ function AppContent() {
                     tokens: formatTokens(cursorRollup.total, prefs.number_format),
                     date: cursorRollup.lastDate,
                     estimate: prefs.cursor_estimate_cost
-                      ? t("cursor.publicCostIncluded", { cost: cursorRollup.estimatedCost.toLocaleString(undefined, {
-                          style: "currency",
-                          currency: "USD",
-                          maximumFractionDigits: 0,
-                        }) })
+                      ? t("cursor.publicCostIncluded", { cost: formatCost(cursorRollup.estimatedCost) })
                       : t("cursor.publicCostOmitted"),
                   })
                 : t("cursor.publicNotice")}
