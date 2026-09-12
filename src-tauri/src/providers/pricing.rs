@@ -1358,6 +1358,49 @@ mod tests {
         assert!((p.output - 30.00).abs() < 0.001);
     }
 
+    // Regression guard: "gpt-6-astra" (flagship, released 2026-09-03) must match
+    // its own entry ($10/$50, cached $1), not fall through to the gpt-5.4
+    // default ($2.50/$15) and get under-billed 4x.
+    #[test]
+    fn codex_gpt6_astra_not_billed_as_default() {
+        let p = get_codex_pricing("gpt-6-astra");
+        assert!((p.input - 10.00).abs() < 0.001, "gpt-6-astra input must be $10/MTok, got ${}", p.input);
+        assert!((p.output - 50.00).abs() < 0.001, "gpt-6-astra output must be $50/MTok, got ${}", p.output);
+        assert!((p.cached_input - 1.00).abs() < 0.001, "gpt-6-astra cached must be $1/MTok, got ${}", p.cached_input);
+    }
+
+    // Bare "gpt-6" falls to the Astra rate (only GPT-6 model published), and the
+    // "gpt-6" pattern must not shadow gpt-5.6 entries ("gpt-5.6" does not contain
+    // the substring "gpt-6", but guard it explicitly).
+    #[test]
+    fn codex_gpt6_ordering_is_safe() {
+        let bare = get_codex_pricing("gpt-6");
+        assert!((bare.input - 10.00).abs() < 0.001, "bare gpt-6 input must be $10/MTok, got ${}", bare.input);
+        let sol = get_codex_pricing("gpt-5.6-sol");
+        assert!((sol.input - 5.00).abs() < 0.001, "gpt-5.6-sol must keep its own $5 rate, got ${}", sol.input);
+    }
+
+    // The entry carries the long-context (>272K) rate card as data. The codex
+    // provider does not yet pick tiers per request (grok does) — this pins the
+    // rates so a future tier-picker starts from correct numbers.
+    #[test]
+    fn codex_gpt6_astra_high_context_rates_recorded() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let entry = find_pricing(&cfg.codex, "gpt-6-astra");
+        let hc = entry.high_context.expect("gpt-6-astra long-context tier present");
+        assert_eq!(hc.threshold_tokens, 272000);
+        assert!((hc.input - 20.00).abs() < 0.001);
+        assert!((hc.output - 75.00).abs() < 0.001);
+        assert!((hc.cached_input - 2.00).abs() < 0.001);
+    }
+
+    #[test]
+    fn opencode_gpt6_astra_not_billed_as_sonnet() {
+        let p = get_opencode_pricing("openai/gpt-6-astra");
+        assert!((p.input - 10.00).abs() < 0.001, "opencode gpt-6-astra input must be $10/MTok, got ${}", p.input);
+        assert!((p.output - 50.00).abs() < 0.001);
+    }
+
     #[test]
     fn opencode_gpt56_terra_pricing() {
         let p = get_opencode_pricing("openai/gpt-5.6-terra");
