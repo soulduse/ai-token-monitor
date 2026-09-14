@@ -169,8 +169,22 @@ function LeaderboardContent({ user, minDate, dailyTokens }: { user: User; minDat
   if (prefs.include_gjc) availableProviders.push("gjc");
   if (prefs.include_grok) availableProviders.push("grok");
   if (prefs.include_kiro) availableProviders.push("kiro");
-  // Default to claude if nothing enabled
-  if (availableProviders.length === 0) availableProviders.push("claude");
+  if (availableProviders.length === 0) {
+    return (
+      <div style={{
+        background: "var(--bg-card)",
+        borderRadius: "var(--radius-lg)",
+        padding: 24,
+        boxShadow: "var(--shadow-card)",
+        textAlign: "center",
+      }}>
+        <div style={{ fontSize: 32, marginBottom: 8 }}>🏆</div>
+        <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>
+          {t("leaderboard.noSupportedSource")}
+        </div>
+      </div>
+    );
+  }
 
   // Ensure selected provider is valid
   const activeProvider = availableProviders.includes(provider) ? provider : availableProviders[0];

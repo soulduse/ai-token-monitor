@@ -3,6 +3,10 @@ import { getTotalTokens, toLocalDateStr } from "./format";
 
 export type Period = "today" | "week" | "month" | "year" | "all";
 
+export function isUnclassifiedUsage(name: string): boolean {
+  return name === "cursor-public-tokens";
+}
+
 export function filterByPeriod(daily: DailyUsage[], period: Period, year?: number): DailyUsage[] {
   const now = new Date();
   const todayStr = toLocalDateStr(now);
@@ -51,6 +55,7 @@ export function findBusiestDay(daily: DailyUsage[]): { date: string; tokens: num
 export function getMostUsedModel(modelUsage: Record<string, ModelUsage>): { name: string; totalTokens: number; cost: number } | null {
   let best: { name: string; totalTokens: number; cost: number } | null = null;
   for (const [name, u] of Object.entries(modelUsage)) {
+    if (isUnclassifiedUsage(name)) continue;
     const total = u.input_tokens + u.output_tokens + u.cache_read;
     if (!best || total > best.totalTokens) {
       best = { name, totalTokens: total, cost: u.cost_usd };
@@ -62,7 +67,8 @@ export function getMostUsedModel(modelUsage: Record<string, ModelUsage>): { name
 export function computeCacheHitRate(modelUsage: Record<string, ModelUsage>): number {
   let totalInput = 0;
   let totalCacheRead = 0;
-  for (const u of Object.values(modelUsage)) {
+  for (const [name, u] of Object.entries(modelUsage)) {
+    if (isUnclassifiedUsage(name)) continue;
     totalInput += u.input_tokens;
     totalCacheRead += u.cache_read;
   }
@@ -185,6 +191,8 @@ function titleCase(s: string): string {
  * versions.
  */
 export function shortenModelName(name: string): string {
+  if (name === "cursor-public-tokens") return "Cursor Public";
+
   const claude = name.match(
     /(opus|sonnet|haiku|fable|mythos)-(\d{1,2})(?:-(\d{1,2}))?(?!\d)/
   );

@@ -12,7 +12,7 @@
 - **Zero configurazione** — niente chiavi API, niente proxy. Se hai eseguito Claude Code o Codex almeno una volta, funziona subito.
 - **Spesa a colpo d'occhio** — costo in tempo reale nella barra dei menu / barra di sistema, dashboard completa con un clic.
 - **Sempre un passo avanti ai limiti** — barre live del limite di sessione (5 ore) e del piano settimanale, più avvisi Discord / Slack / Telegram prima di raggiungere il tetto.
-- **Privacy by design** — 100% offline per impostazione predefinita; classifica, chat e webhook sono rigorosamente opzionali.
+- **Privacy by design** — 100% offline per impostazione predefinita; profili pubblici Cursor, classifica, chat e webhook sono rigorosamente opzionali.
 
 | Overview | Analytics | Leaderboard |
 |:---:|:---:|:---:|
@@ -36,7 +36,7 @@
 2. **Analizza e calcola i costi in locale** — un motore Rust deduplica le voci, applica le tariffe per modello (letture dalla cache incluse) e riaggrega i dati non appena un file cambia
 3. **Lo mostra ovunque** — costo nella barra di sistema, grafici della dashboard, barra di avviso sui limiti del piano e notifiche webhook opzionali
 
-Tutto questo avviene sulla tua macchina. L'app **non effettua alcuna richiesta di rete** a meno che tu non attivi classifica, chat o webhook — e anche in quel caso vengono condivisi solo conteggi aggregati, mai codice o contenuti delle conversazioni.
+Tutto questo avviene sulla tua macchina. L'app **non effettua alcuna richiesta di rete** a meno che tu non attivi i profili pubblici Cursor, la classifica, la chat o i webhook. Cursor legge solo gli URL dei profili pubblici configurati; le funzioni condivise inviano solo conteggi aggregati, mai codice o contenuti delle conversazioni.
 
 ## Funzionalita
 
@@ -152,7 +152,7 @@ Dati condivisi: conteggio giornaliero dei token, costi, messaggi/sessioni. **Nes
 | **Grok** | `~/.grok/logs/unified.jsonl` | Token reali per richiesta da `shell.turn.inference_done`; modello e progetto uniti da `~/.grok/sessions`. Grok tronca questo log a rotazione, quindi i totali giornalieri vengono accumulati in uno snapshot locale. macOS, Linux e Windows (`%USERPROFILE%\\.grok`). I crediti settimanali SuperGrok si leggono da `billing: fetched credits config`. |
 | **Kiro** | `~/.kiro/sessions/cli/*.json` + `data.sqlite3` | **Crediti, non token** — Kiro misura un'"unità di lavoro" per turno e non registra alcun conteggio di token, quindi il costo deriva dai crediti (× $0.04, la tariffa di eccedenza). Le esecuzioni interattive e non interattive scrivono in due store separati con nomi di chiave diversi; vengono letti entrambi. I turni lasciati su Auto non registrano quale modello sia stato usato. |
 
-**Richieste di rete**: solo quando classifica/chat sono attivati (invio dati aggregati a Supabase) o quando scatta un webhook. Senza queste funzionalita, l'app funziona completamente offline. Le chiavi di traduzione AI, se configurate, inviano richieste direttamente al provider scelto.
+**Richieste di rete**: quando sono attivi i profili pubblici Cursor (lettura delle pagine configurate), classifica/chat (invio dati aggregati a Supabase), un webhook o un provider di traduzione AI. Senza queste funzionalita, l'app funziona completamente offline.
 
 ## Architettura
 

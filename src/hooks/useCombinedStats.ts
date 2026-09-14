@@ -11,9 +11,12 @@ interface UseCombinedStatsProps {
   includeGjc: boolean;
   includeGrok: boolean;
   includeKiro: boolean;
+  includeCursor: boolean;
+  cursorProfiles: string[];
+  cursorEstimateCost: boolean;
 }
 
-export function useCombinedStats({ includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro }: UseCombinedStatsProps) {
+export function useCombinedStats({ includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeCursor, cursorProfiles, cursorEstimateCost }: UseCombinedStatsProps) {
   const claude = useTokenStats("claude");
   const codex = useTokenStats("codex");
   const opencode = useTokenStats("opencode");
@@ -22,6 +25,15 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
   const gjc = useTokenStats("gjc");
   const grok = useTokenStats("grok");
   const kiro = useTokenStats("kiro");
+  const cursorScopeKey = useMemo(
+    () => `${[...cursorProfiles].map((profile) => profile.trim().toLowerCase()).sort().join(",")}|cost:${cursorEstimateCost}`,
+    [cursorProfiles, cursorEstimateCost],
+  );
+  const cursorArgs = useMemo(() => ({
+    profiles: [...cursorProfiles],
+    estimateCost: cursorEstimateCost,
+  }), [cursorScopeKey]);
+  const cursor = useTokenStats("cursor", includeCursor, cursorScopeKey, cursorArgs);
 
   const stats = useMemo<AllStats | null>(() => {
     const sources: (AllStats | null)[] = [];
@@ -33,6 +45,7 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
     if (includeGjc) sources.push(gjc.stats);
     if (includeGrok) sources.push(grok.stats);
     if (includeKiro) sources.push(kiro.stats);
+    if (includeCursor) sources.push(cursor.stats);
 
     const validStats = sources.filter((s): s is AllStats => s !== null);
     // Every pushed source was null, so any per-provider fallback here would just
@@ -41,9 +54,9 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
     if (validStats.length === 1) return validStats[0];
 
     return mergeStats(validStats);
-  }, [claude.stats, codex.stats, opencode.stats, kimi.stats, glm.stats, gjc.stats, grok.stats, kiro.stats, includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro]);
+  }, [claude.stats, codex.stats, opencode.stats, kimi.stats, glm.stats, gjc.stats, grok.stats, kiro.stats, cursor.stats, includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeCursor]);
 
-  const loading = (includeClaude && claude.loading) || (includeCodex && codex.loading) || (includeOpencode && opencode.loading) || (includeKimi && kimi.loading) || (includeGlm && glm.loading) || (includeGjc && gjc.loading) || (includeGrok && grok.loading) || (includeKiro && kiro.loading);
+  const loading = (includeClaude && claude.loading) || (includeCodex && codex.loading) || (includeOpencode && opencode.loading) || (includeKimi && kimi.loading) || (includeGlm && glm.loading) || (includeGjc && gjc.loading) || (includeGrok && grok.loading) || (includeKiro && kiro.loading) || (includeCursor && cursor.loading);
   const error = useMemo(() => {
     if (stats) return null;
 
@@ -55,11 +68,18 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
     if (includeGjc && gjc.error) return gjc.error;
     if (includeGrok && grok.error) return grok.error;
     if (includeKiro && kiro.error) return kiro.error;
+    if (includeCursor && cursor.error) return cursor.error;
 
     return null;
-  }, [stats, includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, claude.error, codex.error, opencode.error, kimi.error, glm.error, gjc.error, grok.error, kiro.error]);
+  }, [stats, includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeCursor, claude.error, codex.error, opencode.error, kimi.error, glm.error, gjc.error, grok.error, kiro.error, cursor.error]);
 
-  return { stats, loading, error };
+  return {
+    stats,
+    loading,
+    error,
+    cursorStats: cursor.stats,
+    cursorError: includeCursor ? cursor.refreshError : null,
+  };
 }
 
 function mergeStats(statsList: AllStats[]): AllStats {

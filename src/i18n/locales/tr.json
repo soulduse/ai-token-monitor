@@ -91,6 +91,7 @@
   "leaderboard.of": "/",
   "leaderboard.loading": "Yükleniyor...",
   "leaderboard.noData": "Seçilen kaynak için henüz veri yok.",
+  "leaderboard.noSupportedSource": "Cursor herkese açık toplamları liderlik tablosuna gönderilmez. Sıralamaları görmek için başka bir kaynağı etkinleştirin.",
   "leaderboard.today": "Bugün",
   "leaderboard.thisWeek": "Bu Hafta",
   "leaderboard.thisMonth": "Bu Ay",

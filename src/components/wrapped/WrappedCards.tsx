@@ -1,6 +1,6 @@
 import { forwardRef } from "react";
 import { formatCost, formatTokens, formatDate } from "../../lib/format";
-import { shortenModelName } from "../../lib/statsHelpers";
+import { isUnclassifiedUsage, shortenModelName } from "../../lib/statsHelpers";
 import type { StreakInfo } from "../../lib/statsHelpers";
 import type { ModelUsage } from "../../lib/types";
 import { useI18n } from "../../i18n/I18nContext";
@@ -78,6 +78,7 @@ const TopModelCard = forwardRef<HTMLDivElement, CardProps>(({ data }, ref) => {
 
   // Calculate usage percentages for top 3 models
   const allModels = Object.entries(data.modelUsage)
+    .filter(([name]) => !isUnclassifiedUsage(name))
     .map(([name, u]) => ({ name: shortenModelName(name), total: u.input_tokens + u.output_tokens + u.cache_read }))
     .sort((a, b) => b.total - a.total)
     .slice(0, 3);

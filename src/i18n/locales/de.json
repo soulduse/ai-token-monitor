@@ -91,6 +91,7 @@
   "leaderboard.of": "von",
   "leaderboard.loading": "Laden...",
   "leaderboard.noData": "Noch keine Daten für die ausgewählte Quelle.",
+  "leaderboard.noSupportedSource": "Öffentliche Cursor-Summen werden nicht an die Rangliste gesendet. Aktiviere eine andere Quelle, um Ränge zu sehen.",
   "leaderboard.today": "Heute",
   "leaderboard.thisWeek": "Diese Woche",
   "leaderboard.thisMonth": "Dieser Monat",
