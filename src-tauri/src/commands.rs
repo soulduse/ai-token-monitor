@@ -20,6 +20,7 @@ use crate::providers::traits::TokenProvider;
 use crate::providers::types::{AiKeys, AllStats, UserPreferences};
 
 use tauri::Emitter;
+use tauri_plugin_dialog::DialogExt;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use tauri::Manager;
 
@@ -684,6 +685,54 @@ pub fn save_png_to_file(png_data: Vec<u8>, path: String) -> Result<(), String> {
         return Err("Destination must be within home directory".to_string());
     }
     fs::write(&path, &png_data).map_err(|e| format!("Failed to save PNG: {}", e))
+}
+
+/// Save a capture only to the path explicitly approved by the native save
+/// dialog. Keeping selection and writing in one command lets users choose an
+/// external or network volume without exposing an arbitrary-path write IPC.
+#[tauri::command]
+pub async fn save_capture_png(
+    app: tauri::AppHandle,
+    png_data: Vec<u8>,
+    default_name: String,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        struct DialogOpenGuard;
+        impl Drop for DialogOpenGuard {
+            fn drop(&mut self) {
+                crate::DIALOG_OPEN.store(false, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+
+        let safe_name = Path::new(&default_name)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .filter(|name| !name.is_empty())
+            .unwrap_or("ai-token-monitor-analytics.png");
+
+        crate::DIALOG_OPEN.store(true, std::sync::atomic::Ordering::Relaxed);
+        let _dialog_guard = DialogOpenGuard;
+        let mut dialog = app
+            .dialog()
+            .file()
+            .set_file_name(safe_name)
+            .add_filter("PNG Image", &["png"]);
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        if let Some(window) = app.get_webview_window("main") {
+            dialog = dialog.set_parent(&window);
+        }
+        let selected = dialog.blocking_save_file();
+        let Some(selected) = selected else {
+            return Ok(false);
+        };
+        let path = selected
+            .into_path()
+            .map_err(|_| "Invalid destination path".to_string())?;
+        fs::write(&path, &png_data).map_err(|e| format!("Failed to save PNG: {}", e))?;
+        Ok(true)
+    })
+    .await
+    .map_err(|error| format!("Failed to run save dialog: {error}"))?
 }
 
 #[cfg(target_os = "macos")]
