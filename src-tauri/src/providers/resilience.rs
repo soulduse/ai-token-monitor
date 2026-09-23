@@ -32,7 +32,8 @@ impl ParsingGuard {
     pub(crate) fn try_acquire(flag: &'static AtomicBool) -> Option<Self> {
         flag.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .is_ok()
-            .then_some(Self(flag))
+            // then_some is eager; a guard on failure would drop and clear the holder's flag.
+            .then(|| Self(flag))
     }
 }
 
@@ -82,6 +83,17 @@ mod tests {
         assert!(ParsingGuard::try_acquire(&FLAG).is_none(), "held flags stay exclusive");
         drop(first);
         assert!(ParsingGuard::try_acquire(&FLAG).is_some(), "released flags are reusable");
+    }
+
+    #[test]
+    fn failed_acquire_does_not_release_the_held_flag() {
+        static FLAG: AtomicBool = AtomicBool::new(false);
+        let first = ParsingGuard::try_acquire(&FLAG).expect("flag free");
+        assert!(ParsingGuard::try_acquire(&FLAG).is_none());
+        assert!(FLAG.load(Ordering::SeqCst), "failed acquire must not clear held flag");
+        assert!(ParsingGuard::try_acquire(&FLAG).is_none(), "third acquire must remain excluded");
+        drop(first);
+        assert!(ParsingGuard::try_acquire(&FLAG).is_some(), "released flag is reusable");
     }
 
     // A panic while holding the cache mutex must not make the cache unreachable.
