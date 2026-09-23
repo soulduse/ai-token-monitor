@@ -151,6 +151,7 @@ npm run tauri build   # 프로덕션 빌드
 | **OpenCode** | `~/.local/share/opencode/**/*.jsonl` | 내장 가격 레지스트리 기반 모델별 비용 계산. |
 | **Grok** | `~/.grok/logs/unified.jsonl` | `shell.turn.inference_done`의 요청별 실측 토큰. 모델·프로젝트는 `~/.grok/sessions`에서 조인. Grok이 이 롤링 로그의 앞부분을 잘라내므로 일별 집계를 로컬 스냅샷에 누적합니다. macOS, Linux, Windows(`%USERPROFILE%\\.grok`)에서 동작합니다. SuperGrok 주간 크레딧은 `billing: fetched credits config`에서 읽습니다. |
 | **Kiro** | `~/.kiro/sessions/cli/*.json` + `data.sqlite3` | **토큰이 아니라 크레딧** — Kiro는 턴 단위 "작업량"으로 계량하며 토큰 수를 어디에도 기록하지 않아, 비용은 크레딧(× $0.04, 초과 단가)에서 계산합니다. 대화형·비대화형 실행이 서로 다른 키 이름의 저장소 두 곳에 쓰므로 둘 다 읽습니다. Auto로 돌린 턴은 실제 모델이 기록되지 않습니다. |
+| **OmO Native** | `~/.omo/agent/sessions/*/*.jsonl` + `<project>/.omo/senpi-task/children/**`의 하위 에이전트 세션 | 메시지별 사용량과 사전 계산된 비용을 사용하고 API 응답 ID로 중복 제거합니다. `OMO_CODING_AGENT_DIR` 설정을 따릅니다. |
 
 **네트워크 요청**: 리더보드/채팅 opt-in 시 Supabase로 집계 데이터 전송, 웹훅 발화 시 외부 전송. 이 기능을 쓰지 않으면 앱은 완전히 오프라인으로 동작합니다. AI 번역 키를 설정한 경우에만 해당 프로바이더로 직접 요청이 전송됩니다.
 

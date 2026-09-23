@@ -70,6 +70,7 @@ const mockPrefs: UserPreferences = {
   include_gjc: false,
   include_grok: false,
   include_kiro: false,
+  include_omo: false,
   theme: "github",
   color_mode: "dark",
   language: "en",
@@ -186,8 +187,10 @@ export function installMockTauri(): void {
     get_gjc_stats: () => stats,
     get_grok_stats: () => stats,
     get_kiro_stats: () => kiroStats,
+    get_omo_stats: () => stats,
     get_kiro_breakdown: () => kiroBreakdown,
     is_kiro_available: () => true,
+    is_omo_available: () => true,
     is_grok_available: () => true,
     get_grok_usage: () => ({
       subscription_tier: "SuperGrok Lite",
