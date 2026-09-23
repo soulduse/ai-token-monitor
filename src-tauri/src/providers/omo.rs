@@ -10,6 +10,7 @@
 
 // allow: SIZE_OK — one provider per file is this repo's convention (see gjc.rs):
 // parse engine + provider wrapper + contract tests form one cohesive unit.
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -211,6 +212,7 @@ fn parse_session_file(path: &Path) -> ParsedFile {
         let dedup_key = message
             .get("responseId")
             .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
             .map(ToString::to_string)
             .or_else(|| {
                 let line_id = value.get("id").and_then(Value::as_str).unwrap_or("");
@@ -379,14 +381,25 @@ impl ScanState {
     }
 
     /// Merge per-file entries: files in sorted path order, first occurrence of
-    /// a dedup key wins (deterministic across runs).
+    /// a dedup key wins (deterministic across runs) — except that an earlier
+    /// date always wins, so a resumed/forked copy that re-stamps its timestamp
+    /// cannot move a response to a later day depending on path order.
     fn rebuild_stats(&self) -> AllStats {
         let mut files: Vec<&PathBuf> = self.file_entries.keys().collect();
         files.sort_unstable();
         let mut merged: HashMap<String, &OmoEntry> = HashMap::new();
         for file in files {
             for (key, entry) in &self.file_entries[file] {
-                merged.entry(key.clone()).or_insert(entry);
+                match merged.entry(key.clone()) {
+                    Entry::Vacant(slot) => {
+                        slot.insert(entry);
+                    }
+                    Entry::Occupied(mut slot) => {
+                        if entry.date < slot.get().date {
+                            slot.insert(entry);
+                        }
+                    }
+                }
             }
         }
         build_stats(merged.into_values())
@@ -953,6 +966,69 @@ mod tests {
         assert_eq!(keys, vec!["claude-opus-4-8", "omo"]);
         assert_eq!(stats.model_usage["claude-opus-4-8"].input_tokens, 5);
         assert_eq!(stats.model_usage["omo"].input_tokens, 6);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // A duplicated responseId whose copy is re-stamped later must stay on the
+    // earlier day, even when the later copy sorts first by path.
+    #[test]
+    fn duplicated_response_keeps_earliest_date() {
+        let root = temp_root("earliest");
+        let sessions = root.join("agent").join("sessions");
+        let cwd = root.join("proj");
+        let line = |timestamp: &str, input: u64| {
+            json!({
+                "type": "message", "id": "2222bbbb", "timestamp": timestamp,
+                "message": {"role": "assistant", "model": "claude-opus-4.8", "responseId": "resp_fork",
+                    "usage": {"input": input, "output": 1, "totalTokens": input + 1}}
+            })
+            .to_string()
+        };
+
+        // `aaa` sorts first but holds the re-stamped (later) copy.
+        write_file(
+            &sessions.join("aaa").join("fork.jsonl"),
+            &[session_header(&cwd, "sess-fork"), line("2026-09-05T12:00:00Z", 100)].join("\n"),
+        );
+        write_file(
+            &sessions.join("zzz").join("orig.jsonl"),
+            &[session_header(&cwd, "sess-orig"), line("2026-09-01T12:00:00Z", 200)].join("\n"),
+        );
+
+        let stats = ScanState::default().refresh(&sessions);
+
+        assert_eq!(stats.total_messages, 1);
+        assert_eq!(totals(&stats).0, 200, "the earlier-dated copy wins");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // An empty responseId is not an id: blank-id responses must not collapse
+    // into a single "" key.
+    #[test]
+    fn empty_response_id_falls_back_to_line_key() {
+        let root = temp_root("empty-id");
+        let sessions = root.join("agent").join("sessions");
+        let cwd = root.join("proj");
+        let line = |id: &str| {
+            json!({
+                "type": "message", "id": id, "timestamp": "2026-09-01T10:00:00Z",
+                "message": {"role": "assistant", "model": "claude-opus-4.8", "responseId": "",
+                    "usage": {"input": 10, "output": 1, "totalTokens": 11}}
+            })
+            .to_string()
+        };
+
+        write_file(
+            &sessions.join("p").join("s.jsonl"),
+            &[session_header(&cwd, "sess"), line("line-1"), line("line-2")].join("\n"),
+        );
+
+        let stats = ScanState::default().refresh(&sessions);
+
+        assert_eq!(stats.total_messages, 2);
+        assert_eq!(totals(&stats).0, 20);
 
         let _ = fs::remove_dir_all(&root);
     }
