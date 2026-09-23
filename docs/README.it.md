@@ -151,6 +151,7 @@ Dati condivisi: conteggio giornaliero dei token, costi, messaggi/sessioni. **Nes
 | **OpenCode** | `~/.local/share/opencode/**/*.jsonl` | Costi per modello dal registro prezzi integrato. |
 | **Grok** | `~/.grok/logs/unified.jsonl` | Token reali per richiesta da `shell.turn.inference_done`; modello e progetto uniti da `~/.grok/sessions`. Grok tronca questo log a rotazione, quindi i totali giornalieri vengono accumulati in uno snapshot locale. macOS, Linux e Windows (`%USERPROFILE%\\.grok`). I crediti settimanali SuperGrok si leggono da `billing: fetched credits config`. |
 | **Kiro** | `~/.kiro/sessions/cli/*.json` + `data.sqlite3` | **Crediti, non token** — Kiro misura un'"unità di lavoro" per turno e non registra alcun conteggio di token, quindi il costo deriva dai crediti (× $0.04, la tariffa di eccedenza). Le esecuzioni interattive e non interattive scrivono in due store separati con nomi di chiave diversi; vengono letti entrambi. I turni lasciati su Auto non registrano quale modello sia stato usato. |
+| **OmO Native** | `~/.omo/agent/sessions/*/*.jsonl` + sessioni subagent in `<project>/.omo/senpi-task/children/**` | Utilizzo per messaggio con costo pre-calcolato; deduplicazione tramite ID della risposta API. Rispetta `OMO_CODING_AGENT_DIR`. |
 
 **Richieste di rete**: solo quando classifica/chat sono attivati (invio dati aggregati a Supabase) o quando scatta un webhook. Senza queste funzionalita, l'app funziona completamente offline. Le chiavi di traduzione AI, se configurate, inviano richieste direttamente al provider scelto.
 

@@ -15,6 +15,7 @@ use crate::providers::grok::{GrokCredits, GrokProvider};
 use crate::providers::kiro::{KiroBreakdown, KiroProvider};
 use crate::providers::kimi::KimiProvider;
 use crate::providers::opencode::OpenCodeProvider;
+use crate::providers::omo::OmoProvider;
 use crate::providers::pricing;
 use crate::providers::traits::TokenProvider;
 use crate::providers::types::{AiKeys, AllStats, UserPreferences};
@@ -278,6 +279,33 @@ pub async fn get_gjc_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
 #[tauri::command]
 pub fn is_gjc_available() -> bool {
     GjcProvider::new(get_preferences().gjc_dirs).is_available()
+}
+
+#[tauri::command]
+pub async fn get_omo_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
+    let result = tauri::async_runtime::spawn_blocking(|| {
+        let provider = OmoProvider::new();
+        if !provider.is_available() {
+            return Err("OmO stats not available".to_string());
+        }
+        provider.fetch_stats()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    match result {
+        Ok(mut stats) => {
+            crate::hydration::apply(&mut stats, "omo");
+            crate::update_tray_title(&app);
+            Ok(stats)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+#[tauri::command]
+pub fn is_omo_available() -> bool {
+    OmoProvider::new().is_available()
 }
 
 #[tauri::command]

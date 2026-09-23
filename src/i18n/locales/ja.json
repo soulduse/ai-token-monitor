@@ -15,6 +15,7 @@
   "sources.kimi": "Kimi",
   "sources.glm": "GLM",
   "sources.gjc": "GJC",
+  "sources.omo": "OmO",
   "sources.grok": "Grok",
   "sources.summary.count": "{{total}}中{{active}}使用",
   "sources.open": "ソースメニューを開く",
