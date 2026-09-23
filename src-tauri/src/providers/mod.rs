@@ -5,6 +5,7 @@ pub mod glm;
 pub mod grok;
 pub mod kiro;
 pub mod kimi;
+pub mod omo;
 pub mod opencode;
 pub mod pricing;
 pub(crate) mod resilience;
