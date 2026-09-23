@@ -326,7 +326,7 @@ impl ScanState {
                 .into_iter()
                 .partition(|cwd| referenced.contains(cwd));
             for cwd in &dropped {
-                self.drop_children(cwd);
+                self.drop_children(cwd, &current_main);
             }
             cwds.sort();
             eprintln!(
@@ -366,10 +366,14 @@ impl ScanState {
     }
 
     /// Forget a cwd no main session references any more, as a fresh scan would.
-    fn drop_children(&mut self, cwd: &Path) {
+    /// A path that is still a main session keeps its entries: with the agent dir
+    /// nested inside a children tree, main and child discovery can overlap.
+    fn drop_children(&mut self, cwd: &Path, current_main: &HashMap<PathBuf, (SystemTime, u64)>) {
         if let Some(cached) = self.child_meta.remove(cwd) {
             for path in cached.keys() {
-                self.file_entries.remove(path);
+                if !current_main.contains_key(path) {
+                    self.file_entries.remove(path);
+                }
             }
         }
     }
@@ -1104,6 +1108,50 @@ mod tests {
         let stats = ScanState::default().refresh(&sessions);
         assert_eq!((totals(&stats).0, stats.total_messages), (8, 2));
         assert!(stats.daily.iter().all(|d| d.date.len() == 10 && d.date.is_ascii()));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Agent dir placed inside project A's children tree, so main sessions in
+    /// `sessions/st_*/` are ALSO discovered as A's children. Main `a` refers to
+    /// A, main `b` to B; returns (sessions root, main a, main b, cwd b).
+    fn overlapping_discovery_fixture(root: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
+        let cwd_a = root.join("proj-a");
+        let cwd_b = root.join("proj-bbbb");
+        let sessions = cwd_a.join(".omo/senpi-task/children/st_0/sessions");
+        let main_a = sessions.join("st_a").join("a.jsonl");
+        let main_b = sessions.join("st_b").join("b.jsonl");
+        write_file(&main_a, &[session_header(&cwd_a, "sa"), usage_line("ma", 1)].join("\n"));
+        write_file(&main_b, &[session_header(&cwd_b, "sb"), usage_line("mb", 2)].join("\n"));
+        write_file(&child_path(&cwd_b, "st_b"), &[session_header(&cwd_b, "cb"), usage_line("cb", 100)].join("\n"));
+        (sessions, main_a, main_b, cwd_b)
+    }
+
+    // (14) Dropping an unreferenced cwd's children must not evict a file that
+    // is still a main session (agent dir nested inside a children tree).
+    #[test]
+    fn dropping_children_keeps_overlapping_main_sessions_after_delete() {
+        let root = temp_root("overlap-del");
+        let (sessions, main_a, _main_b, _cwd_b) = overlapping_discovery_fixture(&root);
+
+        let mut state = ScanState::default();
+        state.refresh(&sessions);
+        fs::remove_file(&main_a).expect("remove main a");
+        assert_matches_fresh(&mut state, &sessions, 102);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // (15) Same overlap, but main `a` moves to cwd B instead of being deleted.
+    #[test]
+    fn dropping_children_keeps_overlapping_main_sessions_after_cwd_change() {
+        let root = temp_root("overlap-move");
+        let (sessions, main_a, _main_b, cwd_b) = overlapping_discovery_fixture(&root);
+
+        let mut state = ScanState::default();
+        state.refresh(&sessions);
+        write_file(&main_a, &[session_header(&cwd_b, "sa"), usage_line("ma", 1)].join("\n"));
+        assert_matches_fresh(&mut state, &sessions, 103);
 
         let _ = fs::remove_dir_all(&root);
     }
