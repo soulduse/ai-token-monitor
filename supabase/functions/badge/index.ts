@@ -9,6 +9,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   gjc: "#e11d48",
   grok: "#475569",
   kiro: "#7c5cfc",
+  omo: "#0ea5e9",
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -20,6 +21,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   gjc: "GJC",
   grok: "Grok",
   kiro: "Kiro",
+  omo: "OmO",
 };
 
 const PERIOD_LABELS: Record<string, string> = {
@@ -28,7 +30,7 @@ const PERIOD_LABELS: Record<string, string> = {
   month: "This Month",
 };
 
-const VALID_PROVIDERS = new Set(["claude", "codex", "opencode", "kimi", "glm", "gjc", "grok", "kiro"]);
+const VALID_PROVIDERS = new Set(["claude", "codex", "opencode", "kimi", "glm", "gjc", "grok", "kiro", "omo"]);
 const VALID_PERIODS = new Set(["today", "week", "month"]);
 const VALID_STYLES = new Set(["flat", "flat-square", "card"]);
 

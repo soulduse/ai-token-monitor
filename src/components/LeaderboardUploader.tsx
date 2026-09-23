@@ -37,6 +37,7 @@ export function LeaderboardUploader() {
   const { stats: gjcStats } = useTokenStats("gjc");
   const { stats: grokStats } = useTokenStats("grok");
   const { stats: kiroStats } = useTokenStats("kiro");
+  const { stats: omoStats } = useTokenStats("omo");
 
   const claude = useSnapshotUploader({
     stats: prefs.include_claude ? claudeStats : null,
@@ -87,6 +88,13 @@ export function LeaderboardUploader() {
     provider: "kiro",
   });
 
+  const omo = useSnapshotUploader({
+    stats: prefs.include_omo ? omoStats : null,
+    user,
+    optedIn,
+    provider: "omo",
+  });
+
   const runners = useMemo<Partial<Record<LeaderboardProvider, BackfillRunner>>>(
     () => ({
       claude: prefs.include_claude && claude.ready ? claude.manualBackfill : undefined,
@@ -97,6 +105,7 @@ export function LeaderboardUploader() {
       gjc: prefs.include_gjc && gjc.ready ? gjc.manualBackfill : undefined,
       grok: prefs.include_grok && grok.ready ? grok.manualBackfill : undefined,
       kiro: prefs.include_kiro && kiro.ready ? kiro.manualBackfill : undefined,
+      omo: prefs.include_omo && omo.ready ? omo.manualBackfill : undefined,
     }),
     [
       prefs.include_claude,
@@ -107,6 +116,7 @@ export function LeaderboardUploader() {
       prefs.include_gjc,
       prefs.include_grok,
       prefs.include_kiro,
+      prefs.include_omo,
       claude.ready,
       codex.ready,
       opencode.ready,
@@ -115,6 +125,7 @@ export function LeaderboardUploader() {
       gjc.ready,
       grok.ready,
       kiro.ready,
+      omo.ready,
       claude.manualBackfill,
       codex.manualBackfill,
       opencode.manualBackfill,
@@ -123,6 +134,7 @@ export function LeaderboardUploader() {
       gjc.manualBackfill,
       grok.manualBackfill,
       kiro.manualBackfill,
+      omo.manualBackfill,
     ],
   );
 

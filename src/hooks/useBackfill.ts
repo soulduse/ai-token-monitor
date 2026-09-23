@@ -10,7 +10,7 @@ import {
 } from "../lib/backfillRegistry";
 import type { LeaderboardProvider } from "../lib/types";
 
-const PROVIDERS: LeaderboardProvider[] = ["claude", "codex", "opencode", "kimi", "glm", "gjc", "grok"];
+const PROVIDERS: LeaderboardProvider[] = ["claude", "codex", "opencode", "kimi", "glm", "gjc", "grok", "omo"];
 
 function activeProviders(prefs: {
   include_claude: boolean;
@@ -21,6 +21,7 @@ function activeProviders(prefs: {
   include_gjc: boolean;
   include_grok: boolean;
   include_kiro: boolean;
+  include_omo: boolean;
 }): LeaderboardProvider[] {
   // Keyed lookup rather than an if-chain: the chain's final `return` doubled as
   // the default case, so adding a provider to PROVIDERS without also adding its
@@ -35,6 +36,7 @@ function activeProviders(prefs: {
     gjc: prefs.include_gjc,
     grok: prefs.include_grok,
     kiro: prefs.include_kiro,
+    omo: prefs.include_omo,
   };
   return PROVIDERS.filter((p) => enabled[p]);
 }
