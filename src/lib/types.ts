@@ -80,7 +80,7 @@ export interface AllStats {
   rate_limits?: CodexRateLimits | null;
 }
 
-export type LeaderboardProvider = "claude" | "codex" | "opencode" | "kimi" | "glm" | "gjc" | "grok" | "kiro";
+export type LeaderboardProvider = "claude" | "codex" | "opencode" | "kimi" | "glm" | "gjc" | "grok" | "kiro" | "omo";
 
 /** SuperGrok / unified-billing snapshot from Grok CLI's rolling log. */
 export interface GrokCredits {

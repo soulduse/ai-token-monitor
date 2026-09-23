@@ -17,6 +17,7 @@ const PROVIDER_GRADIENTS: Record<string, string> = {
   glm: "linear-gradient(135deg, #00b96b, #008f52)",
   gjc: "linear-gradient(135deg, #e11d48, #be123c)",
   kiro: "linear-gradient(135deg, #7C5CFC, #5A3DE6)",
+  omo: "linear-gradient(135deg, #0ea5e9, #0369a1)",
 };
 
 function getRankDisplay(rank: number): string {

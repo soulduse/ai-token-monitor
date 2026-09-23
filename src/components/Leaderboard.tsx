@@ -169,6 +169,7 @@ function LeaderboardContent({ user, minDate, dailyTokens }: { user: User; minDat
   if (prefs.include_gjc) availableProviders.push("gjc");
   if (prefs.include_grok) availableProviders.push("grok");
   if (prefs.include_kiro) availableProviders.push("kiro");
+  if (prefs.include_omo) availableProviders.push("omo");
   // Default to claude if nothing enabled
   if (availableProviders.length === 0) availableProviders.push("claude");
 
