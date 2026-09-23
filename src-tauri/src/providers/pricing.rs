@@ -948,6 +948,31 @@ mod tests {
         assert_eq!(opus5_1m.label, "Opus 5");
     }
 
+    // Regression guard: "claude-opus-5-5" (released 2026-09-22) contains "opus-5",
+    // so without its own entry it lands on Opus 5 ($5/$25, cache read $0.50) —
+    // over-billed 1.25x on tokens and 2.5x on cache reads (0.05x multiplier).
+    #[test]
+    fn claude_opus_5_5_not_billed_as_opus_5() {
+        for id in ["claude-opus-5-5", "claude-opus-5-5[1m]", "claude-opus-5.5"] {
+            let p = get_claude_pricing(id);
+            assert!((p.input - 4.0).abs() < 0.001, "{id} input must be $4/MTok, got ${}", p.input);
+            assert!((p.output - 20.0).abs() < 0.001, "{id} output must be $20/MTok, got ${}", p.output);
+            assert!((p.cache_read - 0.20).abs() < 0.001, "{id} cache read must be $0.20/MTok, got ${}", p.cache_read);
+            assert!((p.cache_write_5m - 5.0).abs() < 0.001);
+            assert!((p.cache_write_1h - 8.0).abs() < 0.001);
+        }
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        assert_eq!(find_pricing(&cfg.claude, "claude-opus-5").label, "Opus 5");
+    }
+
+    #[test]
+    fn opencode_opus_5_5_not_billed_as_opus_5() {
+        let p = get_opencode_pricing("anthropic/claude-opus-5-5");
+        assert!((p.input - 4.0).abs() < 0.001, "Opencode Opus 5.5 input must be $4/MTok, got ${}", p.input);
+        assert!((p.output - 20.0).abs() < 0.001);
+        assert!((p.cache_read - 0.20).abs() < 0.001);
+    }
+
     #[test]
     fn opencode_opus_5_pricing() {
         let p = get_opencode_pricing("anthropic/claude-opus-5");
@@ -1378,6 +1403,31 @@ mod tests {
         assert!((bare.input - 10.00).abs() < 0.001, "bare gpt-6 input must be $10/MTok, got ${}", bare.input);
         let sol = get_codex_pricing("gpt-5.6-sol");
         assert!((sol.input - 5.00).abs() < 0.001, "gpt-5.6-sol must keep its own $5 rate, got ${}", sol.input);
+    }
+
+    // Regression guard: GPT-6 Sol/Luna (released 2026-09-22) must match their
+    // own entries. Without them the bare "gpt-6" fallback bills them at the
+    // Astra rate — Sol over-billed 5x, Luna 100x. There is no GPT-6 Terra.
+    #[test]
+    fn codex_gpt6_sol_luna_not_billed_as_astra() {
+        let sol = get_codex_pricing("gpt-6-sol");
+        assert!((sol.input - 2.00).abs() < 0.001, "gpt-6-sol input must be $2/MTok, got ${}", sol.input);
+        assert!((sol.output - 10.00).abs() < 0.001, "gpt-6-sol output must be $10/MTok, got ${}", sol.output);
+        assert!((sol.cached_input - 0.20).abs() < 0.001);
+        let luna = get_codex_pricing("gpt-6-luna");
+        assert!((luna.input - 0.10).abs() < 0.001, "gpt-6-luna input must be $0.10/MTok, got ${}", luna.input);
+        assert!((luna.output - 0.50).abs() < 0.001, "gpt-6-luna output must be $0.50/MTok, got ${}", luna.output);
+        assert!((luna.cached_input - 0.01).abs() < 0.001);
+    }
+
+    #[test]
+    fn opencode_gpt6_sol_luna_pricing() {
+        let sol = get_opencode_pricing("openai/gpt-6-sol");
+        assert!((sol.input - 2.00).abs() < 0.001, "opencode gpt-6-sol input must be $2/MTok, got ${}", sol.input);
+        assert!((sol.cache_write - 2.50).abs() < 0.001);
+        let luna = get_opencode_pricing("openai/gpt-6-luna");
+        assert!((luna.input - 0.10).abs() < 0.001, "opencode gpt-6-luna input must be $0.10/MTok, got ${}", luna.input);
+        assert!((luna.output - 0.50).abs() < 0.001);
     }
 
     // The entry carries the long-context (>272K) rate card as data. The codex
