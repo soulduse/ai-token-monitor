@@ -389,6 +389,13 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             (true, 0.0)
         };
 
+        let (omo_warm, omo_cost) = if prefs.include_omo {
+            let s = providers::omo::get_cached_stats();
+            (s.is_some(), today_cost_of(&s, &today))
+        } else {
+            (true, 0.0)
+        };
+
         let computed = claude_cost
             + codex_cost
             + opencode_cost
@@ -396,7 +403,8 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             + glm_cost
             + gjc_cost
             + grok_cost
-            + kiro_cost;
+            + kiro_cost
+            + omo_cost;
         let warm = claude_warm
             && codex_warm
             && opencode_warm
@@ -404,7 +412,8 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             && glm_warm
             && gjc_warm
             && grok_warm
-            && kiro_warm;
+            && kiro_warm
+            && omo_warm;
 
         let today_cost = if warm {
             // Every enabled provider has parsed — this is the real number.
@@ -526,6 +535,19 @@ fn get_all_watch_dirs() -> Vec<PathBuf> {
         dirs.push(default_gjc);
     }
 
+    // OmO: watch only the main sessions root (honours OMO_CODING_AGENT_DIR).
+    // Subagent sessions under <project>/.omo/senpi-task/children are not
+    // watched: the provider re-stats a project's children whenever that
+    // project's main session file changes. Gated on include_omo like Grok,
+    // since OmO appends on every message and each event re-parses every
+    // provider.
+    if prefs.include_omo {
+        let omo_sessions = providers::omo::default_sessions_root();
+        if omo_sessions.exists() {
+            dirs.push(omo_sessions);
+        }
+    }
+
     dirs
 }
 
@@ -601,6 +623,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                     providers::gjc::invalidate_stats_cache();
                     providers::grok::invalidate_stats_cache();
                     providers::kiro::invalidate_stats_cache();
+                    providers::omo::invalidate_stats_cache();
                     // Re-parse in background, then notify the frontend. Emitting only
                     // after the parse completes means the frontend's get_*_stats calls
                     // hit the warm cache instead of racing this thread and parsing the
@@ -631,6 +654,9 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                         if prefs.include_kiro {
                             let _ = providers::kiro::KiroProvider::new().fetch_stats();
                         }
+                        if prefs.include_omo {
+                            let _ = providers::omo::OmoProvider::new().fetch_stats();
+                        }
                         update_tray_title(&app_for_refresh);
                         let _ = app_for_refresh.emit("stats-updated", ());
                     });
@@ -657,6 +683,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                         providers::gjc::invalidate_stats_cache();
                         providers::grok::invalidate_stats_cache();
                         providers::kiro::invalidate_stats_cache();
+                        providers::omo::invalidate_stats_cache();
                         let _ = app_handle.emit("stats-updated", ());
                     }
                     update_tray_title(&app_handle);
@@ -1100,6 +1127,8 @@ pub fn run() {
             commands::is_glm_available,
             commands::get_gjc_stats,
             commands::is_gjc_available,
+            commands::get_omo_stats,
+            commands::is_omo_available,
             commands::get_preferences,
             commands::set_preferences,
             commands::get_stable_device_id,
