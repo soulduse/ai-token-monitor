@@ -744,6 +744,23 @@ mod tests {
         assert_eq!(p46.high_cached_input, 1.00);
     }
 
+    // Regression guard: "grok-4.7" (released 2026-09-21) must match its own
+    // entry. Rates equal 4.6 today, but without an entry it only lands there via
+    // the default fallback (with an unmatched-model warning) and would silently
+    // keep 4.6's rates if the two ever diverge.
+    #[test]
+    fn grok_47_matches_own_entry() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let grok = cfg.grok.as_ref().expect("grok config present");
+        assert_eq!(find_pricing(grok, "grok-4.7").label, "Grok 4.7");
+        let p = get_grok_pricing("grok-4.7");
+        assert_eq!(p.input, 2.00);
+        assert_eq!(p.output, 6.00);
+        assert_eq!(p.cached_input, 0.50);
+        assert_eq!(p.high_input, 4.00);
+        assert_eq!(p.high_cached_input, 1.00);
+    }
+
     #[test]
     fn grok_46_build_variant_bills_as_46() {
         let variant = get_grok_pricing("grok-4.6-build");
