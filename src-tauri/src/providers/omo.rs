@@ -85,13 +85,11 @@ struct OmoEntry {
 // --- File discovery ---
 
 /// Main sessions live at a FIXED depth: `<root>/*/*.jsonl`. Deeper files (e.g.
-/// `sessions/<x>/extensions/goal/*.history.jsonl`) are not sessions.
+/// `sessions/<x>/extensions/goal/*.history.jsonl`) are not sessions. The root
+/// is escaped so a configured path containing glob metacharacters stays literal.
 fn main_sessions_pattern(sessions_root: &Path) -> String {
-    sessions_root
-        .join("*")
-        .join("*.jsonl")
-        .to_string_lossy()
-        .into_owned()
+    let escaped = glob::Pattern::escape(&sessions_root.to_string_lossy());
+    format!("{escaped}/*/*.jsonl")
 }
 
 /// Subagent child sessions: `<cwd>/.omo/senpi-task/children/st_*/sessions/st_*/*.jsonl`.
@@ -302,25 +300,34 @@ impl ScanState {
                 .clone()
                 .expect("initialized scan always caches stats");
         } else {
+            // Every cwd a changed or deleted main file referenced before OR
+            // after this refresh is affected: its children are re-statted if a
+            // main still references it, dropped otherwise.
+            let mut affected_cwds: HashSet<PathBuf> = HashSet::new();
             for path in &deleted {
                 self.file_entries.remove(path);
-                self.file_cwd.remove(path);
+                if let Some(old) = self.file_cwd.remove(path) {
+                    affected_cwds.insert(old);
+                }
             }
-            let mut changed_cwds: HashSet<PathBuf> = HashSet::new();
             for path in &changed {
                 let parsed = parse_session_file(path);
-                match parsed.cwd {
-                    Some(cwd) => {
-                        self.file_cwd.insert(path.clone(), cwd.clone());
-                        changed_cwds.insert(cwd);
-                    }
-                    None => {
-                        self.file_cwd.remove(path);
-                    }
+                if let Some(old) = self.file_cwd.remove(path) {
+                    affected_cwds.insert(old);
+                }
+                if let Some(cwd) = parsed.cwd {
+                    self.file_cwd.insert(path.clone(), cwd.clone());
+                    affected_cwds.insert(cwd);
                 }
                 self.file_entries.insert(path.clone(), parsed.entries);
             }
-            let mut cwds: Vec<PathBuf> = changed_cwds.into_iter().collect();
+            let referenced: HashSet<&PathBuf> = self.file_cwd.values().collect();
+            let (mut cwds, dropped): (Vec<PathBuf>, Vec<PathBuf>) = affected_cwds
+                .into_iter()
+                .partition(|cwd| referenced.contains(cwd));
+            for cwd in &dropped {
+                self.drop_children(cwd);
+            }
             cwds.sort();
             eprintln!(
                 "[PERF][OMO] Incremental: {} changed, {} deleted main files; re-scanning children of {} cwds",
@@ -356,6 +363,15 @@ impl ScanState {
             }
         }
         self.child_meta.insert(cwd.to_path_buf(), current);
+    }
+
+    /// Forget a cwd no main session references any more, as a fresh scan would.
+    fn drop_children(&mut self, cwd: &Path) {
+        if let Some(cached) = self.child_meta.remove(cwd) {
+            for path in cached.keys() {
+                self.file_entries.remove(path);
+            }
+        }
     }
 
     /// Merge per-file entries: files in sorted path order, first occurrence of
@@ -551,10 +567,12 @@ fn extract_date_from_iso(value: &Value) -> Option<String> {
         let local = dt.with_timezone(&chrono::Local);
         return Some(local.format("%Y-%m-%d").to_string());
     }
-    if ts.len() >= 10 {
-        return Some(ts[..10].to_string());
-    }
-    None
+    // Fall back to a bare `YYYY-MM-DD` prefix only when it is a real date;
+    // `get` avoids slicing inside a multi-byte char.
+    let prefix = ts.get(..10)?;
+    chrono::NaiveDate::parse_from_str(prefix, "%Y-%m-%d")
+        .ok()
+        .map(|_| prefix.to_string())
 }
 
 /// Fallback: extract date from file modification time.
@@ -931,6 +949,161 @@ mod tests {
         assert_eq!(keys, vec!["claude-opus-4-8", "omo"]);
         assert_eq!(stats.model_usage["claude-opus-4-8"].input_tokens, 5);
         assert_eq!(stats.model_usage["omo"].input_tokens, 6);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    fn usage_line(response_id: &str, input: u64) -> String {
+        json!({
+            "type": "message", "id": "ffff0001", "timestamp": "2026-09-01T10:00:00Z",
+            "message": {"role": "assistant", "model": "claude-opus-4.8", "responseId": response_id,
+                "usage": {"input": input, "output": 1, "totalTokens": input + 1}}
+        })
+        .to_string()
+    }
+
+    fn child_path(cwd: &Path, task: &str) -> PathBuf {
+        cwd.join(format!(".omo/senpi-task/children/{task}/sessions/{task}/c.jsonl"))
+    }
+
+    /// An incremental refresh must land on exactly what a fresh scan (an app
+    /// restart) computes for the same files.
+    fn assert_matches_fresh(state: &mut ScanState, sessions: &Path, expected_input: u64) {
+        let incremental = state.refresh(sessions);
+        let fresh = ScanState::default().refresh(sessions);
+        assert_eq!(totals(&fresh).0, expected_input, "fixture sanity: fresh scan");
+        assert_eq!(
+            (totals(&incremental), incremental.total_messages),
+            (totals(&fresh), fresh.total_messages),
+            "incremental refresh diverged from a fresh scan"
+        );
+    }
+
+    // (8) Deleting the last main session of a project drops that project's
+    // cached children, exactly as a fresh scan would.
+    #[test]
+    fn deleting_last_main_of_cwd_drops_its_children() {
+        let root = temp_root("del-last-main");
+        let sessions = root.join("agent").join("sessions");
+        let cwd = root.join("proj");
+        let main = sessions.join("p").join("main.jsonl");
+        write_file(&main, &[session_header(&cwd, "s"), usage_line("m", 1)].join("\n"));
+        write_file(&child_path(&cwd, "st_1"), &[session_header(&cwd, "c"), usage_line("c", 10)].join("\n"));
+
+        let mut state = ScanState::default();
+        assert_eq!(totals(&state.refresh(&sessions)).0, 11);
+        fs::remove_file(&main).expect("remove main");
+        assert_matches_fresh(&mut state, &sessions, 0);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // (9) A main session whose header cwd changes moves its project: the old
+    // cwd's children go away (no longer referenced), the new cwd's appear.
+    #[test]
+    fn main_cwd_change_swaps_children_sets() {
+        let root = temp_root("cwd-change");
+        let sessions = root.join("agent").join("sessions");
+        let cwd_a = root.join("proj-a");
+        let cwd_b = root.join("proj-bbbb");
+        let main = sessions.join("p").join("main.jsonl");
+        write_file(&main, &[session_header(&cwd_a, "s"), usage_line("m", 2)].join("\n"));
+        write_file(&child_path(&cwd_a, "st_a"), &[session_header(&cwd_a, "ca"), usage_line("ca", 10)].join("\n"));
+        write_file(&child_path(&cwd_b, "st_b"), &[session_header(&cwd_b, "cb"), usage_line("cb", 100)].join("\n"));
+
+        let mut state = ScanState::default();
+        assert_eq!(totals(&state.refresh(&sessions)).0, 12);
+        write_file(&main, &[session_header(&cwd_b, "s"), usage_line("m", 2)].join("\n"));
+        assert_matches_fresh(&mut state, &sessions, 102);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // (10) Deleting one of two mains that share a cwd is itself a signal for
+    // that project: a child deleted meanwhile must disappear.
+    #[test]
+    fn deleted_main_rescans_children_of_its_cwd() {
+        let root = temp_root("del-shared");
+        let sessions = root.join("agent").join("sessions");
+        let cwd = root.join("proj");
+        let main_1 = sessions.join("p").join("one.jsonl");
+        let main_2 = sessions.join("p").join("two.jsonl");
+        let child = child_path(&cwd, "st_1");
+        write_file(&main_1, &[session_header(&cwd, "s1"), usage_line("m1", 1)].join("\n"));
+        write_file(&main_2, &[session_header(&cwd, "s2"), usage_line("m2", 1)].join("\n"));
+        write_file(&child, &[session_header(&cwd, "c"), usage_line("c", 10)].join("\n"));
+
+        let mut state = ScanState::default();
+        assert_eq!(totals(&state.refresh(&sessions)).0, 12);
+        fs::remove_file(&main_1).expect("remove main 1");
+        fs::remove_file(&child).expect("remove child");
+        assert_matches_fresh(&mut state, &sessions, 1);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // (11) A main moving away from a cwd that another main still references
+    // is a signal for the OLD cwd too: its child written meanwhile is counted.
+    #[test]
+    fn main_leaving_cwd_rescans_old_cwd_still_referenced() {
+        let root = temp_root("move-away");
+        let sessions = root.join("agent").join("sessions");
+        let cwd_a = root.join("proj-a");
+        let cwd_b = root.join("proj-bbbb");
+        let mover = sessions.join("p").join("mover.jsonl");
+        let stayer = sessions.join("p").join("stayer.jsonl");
+        let child_a = child_path(&cwd_a, "st_a");
+        write_file(&mover, &[session_header(&cwd_a, "s1"), usage_line("m1", 1)].join("\n"));
+        write_file(&stayer, &[session_header(&cwd_a, "s2"), usage_line("m2", 2)].join("\n"));
+        write_file(&child_a, &[session_header(&cwd_a, "c"), usage_line("c1", 10)].join("\n"));
+
+        let mut state = ScanState::default();
+        assert_eq!(totals(&state.refresh(&sessions)).0, 13);
+        append_line(&child_a, &usage_line("c2", 20));
+        write_file(&mover, &[session_header(&cwd_b, "s1"), usage_line("m1", 1)].join("\n"));
+        assert_matches_fresh(&mut state, &sessions, 33);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // (12) The configured sessions root is a literal path, not a glob: a
+    // bracketed directory name must not match its sibling `agent1`.
+    #[test]
+    fn sessions_root_with_glob_metacharacters_is_literal() {
+        let root = temp_root("glob-root");
+        let cwd = root.join("proj");
+        let real = root.join("agent[1]").join("sessions");
+        let decoy = root.join("agent1").join("sessions");
+        write_file(&real.join("p").join("main.jsonl"), &[session_header(&cwd, "s"), usage_line("real", 1)].join("\n"));
+        write_file(&decoy.join("p").join("main.jsonl"), &[session_header(&cwd, "d"), usage_line("decoy", 99)].join("\n"));
+
+        let stats = ScanState::default().refresh(&real);
+        assert_eq!((totals(&stats).0, stats.total_messages), (1, 1));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // (13) A malformed non-ASCII timestamp must fall back to the file date,
+    // never panic on a byte slice and abort the whole refresh.
+    #[test]
+    fn malformed_unicode_timestamp_does_not_abort_refresh() {
+        let root = temp_root("bad-ts");
+        let sessions = root.join("agent").join("sessions");
+        let cwd = root.join("proj");
+        let bad = json!({
+            "type": "message", "id": "abab0001", "timestamp": "2026-09-\u{65e5}",
+            "message": {"role": "assistant", "model": "claude-opus-4.8", "responseId": "bad",
+                "usage": {"input": 3, "output": 1, "totalTokens": 4}}
+        })
+        .to_string();
+        write_file(
+            &sessions.join("p").join("main.jsonl"),
+            &[session_header(&cwd, "s"), bad, usage_line("good", 5)].join("\n"),
+        );
+
+        let stats = ScanState::default().refresh(&sessions);
+        assert_eq!((totals(&stats).0, stats.total_messages), (8, 2));
+        assert!(stats.daily.iter().all(|d| d.date.len() == 10 && d.date.is_ascii()));
 
         let _ = fs::remove_dir_all(&root);
     }
