@@ -1,3 +1,4 @@
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -327,7 +328,7 @@ impl ClaudeCodeProvider {
                 let Some((file_entries, state)) = Self::parse_full_file(path, *mtime, *size) else {
                     continue; // unreadable — no state recorded, retried next cycle
                 };
-                fresh.extend(file_entries);
+                merge_entries(&mut fresh, file_entries);
                 states.insert(path.clone(), state);
             }
             return (fresh, states);
@@ -353,7 +354,7 @@ impl ClaudeCodeProvider {
             let Some((file_entries, parsed_offset)) = Self::parse_file_from(path, resume_offset) else {
                 continue; // unreadable — no state recorded, retried next cycle
             };
-            entries.extend(file_entries);
+            merge_entries(&mut entries, file_entries);
             states.insert(path.clone(), FileParseState { mtime: *mtime, size: *size, parsed_offset });
             changed_count += 1;
         }
@@ -501,6 +502,38 @@ struct SessionEntry {
     cwd: String,
     tool_names: Vec<String>,
     bash_commands: Vec<String>,
+}
+
+impl SessionEntry {
+    /// Whether this record should replace `other` under the same dedup key.
+    /// Subagent sidechains can log one API call to several files with different
+    /// usage (#184); the most complete record (largest output, then largest
+    /// input side) wins, with the remaining fields only breaking ties so the
+    /// result never depends on file iteration order.
+    fn supersedes(&self, other: &Self) -> bool {
+        self.rank() > other.rank()
+    }
+
+    fn rank(&self) -> (u64, u64, &str, &str, &str) {
+        let input_side = self.input_tokens + self.cache_read_input_tokens + self.cache_creation_input_tokens;
+        (self.output_tokens, input_side, &self.timestamp, &self.session_id, &self.model)
+    }
+}
+
+/// Merge one file's entries into the accumulated set, order-independently.
+fn merge_entries(into: &mut HashMap<String, SessionEntry>, from: HashMap<String, SessionEntry>) {
+    for (key, entry) in from {
+        match into.entry(key) {
+            Entry::Vacant(slot) => {
+                slot.insert(entry);
+            }
+            Entry::Occupied(mut slot) => {
+                if entry.supersedes(slot.get()) {
+                    slot.insert(entry);
+                }
+            }
+        }
+    }
 }
 
 /// Extract individual command names from a shell command string.
@@ -996,7 +1029,7 @@ impl ClaudeCodeProvider {
                         let Some((file_entries, state)) = Self::parse_full_file(path, *mtime, *size) else {
                             continue; // unreadable — no state recorded, retried next cycle
                         };
-                        entries.extend(file_entries);
+                        merge_entries(&mut entries, file_entries);
                         file_states.insert(path.clone(), state);
                     }
                 } else {
@@ -1005,7 +1038,7 @@ impl ClaudeCodeProvider {
                         let Some((file_entries, state)) = Self::parse_full_file(path, *mtime, *size) else {
                             continue; // unreadable — no state recorded, retried next cycle
                         };
-                        entries.extend(file_entries);
+                        merge_entries(&mut entries, file_entries);
                         file_states.insert(path.clone(), state);
                     }
 
@@ -1089,6 +1122,28 @@ mod tests {
 
     fn sample_jsonl_line_with_web_search() -> &'static str {
         r#"{"sessionId":"abc-789","type":"assistant","timestamp":"2026-03-23T10:00:00Z","requestId":"req-3","message":{"id":"msg-3","model":"claude-sonnet-4-6-20260320","usage":{"input_tokens":2000,"output_tokens":1000,"cache_read_input_tokens":10000,"cache_creation_input_tokens":0,"server_tool_use":{"web_search_requests":3}}}}"#
+    }
+
+    // #184: one API call logged to several sidechain files with different usage
+    // must resolve to the same record regardless of merge order.
+    #[test]
+    fn merge_entries_is_order_independent_on_conflicting_usage() {
+        let full = parse_session_line(sample_jsonl_line()).expect("should parse");
+        let mut partial = full.clone();
+        partial.output_tokens = 120;
+        partial.session_id = "agent-sidechain".to_string();
+        let key = || "msg-1:req-1".to_string();
+
+        let merged = |first: &SessionEntry, second: &SessionEntry| {
+            let mut into = HashMap::new();
+            merge_entries(&mut into, HashMap::from([(key(), first.clone())]));
+            merge_entries(&mut into, HashMap::from([(key(), second.clone())]));
+            let entry = &into[&key()];
+            (entry.output_tokens, entry.session_id.clone())
+        };
+
+        assert_eq!(merged(&full, &partial), (500, "abc-123".to_string()));
+        assert_eq!(merged(&partial, &full), (500, "abc-123".to_string()));
     }
 
     #[test]
