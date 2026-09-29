@@ -3,11 +3,20 @@ import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useOAuthUsage } from "../hooks/useOAuthUsage";
 import { useGrokUsage } from "../hooks/useGrokUsage";
+import { useTeamAIUsage } from "../hooks/useTeamAIUsage";
 import { useTokenStats } from "../hooks/useTokenStats";
 import { useToday } from "../hooks/useToday";
 import { useSettings } from "../contexts/SettingsContext";
 import { useI18n } from "../i18n/I18nContext";
-import type { AllStats, RateLimitWindow } from "../lib/types";
+import type {
+  AllStats,
+  RateLimitWindow,
+  TeamAIAccountStatus,
+  TeamAIClaudeAccount,
+  TeamAICodexAccount,
+  TeamAIUsage,
+  TeamAIWindow,
+} from "../lib/types";
 import { formatCost, formatTokens, getTotalTokens } from "../lib/format";
 
 const REFRESH_COOLDOWN_SECONDS = 30;
@@ -383,6 +392,386 @@ function CodexRateLimitRows({
   );
 }
 
+// ── TeamAI multi-account table ───────────────────────────────────────────────
+// Mirrors the TeamAI terminal dashboard: one row per pooled account, each quota
+// window drawn as a filled bar with "65% 1d12h" printed across it.
+
+type Translate = (key: string, params?: Record<string, string>) => string;
+
+const TEAMAI_GAUGE_WIDTH = 72;
+const TEAMAI_GAP = 4;
+const TEAMAI_DDAY_WIDTH = 30;
+// The three Claude gauge columns; Codex rows split the same span evenly so
+// both sections line up.
+const TEAMAI_GAUGE_SPAN = TEAMAI_GAUGE_WIDTH * 3 + TEAMAI_GAP * 2;
+
+function teamaiGrid(gaugeCount: number): string {
+  const count = Math.max(gaugeCount, 1);
+  const width = (TEAMAI_GAUGE_SPAN - TEAMAI_GAP * (count - 1)) / count;
+  return `minmax(0, 1fr) repeat(${count}, ${width}px) ${TEAMAI_DDAY_WIDTH}px`;
+}
+
+// "35m" / "3h25m" / "6d8h" — TeamAI's compact time-left format.
+function formatCompactRemaining(resetsAt: number | null): string {
+  if (!resetsAt) return "";
+  const mins = Math.ceil((resetsAt - Date.now()) / 60_000);
+  if (mins <= 0) return "";
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h${mins % 60 ? `${mins % 60}m` : ""}`;
+  return `${Math.floor(hours / 24)}d${hours % 24 ? `${hours % 24}h` : ""}`;
+}
+
+function formatAge(at: number): string {
+  const mins = Math.max(0, Math.floor((Date.now() - at) / 60_000));
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
+}
+
+// "1w" / "5h" — a Codex window named by its own length.
+function formatSpan(minutes: number | null): string {
+  if (!minutes) return "";
+  if (minutes % 10_080 === 0) return `${minutes / 10_080}w`;
+  if (minutes % 1_440 === 0) return `${minutes / 1_440}d`;
+  if (minutes % 60 === 0) return `${minutes / 60}h`;
+  return `${minutes}m`;
+}
+
+// Every account is on the same mail domain more often than not, so show the
+// local part — unless two accounts would then read the same.
+function makeShortLabel(labels: string[]): (label: string) => string {
+  const local = (label: string) => label.split("@")[0] || label;
+  const counts = new Map<string, number>();
+  labels.forEach((label) => counts.set(local(label), (counts.get(local(label)) ?? 0) + 1));
+  return (label) => ((counts.get(local(label)) ?? 0) > 1 ? label : local(label));
+}
+
+const TEAMAI_STATUS_COLOR: Record<TeamAIAccountStatus, string | null> = {
+  active: null,
+  cooldown: "#eab308",
+  error: "#ef4444",
+  disabled: "var(--text-muted)",
+  inactive: "#ef4444",
+};
+
+const TEAMAI_STATUS_KEY: Record<TeamAIAccountStatus, string> = {
+  active: "usageAlert.teamaiStatusActive",
+  cooldown: "usageAlert.teamaiStatusCooldown",
+  error: "usageAlert.teamaiStatusError",
+  disabled: "usageAlert.teamaiStatusDisabled",
+  inactive: "usageAlert.teamaiStatusInactive",
+};
+
+function formatDday(days: number): string {
+  return days <= 0 ? "D-DAY" : `D-${days}`;
+}
+
+function ddayColor(days: number): string {
+  if (days <= 3) return "#ef4444";
+  if (days <= 7) return "#eab308";
+  return "#22c55e";
+}
+
+function TeamAIGauge({ window, t }: { window: TeamAIWindow | null; t: Translate }) {
+  const pct = window ? Math.min(Math.max(window.utilization, 0), 100) : 0;
+  const remaining = window ? formatCompactRemaining(window.resets_at) : "";
+  const percent = window ? `${Math.round(pct)}%` : "–";
+  const color = getBarColor(pct);
+
+  return (
+    <div
+      title={window?.resets_at ? formatResetTime(new Date(window.resets_at).toISOString(), t) : undefined}
+      style={{
+        position: "relative",
+        height: 20,
+        borderRadius: 4,
+        overflow: "hidden",
+        background: "rgba(0,0,0,0.3)",
+        border: "1px solid rgba(255,255,255,0.08)",
+        boxSizing: "border-box",
+      }}
+    >
+      {window && (
+        <div style={{
+          position: "absolute",
+          top: 0,
+          bottom: 0,
+          left: 0,
+          width: `${pct}%`,
+          background: color,
+          transition: "width 0.3s ease",
+        }} />
+      )}
+      <span style={{
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 3,
+        height: "100%",
+        fontSize: 11,
+        fontWeight: 700,
+        color: window ? "#fff" : "var(--text-muted)",
+        textShadow: window ? "0 0 3px rgba(0,0,0,0.7)" : "none",
+        fontVariantNumeric: "tabular-nums",
+        whiteSpace: "nowrap",
+      }}>
+        {percent}
+        {remaining && (
+          <span style={{ fontSize: 9.5, fontWeight: 500, opacity: 0.85 }}>{remaining}</span>
+        )}
+      </span>
+    </div>
+  );
+}
+
+function TeamAIColumnHeader({
+  title,
+  columns,
+  grid,
+}: {
+  title: string;
+  columns: string[];
+  grid: string;
+}) {
+  return (
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: grid,
+      gap: TEAMAI_GAP,
+      alignItems: "center",
+      marginBottom: 6,
+      fontSize: 10,
+      fontWeight: 600,
+      color: "var(--text-muted)",
+    }}>
+      <span style={{ color: "var(--text-secondary)" }}>{title}</span>
+      {columns.map((column, i) => (
+        <span key={i} style={{ textAlign: "center" }}>{column}</span>
+      ))}
+      <span />
+    </div>
+  );
+}
+
+function TeamAIAccountRow({
+  label,
+  tooltip,
+  status,
+  grid,
+  children,
+  trailing,
+}: {
+  label: string;
+  tooltip: string;
+  status: TeamAIAccountStatus;
+  grid: string;
+  children: ReactNode;
+  trailing?: ReactNode;
+}) {
+  const statusColor = TEAMAI_STATUS_COLOR[status];
+
+  return (
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: grid,
+      gap: TEAMAI_GAP,
+      alignItems: "center",
+      marginBottom: 5,
+      opacity: status === "disabled" ? 0.45 : 1,
+    }}>
+      <span
+        title={tooltip}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+          minWidth: 0,
+          fontSize: 11.5,
+          fontWeight: 600,
+          color: "var(--text-primary)",
+        }}
+      >
+        {statusColor && (
+          <span style={{
+            flexShrink: 0,
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            background: statusColor,
+          }} />
+        )}
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {label}
+        </span>
+      </span>
+      {children}
+      <span style={{
+        fontSize: 10,
+        fontWeight: 700,
+        textAlign: "right",
+        fontVariantNumeric: "tabular-nums",
+      }}>
+        {trailing}
+      </span>
+    </div>
+  );
+}
+
+function teamaiTooltip(
+  account: { label: string; plan: string | null; status: TeamAIAccountStatus },
+  t: Translate,
+  renewalDays?: number | null,
+): string {
+  const lines = [account.label, [account.plan, t(TEAMAI_STATUS_KEY[account.status])].filter(Boolean).join(" · ")];
+  if (renewalDays != null) lines.push(t("usageAlert.teamaiRenewal", { dday: formatDday(renewalDays) }));
+  return lines.join("\n");
+}
+
+function TeamAIClaudeRows({
+  accounts,
+  modelLabel,
+  t,
+}: {
+  accounts: TeamAIClaudeAccount[];
+  modelLabel: string | null;
+  t: Translate;
+}) {
+  const grid = teamaiGrid(3);
+  const shortLabel = makeShortLabel(accounts.map((a) => a.label));
+
+  return (
+    <div>
+      <TeamAIColumnHeader
+        title={`${t("usageAlert.claude")} (${accounts.length})`}
+        columns={["5h", "7d", modelLabel ?? "7d model"]}
+        grid={grid}
+      />
+      {accounts.map((account) => (
+        <TeamAIAccountRow
+          key={account.id}
+          label={shortLabel(account.label)}
+          tooltip={teamaiTooltip(account, t, account.renewal_days)}
+          status={account.status}
+          grid={grid}
+          trailing={account.renewal_days != null && (
+            <span style={{ color: ddayColor(account.renewal_days) }}>
+              {formatDday(account.renewal_days)}
+            </span>
+          )}
+        >
+          <TeamAIGauge window={account.five_hour} t={t} />
+          <TeamAIGauge window={account.seven_day} t={t} />
+          <TeamAIGauge window={account.seven_day_model} t={t} />
+        </TeamAIAccountRow>
+      ))}
+    </div>
+  );
+}
+
+function TeamAICodexRows({
+  accounts,
+  t,
+}: {
+  accounts: TeamAICodexAccount[];
+  t: Translate;
+}) {
+  // Titles follow the windows actually in play, so the header never names a
+  // gauge no row draws; a span shared by every account is printed once.
+  const gaugeCount = Math.max(1, ...accounts.map((a) => a.windows.length));
+  const grid = teamaiGrid(gaugeCount);
+  const shortLabel = makeShortLabel(accounts.map((a) => a.label));
+  const columns = Array.from({ length: gaugeCount }, (_, i) => {
+    const spans = new Set(accounts.map((a) => formatSpan(a.windows[i]?.minutes ?? null)).filter(Boolean));
+    return spans.size === 1 ? [...spans][0] : "";
+  });
+
+  return (
+    <div>
+      <TeamAIColumnHeader
+        title={`${t("usageAlert.codex")} (${accounts.length})`}
+        columns={columns}
+        grid={grid}
+      />
+      {accounts.map((account) => (
+        <TeamAIAccountRow
+          key={account.id}
+          label={shortLabel(account.label)}
+          tooltip={teamaiTooltip(account, t)}
+          status={account.status}
+          grid={grid}
+        >
+          {Array.from({ length: gaugeCount }, (_, i) => (
+            <TeamAIGauge key={i} window={account.windows[i] ?? null} t={t} />
+          ))}
+        </TeamAIAccountRow>
+      ))}
+    </div>
+  );
+}
+
+function TeamAIUsageSection({
+  usage,
+  showClaude,
+  showCodex,
+  onRefresh,
+}: {
+  usage: TeamAIUsage;
+  showClaude: boolean;
+  showCodex: boolean;
+  onRefresh: () => void;
+}) {
+  const t = useI18n();
+  // A stopped TeamAI no longer measures anything: say how old the numbers are
+  // instead of presenting them as live.
+  const status = usage.running ? (
+    <span style={{ fontSize: 10, fontWeight: 600, color: "#22c55e" }}>
+      ● {t("usageAlert.teamaiRunning")}
+    </span>
+  ) : (
+    <span style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)" }}>
+      {usage.updated_at
+        ? t("usageAlert.teamaiStoppedAgo", { time: formatAge(usage.updated_at) })
+        : t("usageAlert.teamaiStopped")}
+    </span>
+  );
+
+  return (
+    <div>
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginBottom: 8,
+      }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-primary)" }}>
+          TeamAI
+        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {status}
+          <RefreshButton refreshing={false} cooldown={0} onRefresh={onRefresh} />
+        </div>
+      </div>
+      {showClaude && (
+        <TeamAIClaudeRows accounts={usage.claude} modelLabel={usage.model_label} t={t} />
+      )}
+      {showClaude && showCodex && <div style={{ height: 10 }} />}
+      {showCodex && <TeamAICodexRows accounts={usage.codex} t={t} />}
+    </div>
+  );
+}
+
+function SectionDivider() {
+  return (
+    <div style={{
+      height: 1,
+      background: "rgba(255,255,255,0.08)",
+      margin: "12px 0",
+    }} />
+  );
+}
+
 function ClaudeTrackingPrompt({
   enabling,
   onEnable,
@@ -432,6 +821,7 @@ export function UsageAlertBar() {
   const { stats: codexStats } = useTokenStats("codex");
   const showGrok = prefs.include_grok;
   const { credits: grokCredits } = useGrokUsage(showGrok);
+  const { usage: teamai, refresh: refreshTeamAI } = useTeamAIUsage(prefs.include_teamai);
   const todayStr = useToday();
   const t = useI18n();
   const [enabling, setEnabling] = useState(false);
@@ -494,12 +884,19 @@ export function UsageAlertBar() {
   // selector. Gate on showCodex so disabling Codex hides its gauges even when
   // cached stats / rate limits still have data.
   const hasCodexData = showCodex && (hasCodexRateLimits || hasCodexSummary);
+  // With TeamAI in front of Claude Code / Codex, the single-account gauges only
+  // describe whichever account the local credentials or the last JSONL entry
+  // happen to belong to. When TeamAI data is present its per-account table
+  // replaces that provider's block — still gated on the source toggle.
+  const teamaiClaude = showClaude && (teamai?.claude.length ?? 0) > 0;
+  const teamaiCodex = showCodex && (teamai?.codex.length ?? 0) > 0;
+  const showCodexBlock = hasCodexData && !teamaiCodex;
 
   // Claude-only, tracking never enabled: show the standalone enable card. When
   // Codex is also on, the same enable affordance is rendered inline further
   // down via showClaudePrompt → ClaudeTrackingPrompt, so this branch is
   // deliberately gated on !showCodex to avoid a duplicate prompt.
-  if (showClaude && !prefs.usage_tracking_enabled && !showCodex && !showGrok) {
+  if (showClaude && !prefs.usage_tracking_enabled && !showCodex && !showGrok && !teamaiClaude) {
     return (
       <div style={{
         background: "var(--bg-card)",
@@ -545,7 +942,7 @@ export function UsageAlertBar() {
     );
   }
 
-  if (!showClaude && !hasCodexData && !hasGrokCredits) return null;
+  if (!showClaude && !hasCodexData && !hasGrokCredits && !teamaiCodex) return null;
 
   const { five_hour, seven_day, seven_day_models, extra_usage, is_stale } = usage ?? {};
 
@@ -556,8 +953,8 @@ export function UsageAlertBar() {
   const modelWindows = seven_day_models ?? [];
 
   const hasClaudeData =
-    showClaude && (!!five_hour || !!seven_day || modelWindows.length > 0 || !!extra_usage);
-  const showClaudePrompt = showClaude && !prefs.usage_tracking_enabled;
+    showClaude && !teamaiClaude && (!!five_hour || !!seven_day || modelWindows.length > 0 || !!extra_usage);
+  const showClaudePrompt = showClaude && !teamaiClaude && !prefs.usage_tracking_enabled;
   // Only surface the "unavailable" message when the backend reports that OAuth
   // credentials exist but no usage is cached yet (first poll pending or a failed
   // fetch). The "no_credentials" status — the normal state for Codex-only users
@@ -565,10 +962,12 @@ export function UsageAlertBar() {
   // permanent false error. Until the status resolves, render nothing.
   const showClaudeUnavailable =
     showClaude &&
+    !teamaiClaude &&
     prefs.usage_tracking_enabled &&
     !hasClaudeData &&
     oauthStatus === "unavailable";
-  if (!hasClaudeData && !showClaudePrompt && !showClaudeUnavailable && !hasCodexData && !hasGrokCredits) return null;
+  const showTeamAI = teamaiClaude || teamaiCodex;
+  if (!hasClaudeData && !showClaudePrompt && !showClaudeUnavailable && !showTeamAI && !showCodexBlock && !hasGrokCredits) return null;
 
   return (
     <div style={{
@@ -667,15 +1066,20 @@ export function UsageAlertBar() {
         </div>
       )}
 
-      {(hasClaudeData || showClaudePrompt || showClaudeUnavailable) && hasCodexData && (
-        <div style={{
-          height: 1,
-          background: "rgba(255,255,255,0.08)",
-          margin: "12px 0",
-        }} />
+      {(hasClaudeData || showClaudePrompt || showClaudeUnavailable) && showTeamAI && <SectionDivider />}
+
+      {showTeamAI && teamai && (
+        <TeamAIUsageSection
+          usage={teamai}
+          showClaude={teamaiClaude}
+          showCodex={teamaiCodex}
+          onRefresh={refreshTeamAI}
+        />
       )}
 
-      {hasCodexData && (
+      {(hasClaudeData || showClaudePrompt || showClaudeUnavailable || showTeamAI) && showCodexBlock && <SectionDivider />}
+
+      {showCodexBlock && (
         <div>
           <ProviderHeader label={t("usageAlert.codex")} />
           {hasCodexRateLimits ? (
@@ -700,13 +1104,7 @@ export function UsageAlertBar() {
         </div>
       )}
 
-      {(hasClaudeData || showClaudePrompt || showClaudeUnavailable || hasCodexData) && hasGrokCredits && (
-        <div style={{
-          height: 1,
-          background: "rgba(255,255,255,0.08)",
-          margin: "12px 0",
-        }} />
-      )}
+      {(hasClaudeData || showClaudePrompt || showClaudeUnavailable || showTeamAI || showCodexBlock) && hasGrokCredits && <SectionDivider />}
 
       {hasGrokCredits && grokCredits && (
         <div>

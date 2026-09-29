@@ -95,6 +95,47 @@ export interface GrokCredits {
   fetched_at: string;
 }
 
+/** One quota window from a local TeamAI install. */
+export interface TeamAIWindow {
+  /** 0–100 */
+  utilization: number;
+  /** Unix epoch milliseconds */
+  resets_at: number | null;
+  minutes: number | null;
+}
+
+export type TeamAIAccountStatus = "active" | "cooldown" | "error" | "disabled" | "inactive";
+
+// Labels are e-mail addresses: local display only, never feed an upload path.
+export interface TeamAIClaudeAccount {
+  id: string;
+  label: string;
+  plan: string;
+  status: TeamAIAccountStatus;
+  renewal_days: number | null;
+  five_hour: TeamAIWindow | null;
+  seven_day: TeamAIWindow | null;
+  seven_day_model: TeamAIWindow | null;
+}
+
+export interface TeamAICodexAccount {
+  id: string;
+  label: string;
+  plan: string | null;
+  status: TeamAIAccountStatus;
+  windows: TeamAIWindow[];
+}
+
+/** Every pooled account's quota, in TeamAI's own dashboard order. */
+export interface TeamAIUsage {
+  running: boolean;
+  /** state.json mtime, Unix epoch milliseconds */
+  updated_at: number | null;
+  model_label: string | null;
+  claude: TeamAIClaudeAccount[];
+  codex: TeamAICodexAccount[];
+}
+
 export interface UserPreferences {
   number_format: "compact" | "full";
   show_tray_cost: boolean;
@@ -111,6 +152,7 @@ export interface UserPreferences {
   include_grok: boolean;
   include_kiro: boolean;
   include_omo: boolean;
+  include_teamai: boolean;
   theme: "github" | "purple" | "ocean" | "sunset";
   color_mode: "system" | "light" | "dark";
   language: "en" | "ko" | "ja" | "zh-CN" | "zh-TW" | "fr" | "es" | "de" | "tr" | "it";
