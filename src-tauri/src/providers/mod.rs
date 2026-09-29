@@ -4,6 +4,7 @@ pub mod gemini;
 pub mod gjc;
 pub mod glm;
 pub mod grok;
+pub mod hermes;
 pub mod kiro;
 pub mod kimi;
 pub mod omo;

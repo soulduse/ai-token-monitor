@@ -14,7 +14,8 @@ type SourceKey =
   | "include_grok"
   | "include_kiro"
   | "include_omo"
-  | "include_pi";
+  | "include_pi"
+  | "include_hermes";
 
 interface SourceDef {
   key: SourceKey;
@@ -35,6 +36,7 @@ export function SourceSelector() {
   const [kiroAvailable, setKiroAvailable] = useState(false);
   const [omoAvailable, setOmoAvailable] = useState(false);
   const [piAvailable, setPiAvailable] = useState(false);
+  const [hermesAvailable, setHermesAvailable] = useState(false);
   const [availabilityLoaded, setAvailabilityLoaded] = useState(false);
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -51,7 +53,8 @@ export function SourceSelector() {
       invoke<boolean>("is_kiro_available").catch(() => false),
       invoke<boolean>("is_omo_available").catch(() => false),
       invoke<boolean>("is_pi_available").catch(() => false),
-    ]).then(([codex, opencode, gemini, kimi, glm, gjc, grok, kiro, omo, pi]) => {
+      invoke<boolean>("is_hermes_available").catch(() => false),
+    ]).then(([codex, opencode, gemini, kimi, glm, gjc, grok, kiro, omo, pi, hermes]) => {
       setCodexAvailable(codex);
       setOpencodeAvailable(opencode);
       setGeminiAvailable(gemini);
@@ -62,6 +65,7 @@ export function SourceSelector() {
       setKiroAvailable(kiro);
       setOmoAvailable(omo);
       setPiAvailable(pi);
+      setHermesAvailable(hermes);
       setAvailabilityLoaded(true);
     });
   }, []);
@@ -84,8 +88,9 @@ export function SourceSelector() {
     if (prefs.include_kiro && !kiroAvailable) patch.include_kiro = false;
     if (prefs.include_omo && !omoAvailable) patch.include_omo = false;
     if (prefs.include_pi && !piAvailable) patch.include_pi = false;
+    if (prefs.include_hermes && !hermesAvailable) patch.include_hermes = false;
     if (Object.keys(patch).length > 0) updatePrefs(patch);
-  }, [availabilityLoaded, codexAvailable, opencodeAvailable, geminiAvailable, kimiAvailable, glmAvailable, gjcAvailable, grokAvailable, kiroAvailable, omoAvailable, piAvailable, prefs.include_codex, prefs.include_opencode, prefs.include_gemini, prefs.include_kimi, prefs.include_glm, prefs.include_gjc, prefs.include_grok, prefs.include_kiro, prefs.include_omo, prefs.include_pi, updatePrefs]);
+  }, [availabilityLoaded, codexAvailable, opencodeAvailable, geminiAvailable, kimiAvailable, glmAvailable, gjcAvailable, grokAvailable, kiroAvailable, omoAvailable, piAvailable, hermesAvailable, prefs.include_codex, prefs.include_opencode, prefs.include_gemini, prefs.include_kimi, prefs.include_glm, prefs.include_gjc, prefs.include_grok, prefs.include_kiro, prefs.include_omo, prefs.include_pi, prefs.include_hermes, updatePrefs]);
 
   useEffect(() => {
     if (!open) return;
@@ -121,7 +126,8 @@ export function SourceSelector() {
     { key: "include_kiro", label: t("sources.kiro"), available: kiroAvailable },
     { key: "include_omo", label: t("sources.omo"), available: omoAvailable },
     { key: "include_pi", label: t("sources.pi"), available: piAvailable },
-  ], [t, codexAvailable, opencodeAvailable, geminiAvailable, kimiAvailable, glmAvailable, gjcAvailable, grokAvailable, kiroAvailable, omoAvailable, piAvailable]);
+    { key: "include_hermes", label: t("sources.hermes"), available: hermesAvailable },
+  ], [t, codexAvailable, opencodeAvailable, geminiAvailable, kimiAvailable, glmAvailable, gjcAvailable, grokAvailable, kiroAvailable, omoAvailable, piAvailable, hermesAvailable]);
 
   const visibleSources = sources.filter((s) => s.available);
   const totalCount = visibleSources.length;

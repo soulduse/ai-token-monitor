@@ -19,6 +19,7 @@
   "sources.omo": "OmO",
   "sources.pi": "Pi",
   "sources.grok": "Grok",
+  "sources.hermes": "Hermes",
   "sources.summary.count": "{{total}} 个中 {{active}} 个启用",
   "sources.open": "打开来源菜单",
   "today.title": "今日",

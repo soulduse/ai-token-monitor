@@ -80,7 +80,7 @@ export interface AllStats {
   rate_limits?: CodexRateLimits | null;
 }
 
-export type LeaderboardProvider = "claude" | "codex" | "opencode" | "kimi" | "glm" | "gjc" | "grok" | "kiro" | "omo";
+export type LeaderboardProvider = "claude" | "codex" | "opencode" | "kimi" | "glm" | "gjc" | "grok" | "kiro" | "omo" | "hermes";
 
 /** SuperGrok / unified-billing snapshot from Grok CLI's rolling log. */
 export interface GrokCredits {
@@ -113,6 +113,7 @@ export interface UserPreferences {
   include_kiro: boolean;
   include_omo: boolean;
   include_pi: boolean;
+  include_hermes: boolean;
   theme: "github" | "purple" | "ocean" | "sunset";
   color_mode: "system" | "light" | "dark";
   language: "en" | "ko" | "ja" | "zh-CN" | "zh-TW" | "fr" | "es" | "de" | "tr" | "it";

@@ -14,9 +14,10 @@ interface UseCombinedStatsProps {
   includeKiro: boolean;
   includeOmo: boolean;
   includePi: boolean;
+  includeHermes: boolean;
 }
 
-export function useCombinedStats({ includeClaude, includeCodex, includeOpencode, includeGemini, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeOmo, includePi }: UseCombinedStatsProps) {
+export function useCombinedStats({ includeClaude, includeCodex, includeOpencode, includeGemini, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeOmo, includePi, includeHermes }: UseCombinedStatsProps) {
   const claude = useTokenStats("claude");
   const codex = useTokenStats("codex");
   const opencode = useTokenStats("opencode");
@@ -28,6 +29,7 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
   const kiro = useTokenStats("kiro");
   const omo = useTokenStats("omo");
   const pi = useTokenStats("pi");
+  const hermes = useTokenStats("hermes");
 
   const stats = useMemo<AllStats | null>(() => {
     const sources: (AllStats | null)[] = [];
@@ -42,6 +44,7 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
     if (includeKiro) sources.push(kiro.stats);
     if (includeOmo) sources.push(omo.stats);
     if (includePi) sources.push(pi.stats);
+    if (includeHermes) sources.push(hermes.stats);
 
     const validStats = sources.filter((s): s is AllStats => s !== null);
     // Every pushed source was null, so any per-provider fallback here would just
@@ -50,9 +53,9 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
     if (validStats.length === 1) return validStats[0];
 
     return mergeStats(validStats);
-  }, [claude.stats, codex.stats, opencode.stats, gemini.stats, kimi.stats, glm.stats, gjc.stats, grok.stats, kiro.stats, omo.stats, pi.stats, includeClaude, includeCodex, includeOpencode, includeGemini, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeOmo, includePi]);
+  }, [claude.stats, codex.stats, opencode.stats, gemini.stats, kimi.stats, glm.stats, gjc.stats, grok.stats, kiro.stats, omo.stats, pi.stats, hermes.stats, includeClaude, includeCodex, includeOpencode, includeGemini, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeOmo, includePi, includeHermes]);
 
-  const loading = (includeClaude && claude.loading) || (includeCodex && codex.loading) || (includeOpencode && opencode.loading) || (includeGemini && gemini.loading) || (includeKimi && kimi.loading) || (includeGlm && glm.loading) || (includeGjc && gjc.loading) || (includeGrok && grok.loading) || (includeKiro && kiro.loading) || (includeOmo && omo.loading) || (includePi && pi.loading);
+  const loading = (includeClaude && claude.loading) || (includeCodex && codex.loading) || (includeOpencode && opencode.loading) || (includeGemini && gemini.loading) || (includeKimi && kimi.loading) || (includeGlm && glm.loading) || (includeGjc && gjc.loading) || (includeGrok && grok.loading) || (includeKiro && kiro.loading) || (includeOmo && omo.loading) || (includePi && pi.loading) || (includeHermes && hermes.loading);
   const error = useMemo(() => {
     if (stats) return null;
 
@@ -67,9 +70,10 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
     if (includeKiro && kiro.error) return kiro.error;
     if (includeOmo && omo.error) return omo.error;
     if (includePi && pi.error) return pi.error;
+    if (includeHermes && hermes.error) return hermes.error;
 
     return null;
-  }, [stats, includeClaude, includeCodex, includeOpencode, includeGemini, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeOmo, includePi, claude.error, codex.error, opencode.error, gemini.error, kimi.error, glm.error, gjc.error, grok.error, kiro.error, omo.error, pi.error]);
+  }, [stats, includeClaude, includeCodex, includeOpencode, includeGemini, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeOmo, includePi, includeHermes, claude.error, codex.error, opencode.error, gemini.error, kimi.error, glm.error, gjc.error, grok.error, kiro.error, omo.error, pi.error, hermes.error]);
 
   return { stats, loading, error };
 }
