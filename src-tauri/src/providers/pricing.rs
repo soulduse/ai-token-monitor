@@ -170,6 +170,37 @@ pub struct OpenCodePricing {
     pub output: f64,
     pub cache_read: f64,
     pub cache_write: f64,
+    /// 0 means a single flat tier (no threshold).
+    pub high_threshold_tokens: u64,
+    pub high_input: f64,
+    pub high_output: f64,
+    pub high_cache_read: f64,
+}
+
+impl OpenCodePricing {
+    fn flat(input: f64, output: f64, cache_read: f64, cache_write: f64) -> Self {
+        Self {
+            input,
+            output,
+            cache_read,
+            cache_write,
+            high_threshold_tokens: 0,
+            high_input: input,
+            high_output: output,
+            high_cache_read: cache_read,
+        }
+    }
+
+    /// (input, output, cache_read, cache_write) rates for one request: models
+    /// with a long-context tier (Gemini Pro) bill the whole request at the
+    /// higher rates once its prompt exceeds the threshold.
+    pub fn tier_for(&self, prompt_tokens: u64) -> (f64, f64, f64, f64) {
+        if self.high_threshold_tokens > 0 && prompt_tokens > self.high_threshold_tokens {
+            (self.high_input, self.high_output, self.high_cache_read, self.cache_write)
+        } else {
+            (self.input, self.output, self.cache_read, self.cache_write)
+        }
+    }
 }
 
 pub struct KimiPricing {
@@ -592,31 +623,23 @@ pub fn get_opencode_pricing(model: &str) -> OpenCodePricing {
     // against claude or codex pricing tables based on model name.
     if let Some(ref oc) = cfg.opencode {
         let p = resolved_pricing(oc, "opencode", model);
+        let high = p.high_context;
         return OpenCodePricing {
-            input: p.input,
-            output: p.output,
-            cache_read: p.cache_read,
-            cache_write: p.cache_write,
+            high_threshold_tokens: high.map_or(0, |h| h.threshold_tokens),
+            high_input: high.map_or(p.input, |h| h.input),
+            high_output: high.map_or(p.output, |h| h.output),
+            high_cache_read: high.map_or(p.cache_read, |h| h.cached_input),
+            ..OpenCodePricing::flat(p.input, p.output, p.cache_read, p.cache_write)
         };
     }
 
     // Fallback: try claude pricing first (for claude-* models), then codex
     if model.contains("claude") || model.contains("fable") || model.contains("mythos") || model.contains("sonnet") || model.contains("opus") || model.contains("haiku") {
         let p = resolved_pricing(&cfg.claude, "claude", model);
-        OpenCodePricing {
-            input: p.input,
-            output: p.output,
-            cache_read: p.cache_read,
-            cache_write: p.cache_write,
-        }
+        OpenCodePricing::flat(p.input, p.output, p.cache_read, p.cache_write)
     } else {
         let p = resolved_pricing(&cfg.codex, "codex", model);
-        OpenCodePricing {
-            input: p.input,
-            output: p.output,
-            cache_read: p.cached_input,
-            cache_write: 0.0,
-        }
+        OpenCodePricing::flat(p.input, p.output, p.cached_input, 0.0)
     }
 }
 
@@ -1673,6 +1696,33 @@ mod tests {
             assert!((p.input - input).abs() < 0.001, "{model} input: got ${}", p.input);
             assert!((p.output - output).abs() < 0.001, "{model} output: got ${}", p.output);
         }
+    }
+
+    // OpenCode routes Gemini too; its table must carry the same current rates
+    // instead of falling through to stale rows or the "gemini-3" catch-all.
+    #[test]
+    fn opencode_gemini_rows_match_the_gemini_table() {
+        for (model, input, output, cache) in [
+            ("gemini-3.5-flash", 1.50, 9.00, 0.15),
+            ("gemini-3.1-pro-preview", 2.00, 12.00, 0.20),
+            ("gemini-2.5-flash", 0.30, 2.50, 0.03),
+            ("gemini-2.5-pro", 1.25, 10.00, 0.125),
+        ] {
+            let p = get_opencode_pricing(&normalize_model_id(model));
+            assert!((p.input - input).abs() < 1e-9, "{model} input: {}", p.input);
+            assert!((p.output - output).abs() < 1e-9, "{model} output: {}", p.output);
+            assert!((p.cache_read - cache).abs() < 1e-9, "{model} cache: {}", p.cache_read);
+        }
+    }
+
+    // OpenCode requests to Gemini Pro above 200k bill at the long-context tier.
+    #[test]
+    fn opencode_gemini_pro_long_context_tier() {
+        let p = get_opencode_pricing(&normalize_model_id("google/gemini-3.1-pro-preview"));
+        assert_eq!(p.tier_for(200_000), (2.00, 12.00, 0.2, 0.0));
+        assert_eq!(p.tier_for(300_000), (4.00, 18.00, 0.4, 0.0));
+        let flash = get_opencode_pricing(&normalize_model_id("gemini-3.5-flash"));
+        assert_eq!(flash.tier_for(900_000), (1.50, 9.00, 0.15, 0.0));
     }
 
     // Pro models bill the whole request at long-context rates above 200k.
