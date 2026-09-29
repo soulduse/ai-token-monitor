@@ -591,6 +591,18 @@ pub async fn translate_reply(
     }
 
     let prefs = get_preferences();
+
+    // Route to CLI if translation_provider is "cli"
+    if prefs.translation_provider.as_deref() == Some("cli") {
+        let preferred = prefs.preferred_cli;
+        // CLI calls block for up to the CLI timeout; keep them off the async runtime.
+        return tauri::async_runtime::spawn_blocking(move || {
+            crate::cli_translate::cli_translate_reply(&text, &original_message, preferred.as_deref())
+        })
+        .await
+        .map_err(|e| format!("CLI translation task failed: {}", e))?;
+    }
+
     let model = prefs.ai_model.ok_or("No AI model selected")?;
     let keys = crate::commands::get_ai_keys().ok_or("No AI keys configured")?;
 
@@ -615,6 +627,22 @@ pub async fn translate_text(
     }
 
     let prefs = get_preferences();
+
+    // Route to CLI if translation_provider is "cli"
+    if prefs.translation_provider.as_deref() == Some("cli") {
+        let preferred = prefs.preferred_cli;
+        return tauri::async_runtime::spawn_blocking(move || {
+            crate::cli_translate::cli_translate_text(
+                &text,
+                &target_language,
+                source_language.as_deref(),
+                preferred.as_deref(),
+            )
+        })
+        .await
+        .map_err(|e| format!("CLI translation task failed: {}", e))?;
+    }
+
     let model = prefs.ai_model.ok_or("No AI model selected")?;
     let keys = crate::commands::get_ai_keys().ok_or("No AI keys configured")?;
 

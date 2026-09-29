@@ -139,6 +139,8 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
   const { translations, translating, translate, translateReply: invokeTranslateReply } = useTranslate(langName);
   const hasAiKey = !!(prefs.ai_keys?.gemini || prefs.ai_keys?.openai || prefs.ai_keys?.anthropic || prefs.ai_keys?.kiro);
   const hasAiModel = !!prefs.ai_model;
+  // CLI mode translates through the local gemini/claude CLI — no API key or model needed.
+  const canTranslate = prefs.translation_provider === "cli" || (hasAiKey && hasAiModel);
   const myNickname = useMemo(() => getCachedProfile(userId)?.nickname ?? null, [userId, messages.length]);
   const { typingUsers, sendTyping, stopTyping } = useTypingIndicator(userId, myNickname, activated);
   const [input, setInput] = useState("");
@@ -200,7 +202,7 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
 
   // Translate reply: replaces input with translated text for user to review before sending
   const handleTranslateReply = useCallback(async () => {
-    if (!hasAiKey || !hasAiModel) {
+    if (!canTranslate) {
       setShowNoAiKeyPopup(true);
       return;
     }
@@ -214,7 +216,7 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
     } finally {
       setTranslatingReply(false);
     }
-  }, [hasAiKey, hasAiModel, input, replyingTo, translatingReply, invokeTranslateReply]);
+  }, [canTranslate, input, replyingTo, translatingReply, invokeTranslateReply]);
 
   const handleSend = useCallback(async () => {
     if ((!input.trim() && !pendingImage) || sending || translatingReply || uploadingImage) return;
@@ -404,12 +406,12 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
   }, []);
 
   const handleTranslate = useCallback((message: ChatMessage) => {
-    if (!hasAiKey || !hasAiModel) {
+    if (!canTranslate) {
       setShowNoAiKeyPopup(true);
       return;
     }
     translate(message.id, message.content);
-  }, [hasAiKey, hasAiModel, translate]);
+  }, [canTranslate, translate]);
 
   const grouped = useMemo(() => groupMessages(messages, prefs.language ?? "en"), [messages, prefs.language]);
 

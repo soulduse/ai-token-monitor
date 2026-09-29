@@ -497,7 +497,7 @@ fn refresh_oauth_via_claude_cli() -> bool {
     false
 }
 
-fn claude_cli_candidates() -> Vec<PathBuf> {
+pub(crate) fn claude_cli_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
     let bin_name = if cfg!(target_os = "windows") {
         "claude.exe"

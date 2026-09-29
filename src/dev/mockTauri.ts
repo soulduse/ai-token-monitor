@@ -211,6 +211,10 @@ export function installMockTauri(): void {
     }),
     get_preferences: () => mockPrefs,
     get_ai_keys: () => null,
+    detect_cli_tools: () => [
+      { name: "gemini", available: false },
+      { name: "claude", available: true },
+    ],
     get_pricing_table: () => ({
       version: "mock",
       last_updated: toLocalDateStr(new Date()),

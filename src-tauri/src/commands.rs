@@ -1084,6 +1084,11 @@ pub fn clear_server_history(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub fn detect_cli_tools() -> Vec<crate::cli_translate::CliTool> {
+    crate::cli_translate::detect_available_cli_tools()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
