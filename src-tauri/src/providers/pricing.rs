@@ -1675,6 +1675,23 @@ mod tests {
         }
     }
 
+    // OpenCode routes Gemini too; its table must carry the same current rates
+    // instead of falling through to stale rows or the "gemini-3" catch-all.
+    #[test]
+    fn opencode_gemini_rows_match_the_gemini_table() {
+        for (model, input, output, cache) in [
+            ("gemini-3.5-flash", 1.50, 9.00, 0.15),
+            ("gemini-3.1-pro-preview", 2.00, 12.00, 0.20),
+            ("gemini-2.5-flash", 0.30, 2.50, 0.03),
+            ("gemini-2.5-pro", 1.25, 10.00, 0.125),
+        ] {
+            let p = get_opencode_pricing(&normalize_model_id(model));
+            assert!((p.input - input).abs() < 1e-9, "{model} input: {}", p.input);
+            assert!((p.output - output).abs() < 1e-9, "{model} output: {}", p.output);
+            assert!((p.cache_read - cache).abs() < 1e-9, "{model} cache: {}", p.cache_read);
+        }
+    }
+
     // Pro models bill the whole request at long-context rates above 200k.
     #[test]
     fn gemini_pro_long_context_tier() {
