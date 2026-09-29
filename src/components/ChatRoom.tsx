@@ -3,6 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useSettings } from "../contexts/SettingsContext";
 import { useChat } from "../hooks/useChat";
 import { useTranslate } from "../hooks/useTranslate";
+import { useCliTools } from "../hooks/useCliTools";
 import { useTypingIndicator } from "../hooks/useTypingIndicator";
 import { ChatMessageRow, DateSeparator, formatDateSeparator, TranslateIcon } from "./ChatMessage";
 import { MentionAutocomplete } from "./MentionAutocomplete";
@@ -10,6 +11,7 @@ import type { MentionAutocompleteRef } from "./MentionAutocomplete";
 import { getAllCachedProfiles, getCachedProfile } from "../lib/profileCache";
 import { uploadChatImage } from "../lib/chatImageUpload";
 import { describeTranslateError } from "../lib/translateError";
+import { defaultCli, hasApiTranslation, translatesWithCli } from "../lib/translationMode";
 import { useI18n, LANGUAGE_NAMES } from "../i18n/I18nContext";
 import type { ChatMessage } from "../hooks/useChat";
 import { SettingsOverlay } from "./SettingsOverlay";
@@ -143,10 +145,9 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
     translations, translating, translate, translateReply: invokeTranslateReply,
     error: translateError, clearError: clearTranslateError,
   } = useTranslate(langName);
-  const hasAiKey = !!(prefs.ai_keys?.gemini || prefs.ai_keys?.openai || prefs.ai_keys?.anthropic || prefs.ai_keys?.kiro);
-  const hasAiModel = !!prefs.ai_model;
-  // CLI mode translates through the local gemini/claude CLI — no API key or model needed.
-  const canTranslate = prefs.translation_provider === "cli" || (hasAiKey && hasAiModel);
+  const defaultCliDetected = defaultCli(useCliTools()) !== undefined;
+  // CLI mode translates through a local gemini/claude/codex CLI — no API key or model needed.
+  const canTranslate = translatesWithCli(prefs, defaultCliDetected) || hasApiTranslation(prefs);
   const myNickname = useMemo(() => getCachedProfile(userId)?.nickname ?? null, [userId, messages.length]);
   const { typingUsers, sendTyping, stopTyping } = useTypingIndicator(userId, myNickname, activated);
   const [input, setInput] = useState("");

@@ -5,6 +5,7 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use crate::commands::get_preferences;
+use crate::providers::types::UserPreferences;
 
 static HTTP_CLIENT: OnceLock<Client> = OnceLock::new();
 
@@ -581,6 +582,15 @@ mod tests {
     }
 }
 
+/// Mirrors the chat's translate gate (`translationMode.ts`): an unset provider
+/// falls back to a detected gemini/claude CLI when no API key + model is
+/// configured. Codex is never picked implicitly.
+fn translates_with_cli(prefs: &UserPreferences) -> bool {
+    let api_configured = prefs.ai_model.is_some()
+        && crate::commands::get_ai_keys().is_some_and(|keys| keys.has_translation_key());
+    prefs.translates_with_cli(api_configured, crate::cli_translate::default_cli_available)
+}
+
 #[tauri::command]
 pub async fn translate_reply(
     text: String,
@@ -592,8 +602,7 @@ pub async fn translate_reply(
 
     let prefs = get_preferences();
 
-    // Route to CLI if translation_provider is "cli"
-    if prefs.translation_provider.as_deref() == Some("cli") {
+    if translates_with_cli(&prefs) {
         let preferred = prefs.preferred_cli;
         // CLI calls block for up to the CLI timeout; keep them off the async runtime.
         return tauri::async_runtime::spawn_blocking(move || {
@@ -628,8 +637,7 @@ pub async fn translate_text(
 
     let prefs = get_preferences();
 
-    // Route to CLI if translation_provider is "cli"
-    if prefs.translation_provider.as_deref() == Some("cli") {
+    if translates_with_cli(&prefs) {
         let preferred = prefs.preferred_cli;
         return tauri::async_runtime::spawn_blocking(move || {
             crate::cli_translate::cli_translate_text(

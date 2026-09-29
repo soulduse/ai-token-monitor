@@ -6,6 +6,8 @@ import { useSettings } from "../contexts/SettingsContext";
 import { useOnboarding } from "../contexts/OnboardingContext";
 import { useAuth } from "../hooks/useAuth";
 import { restoreServerHistory } from "../lib/serverHistory";
+import { defaultCli, translatesWithCli } from "../lib/translationMode";
+import { useCliTools } from "../hooks/useCliTools";
 import { useI18n, LANGUAGE_OPTIONS } from "../i18n/I18nContext";
 import { InfoTooltip } from "./InfoTooltip";
 import type { Locale } from "../i18n/I18nContext";
@@ -1135,17 +1137,16 @@ function AiTranslationSection({
   onTranslationProviderChange: (provider: string | undefined) => void;
   onPreferredCliChange: (cli: string | undefined) => void;
 }) {
-  interface CliTool { name: string; available: boolean; }
-  const [cliTools, setCliTools] = useState<CliTool[]>([]);
-
-  useEffect(() => {
-    invoke<CliTool[]>("detect_cli_tools")
-      .then(setCliTools)
-      .catch(() => setCliTools([]));
-  }, []);
-
+  const cliTools = useCliTools();
   const t = useI18n();
   const keys = aiKeys ?? {};
+  // With no saved choice the backend picks the mode and CLI; show what it will use.
+  const fallbackCli = defaultCli(cliTools);
+  const usesCli = translatesWithCli(
+    { ai_keys: aiKeys, ai_model: aiModel, translation_provider: translationProvider },
+    fallbackCli !== undefined,
+  );
+  const selectedCli = cliTools.some((tool) => tool.available && tool.name === preferredCli) ? preferredCli : fallbackCli;
 
   const availableModels = AI_PROVIDERS.flatMap((p) => {
     const key = keys[p.id as keyof typeof keys];
@@ -1258,7 +1259,7 @@ function AiTranslationSection({
               type="radio"
               name="translationProvider"
               value="api"
-              checked={!translationProvider || translationProvider === "api"}
+              checked={!usesCli}
               onChange={() => onTranslationProviderChange("api")}
             />
             {t("settings.translationProviderApi")}
@@ -1268,17 +1269,22 @@ function AiTranslationSection({
               type="radio"
               name="translationProvider"
               value="cli"
-              checked={translationProvider === "cli"}
+              checked={usesCli}
               onChange={() => onTranslationProviderChange("cli")}
             />
             {t("settings.translationProviderCli")}
           </label>
         </div>
-        {translationProvider === "cli" && (
+        {usesCli && (
           <div>
             <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 8 }}>
               {t("settings.translationProviderCliDesc")}
             </div>
+            {!translationProvider && (
+              <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 8 }}>
+                {t("settings.translationProviderAuto")}
+              </div>
+            )}
             <div style={{ marginBottom: 8 }}>
               {cliTools.length === 0 ? (
                 <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
@@ -1308,7 +1314,7 @@ function AiTranslationSection({
                   {t("settings.preferredCli")}
                 </div>
                 <select
-                  value={cliTools.some((tool) => tool.available && tool.name === preferredCli) ? preferredCli : cliTools.find((tool) => tool.available)?.name}
+                  value={selectedCli ?? ""}
                   onChange={(e) => onPreferredCliChange(e.target.value || undefined)}
                   style={{
                     fontSize: 10,
@@ -1322,6 +1328,8 @@ function AiTranslationSection({
                     outline: "none",
                   }}
                 >
+                  {/* Only codex detected: it is never picked implicitly, so ask for a choice. */}
+                  {!selectedCli && <option value="" disabled>—</option>}
                   {cliTools.filter((tool) => tool.available).map((tool) => (
                     <option key={tool.name} value={tool.name}>{tool.name}</option>
                   ))}

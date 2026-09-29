@@ -9,6 +9,13 @@ const MAX_RAW_LENGTH = 200;
  * user still sees what the CLI or API actually said.
  */
 export function describeTranslateError(raw: string, t: Translate): string {
+  if (raw.includes("Codex CLI is too old")) return t("chat.translateError.codexOutdated");
+  if (raw.includes("Codex CLI is not logged in")) return t("chat.translateError.codexNotLoggedIn");
+  const codexModel = raw.match(/^Codex CLI cannot use the model (.+)\.$/);
+  if (codexModel) return t("chat.translateError.codexModel", { model: codexModel[1] });
+  if (raw.includes("Codex CLI") && raw.includes("translation discarded")) {
+    return t("chat.translateError.codexToolUse");
+  }
   if (raw.includes("too old for translation")) return t("chat.translateError.cliOutdated");
   if (raw.includes("No gemini or claude CLI found")) return t("chat.translateError.noCli");
   const notFound = raw.match(/^(\w+) CLI not found/);
