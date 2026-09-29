@@ -396,6 +396,13 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             (true, 0.0)
         };
 
+        let (pi_warm, pi_cost) = if prefs.include_pi {
+            let s = providers::pi::get_cached_stats();
+            (s.is_some(), today_cost_of(&s, &today))
+        } else {
+            (true, 0.0)
+        };
+
         let computed = claude_cost
             + codex_cost
             + opencode_cost
@@ -404,7 +411,8 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             + gjc_cost
             + grok_cost
             + kiro_cost
-            + omo_cost;
+            + omo_cost
+            + pi_cost;
         let warm = claude_warm
             && codex_warm
             && opencode_warm
@@ -413,7 +421,8 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             && gjc_warm
             && grok_warm
             && kiro_warm
-            && omo_warm;
+            && omo_warm
+            && pi_warm;
 
         let today_cost = if warm {
             // Every enabled provider has parsed — this is the real number.
@@ -548,6 +557,15 @@ fn get_all_watch_dirs() -> Vec<PathBuf> {
         }
     }
 
+    // Pi: sessions root (honours PI_CODING_AGENT_DIR), gated on include_pi
+    // for the same reason as OmO.
+    if prefs.include_pi {
+        let pi_sessions = providers::pi::default_sessions_root();
+        if pi_sessions.exists() {
+            dirs.push(pi_sessions);
+        }
+    }
+
     dirs
 }
 
@@ -624,6 +642,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                     providers::grok::invalidate_stats_cache();
                     providers::kiro::invalidate_stats_cache();
                     providers::omo::invalidate_stats_cache();
+                    providers::pi::invalidate_stats_cache();
                     // Re-parse in background, then notify the frontend. Emitting only
                     // after the parse completes means the frontend's get_*_stats calls
                     // hit the warm cache instead of racing this thread and parsing the
@@ -657,6 +676,9 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                         if prefs.include_omo {
                             let _ = providers::omo::OmoProvider::new().fetch_stats();
                         }
+                        if prefs.include_pi {
+                            let _ = providers::pi::PiProvider::new().fetch_stats();
+                        }
                         update_tray_title(&app_for_refresh);
                         let _ = app_for_refresh.emit("stats-updated", ());
                     });
@@ -684,6 +706,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                         providers::grok::invalidate_stats_cache();
                         providers::kiro::invalidate_stats_cache();
                         providers::omo::invalidate_stats_cache();
+                        providers::pi::invalidate_stats_cache();
                         let _ = app_handle.emit("stats-updated", ());
                     }
                     update_tray_title(&app_handle);
@@ -1129,6 +1152,8 @@ pub fn run() {
             commands::is_gjc_available,
             commands::get_omo_stats,
             commands::is_omo_available,
+            commands::get_pi_stats,
+            commands::is_pi_available,
             commands::get_preferences,
             commands::set_preferences,
             commands::get_stable_device_id,

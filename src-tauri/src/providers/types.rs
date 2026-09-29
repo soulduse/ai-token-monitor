@@ -144,6 +144,8 @@ pub struct UserPreferences {
     pub include_kiro: bool,
     #[serde(default)]
     pub include_omo: bool,
+    #[serde(default)]
+    pub include_pi: bool,
     #[serde(default = "default_gjc_dirs")]
     pub gjc_dirs: Vec<String>,
     #[serde(default = "default_codex_dirs")]
@@ -311,6 +313,7 @@ impl Default for UserPreferences {
             include_grok: false,
             include_kiro: false,
             include_omo: false,
+            include_pi: false,
             gjc_dirs: default_gjc_dirs(),
             codex_dirs: default_codex_dirs(),
             salary_enabled: false,
