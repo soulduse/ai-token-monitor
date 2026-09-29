@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -602,6 +602,26 @@ pub(crate) fn hide_console_window(cmd: &mut Command) {
     let _ = cmd;
 }
 
+/// Kill a CLI child and wait for it. On Windows a `.cmd` shim runs under
+/// cmd.exe, so the whole process tree is taken down, not just cmd.exe.
+pub(crate) fn kill_process_tree(child: &mut Child) {
+    // A `.cmd` shim's child is cmd.exe; killing only it would leave the node
+    // process (and the CLI request) running, so take down the whole tree.
+    #[cfg(target_os = "windows")]
+    {
+        let mut taskkill = Command::new("taskkill");
+        taskkill
+            .args(["/PID", &child.id().to_string(), "/T", "/F"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        hide_console_window(&mut taskkill);
+        let _ = taskkill.status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 fn run_claude_auth_status(cli: &Path) -> bool {
     if cli.components().count() > 1 && !cli.exists() {
         return false;
@@ -629,14 +649,8 @@ fn run_claude_auth_status(cli: &Path) -> bool {
             Ok(None) if started_at.elapsed() < timeout => {
                 thread::sleep(Duration::from_millis(100));
             }
-            Ok(None) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return false;
-            }
-            Err(_) => {
-                let _ = child.kill();
-                let _ = child.wait();
+            Ok(None) | Err(_) => {
+                kill_process_tree(&mut child);
                 return false;
             }
         }

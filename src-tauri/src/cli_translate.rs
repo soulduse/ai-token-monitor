@@ -1,8 +1,8 @@
-use crate::oauth_usage::{hide_console_window, CliSearchEnv};
+use crate::oauth_usage::{hide_console_window, kill_process_tree, CliSearchEnv};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -131,23 +131,6 @@ fn drain<R: Read + Send + 'static>(pipe: Option<R>) -> JoinHandle<Vec<u8>> {
     })
 }
 
-fn kill(child: &mut Child) {
-    // A `.cmd` shim's child is cmd.exe; killing only it would leave the node
-    // process (and the CLI request) running, so take down the whole tree.
-    #[cfg(target_os = "windows")]
-    {
-        let mut taskkill = Command::new("taskkill");
-        taskkill
-            .args(["/PID", &child.id().to_string(), "/T", "/F"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        hide_console_window(&mut taskkill);
-        let _ = taskkill.status();
-    }
-    let _ = child.kill();
-    let _ = child.wait();
-}
 
 /// Build a command for a resolved CLI: isolated working directory, no browser
 /// pop-ups for login flows, and the CLI's own dir on PATH so npm shims
@@ -211,11 +194,11 @@ fn run_with_timeout(mut cmd: Command, stdin_data: &str) -> Result<String, String
             Ok(Some(status)) => break status,
             Ok(None) if start.elapsed() < timeout => thread::sleep(Duration::from_millis(100)),
             Ok(None) => {
-                kill(&mut child);
+                kill_process_tree(&mut child);
                 return Err(format!("CLI timed out after {} seconds", CLI_TIMEOUT_SECS));
             }
             Err(e) => {
-                kill(&mut child);
+                kill_process_tree(&mut child);
                 return Err(format!("Failed to poll CLI: {}", e));
             }
         }
