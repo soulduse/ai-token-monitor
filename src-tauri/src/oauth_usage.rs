@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -497,34 +498,84 @@ fn refresh_oauth_via_claude_cli() -> bool {
     false
 }
 
+/// Candidate paths for the claude CLI. GUI launches (Finder, autostart) get a
+/// minimal PATH, so the common install dirs are probed on top of it.
 pub(crate) fn claude_cli_candidates() -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-    let bin_name = if cfg!(target_os = "windows") {
-        "claude.exe"
+    claude_cli_candidates_from(&CliSearchEnv::current(), cfg!(target_os = "windows"))
+}
+
+/// The environment `claude_cli_candidates` reads, split out so the Windows
+/// lookup can be unit-tested on any host.
+#[derive(Default)]
+pub(crate) struct CliSearchEnv {
+    /// Explicit overrides (`CLAUDE_CLI_PATH`, `CLAUDE_CODE_CLI`), highest priority first.
+    pub overrides: Vec<OsString>,
+    pub path: Option<OsString>,
+    pub home: Option<PathBuf>,
+    /// `%APPDATA%` — `npm i -g` puts its shims in `%APPDATA%\npm` on Windows.
+    pub appdata: Option<PathBuf>,
+}
+
+impl CliSearchEnv {
+    pub(crate) fn current() -> Self {
+        Self {
+            overrides: ["CLAUDE_CLI_PATH", "CLAUDE_CODE_CLI"]
+                .into_iter()
+                .filter_map(std::env::var_os)
+                .collect(),
+            path: std::env::var_os("PATH"),
+            home: dirs::home_dir(),
+            appdata: std::env::var_os("APPDATA").map(PathBuf::from),
+        }
+    }
+
+    /// PATH entries followed by the user-level npm bin dir on Windows.
+    pub(crate) fn search_dirs(&self, windows: bool) -> Vec<PathBuf> {
+        let mut dirs: Vec<PathBuf> = self
+            .path
+            .as_ref()
+            .map(|path| std::env::split_paths(path).collect())
+            .unwrap_or_default();
+        if windows {
+            if let Some(appdata) = &self.appdata {
+                dirs.push(appdata.join("npm"));
+            }
+        }
+        dirs
+    }
+}
+
+/// On Windows the native installer ships `claude.exe`, while npm (and the
+/// nvm/volta/scoop shims layered on it) install a `claude.cmd` batch shim.
+fn claude_bin_names(windows: bool) -> &'static [&'static str] {
+    if windows {
+        &["claude.exe", "claude.cmd"]
     } else {
-        "claude"
-    };
+        &["claude"]
+    }
+}
 
-    for key in ["CLAUDE_CLI_PATH", "CLAUDE_CODE_CLI"] {
-        if let Ok(path) = std::env::var(key) {
-            push_cli_candidate(&mut candidates, PathBuf::from(path));
+pub(crate) fn claude_cli_candidates_from(env: &CliSearchEnv, windows: bool) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    let bin_names = claude_bin_names(windows);
+
+    for path in &env.overrides {
+        push_cli_candidate(&mut candidates, PathBuf::from(path));
+    }
+
+    let mut dirs = env.search_dirs(windows);
+    if let Some(home) = &env.home {
+        dirs.push(home.join(".local/bin"));
+        dirs.push(home.join(".claude/local"));
+    }
+    if !windows {
+        dirs.push(PathBuf::from("/opt/homebrew/bin"));
+        dirs.push(PathBuf::from("/usr/local/bin"));
+    }
+    for dir in dirs {
+        for name in bin_names {
+            push_cli_candidate(&mut candidates, dir.join(name));
         }
-    }
-
-    if let Ok(path) = std::env::var("PATH") {
-        for dir in std::env::split_paths(&path) {
-            push_cli_candidate(&mut candidates, dir.join(bin_name));
-        }
-    }
-
-    if let Some(home) = dirs::home_dir() {
-        push_cli_candidate(&mut candidates, home.join(".local/bin").join(bin_name));
-        push_cli_candidate(&mut candidates, home.join(".claude/local").join(bin_name));
-    }
-
-    if !cfg!(target_os = "windows") {
-        push_cli_candidate(&mut candidates, PathBuf::from("/opt/homebrew/bin/claude"));
-        push_cli_candidate(&mut candidates, PathBuf::from("/usr/local/bin/claude"));
     }
 
     candidates
@@ -538,12 +589,27 @@ fn push_cli_candidate(candidates: &mut Vec<PathBuf>, candidate: PathBuf) {
     candidates.push(candidate);
 }
 
+/// A console child of a GUI app (claude.exe, or cmd.exe running a `.cmd`
+/// shim) would otherwise flash a terminal window on Windows.
+pub(crate) fn hide_console_window(cmd: &mut Command) {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = cmd;
+}
+
 fn run_claude_auth_status(cli: &Path) -> bool {
     if cli.components().count() > 1 && !cli.exists() {
         return false;
     }
 
-    let mut child = match Command::new(cli)
+    let mut cmd = Command::new(cli);
+    hide_console_window(&mut cmd);
+    let mut child = match cmd
         .args(["auth", "status", "--json"])
         .env("BROWSER", "true")
         .stdin(Stdio::null())
@@ -929,5 +995,54 @@ mod tests {
         // No window set → None.
         *RATE_LIMIT_UNTIL.lock().unwrap() = None;
         assert_eq!(rate_limit_remaining_secs(), None);
+    }
+
+    fn search_env(dirs: &[&str]) -> CliSearchEnv {
+        CliSearchEnv {
+            overrides: vec![],
+            path: Some(std::env::join_paths(dirs).unwrap()),
+            home: Some(PathBuf::from("/home/u")),
+            appdata: Some(PathBuf::from("/appdata")),
+        }
+    }
+
+    #[test]
+    fn windows_claude_candidates_include_npm_cmd_shims() {
+        let env = search_env(&["/nodejs"]);
+        let candidates = claude_cli_candidates_from(&env, true);
+        // The native claude.exe wins over an npm shim in the same dir.
+        assert_eq!(
+            &candidates[..2],
+            &[
+                PathBuf::from("/nodejs/claude.exe"),
+                PathBuf::from("/nodejs/claude.cmd"),
+            ]
+        );
+        // npm's default global bin is probed even when it is not on PATH.
+        assert!(candidates.contains(&PathBuf::from("/appdata/npm/claude.cmd")));
+        assert!(candidates.contains(&PathBuf::from("/home/u/.local/bin/claude.exe")));
+        assert!(!candidates.iter().any(|c| c.starts_with("/opt/homebrew")));
+    }
+
+    #[test]
+    fn unix_claude_candidates_ignore_windows_names_and_appdata() {
+        let env = search_env(&["/usr/bin"]);
+        let candidates = claude_cli_candidates_from(&env, false);
+        assert_eq!(candidates[0], PathBuf::from("/usr/bin/claude"));
+        assert!(candidates.contains(&PathBuf::from("/opt/homebrew/bin/claude")));
+        assert!(!candidates.iter().any(|c| c.starts_with("/appdata")));
+        assert!(!candidates
+            .iter()
+            .any(|c| c.extension().is_some_and(|ext| ext == "cmd" || ext == "exe")));
+    }
+
+    #[test]
+    fn claude_cli_overrides_come_first_and_duplicates_are_dropped() {
+        let mut env = search_env(&["/nodejs", "/nodejs"]);
+        env.overrides = vec![OsString::from("/custom/claude.cmd")];
+        let candidates = claude_cli_candidates_from(&env, true);
+        assert_eq!(candidates[0], PathBuf::from("/custom/claude.cmd"));
+        let exe = PathBuf::from("/nodejs/claude.exe");
+        assert_eq!(candidates.iter().filter(|c| **c == exe).count(), 1);
     }
 }
