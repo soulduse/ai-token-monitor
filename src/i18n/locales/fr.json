@@ -19,6 +19,7 @@
   "sources.omo": "OmO",
   "sources.pi": "Pi",
   "sources.grok": "Grok",
+  "sources.hermes": "Hermes",
   "sources.summary.count": "{{active}} sur {{total}} actives",
   "sources.open": "Ouvrir le menu des sources",
   "today.title": "Aujourd'hui",

@@ -404,6 +404,13 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             (true, 0.0)
         };
 
+        let (hermes_warm, hermes_cost) = if prefs.include_hermes {
+            let s = providers::hermes::get_cached_stats();
+            (s.is_some(), today_cost_of(&s, &today))
+        } else {
+            (true, 0.0)
+        };
+
         let (gemini_warm, gemini_cost) = if prefs.include_gemini {
             let s = providers::gemini::get_cached_stats();
             (s.is_some(), today_cost_of(&s, &today))
@@ -421,6 +428,7 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             + kiro_cost
             + omo_cost
             + pi_cost
+            + hermes_cost
             + gemini_cost;
         let warm = claude_warm
             && codex_warm
@@ -432,6 +440,7 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             && kiro_warm
             && omo_warm
             && pi_warm
+            && hermes_warm
             && gemini_warm;
 
         let today_cost = if warm {
@@ -576,6 +585,17 @@ fn get_all_watch_dirs() -> Vec<PathBuf> {
         }
     }
 
+    // Hermes Agent keeps a single SQLite db (+ WAL sidecar) in its home dir
+    // ($HERMES_HOME, default ~/.hermes). Gated on include_hermes like OmO:
+    // the home dir also holds config/plugins, so watching it unconditionally
+    // would re-parse every provider on unrelated writes.
+    if prefs.include_hermes {
+        let hermes_dir = providers::hermes::hermes_home();
+        if hermes_dir.exists() && !dirs.contains(&hermes_dir) {
+            dirs.push(hermes_dir);
+        }
+    }
+
     // Gemini CLI: `<home>/tmp` holds every project's chat recordings (plus
     // shell history and checkpoints). Gated on include_gemini like OmO, since
     // the CLI rewrites these on every turn and each event re-parses every
@@ -601,7 +621,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                 if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
                     let dominated = event.paths.iter().any(|p| {
                         let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
-                        ext == "jsonl" || ext == "json" || ext == "db"
+                        ext == "jsonl" || ext == "json" || ext == "db" || ext == "db-wal"
                     });
                     if dominated {
                         let _ = tx.send(());
@@ -667,6 +687,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                     providers::omo::invalidate_stats_cache();
                     providers::pi::invalidate_stats_cache();
                     providers::gemini::invalidate_stats_cache();
+                    providers::hermes::invalidate_stats_cache();
                     // Re-parse in background, then notify the frontend. Emitting only
                     // after the parse completes means the frontend's get_*_stats calls
                     // hit the warm cache instead of racing this thread and parsing the
@@ -703,6 +724,9 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                         if prefs.include_pi {
                             let _ = providers::pi::PiProvider::new().fetch_stats();
                         }
+                        if prefs.include_hermes {
+                            let _ = providers::hermes::HermesProvider::new().fetch_stats();
+                        }
                         if prefs.include_gemini {
                             let _ = providers::gemini::GeminiProvider::new(prefs.gemini_dirs.clone()).fetch_stats();
                         }
@@ -735,6 +759,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                         providers::omo::invalidate_stats_cache();
                         providers::pi::invalidate_stats_cache();
                         providers::gemini::invalidate_stats_cache();
+                        providers::hermes::invalidate_stats_cache();
                         let _ = app_handle.emit("stats-updated", ());
                     }
                     update_tray_title(&app_handle);
@@ -1182,6 +1207,8 @@ pub fn run() {
             commands::is_omo_available,
             commands::get_pi_stats,
             commands::is_pi_available,
+            commands::get_hermes_stats,
+            commands::is_hermes_available,
             commands::get_preferences,
             commands::set_preferences,
             commands::get_stable_device_id,

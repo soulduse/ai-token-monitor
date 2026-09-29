@@ -19,6 +19,7 @@
   "sources.omo": "OmO",
   "sources.pi": "Pi",
   "sources.grok": "Grok",
+  "sources.hermes": "Hermes",
   "sources.summary.count": "{{total}} içinden {{active}} aktif",
   "sources.open": "Kaynak menüsünü aç",
   "today.title": "Bugün",

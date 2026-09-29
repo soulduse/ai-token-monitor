@@ -7,7 +7,7 @@
 
 ![AI Token Monitor — real-time token & cost tracking for AI coding tools, right from your menu bar](docs/images/hero.png)
 
-**AI Token Monitor** is a lightweight system tray app for macOS and Windows that answers one question, all day long: *how much are my AI coding tools actually costing me?* It reads the local session logs that **Claude Code**, **Codex**, **OpenCode**, **Gemini CLI**, **GJC**, **Grok**, **Kiro**, **OmO**, and **Pi** already write, prices every token with per-model rates (cache reads included), and puts today's spend right next to your clock — with charts, plan-limit alerts, an opt-in leaderboard, chat, and webhook notifications one click away.
+**AI Token Monitor** is a lightweight system tray app for macOS and Windows that answers one question, all day long: *how much are my AI coding tools actually costing me?* It reads the local session logs that **Claude Code**, **Codex**, **OpenCode**, **Gemini CLI**, **GJC**, **Grok**, **Kiro**, **OmO**, **Pi**, and **Hermes Agent** already write, prices every token with per-model rates (cache reads included), and puts today's spend right next to your clock — with charts, plan-limit alerts, an opt-in leaderboard, chat, and webhook notifications one click away.
 
 - **Zero setup** — no API keys, no proxies. If you've run Claude Code or Codex once, it just works.
 - **Spend at a glance** — live cost in the menu bar / system tray, full dashboard on click.
@@ -168,6 +168,7 @@ Shared data: daily token count, cost, messages/sessions. **No code or conversati
 | **Kiro** | `~/.kiro/sessions/cli/*.json` + `data.sqlite3` | **Credits, not tokens** — Kiro meters a per-turn "unit of work" and records no token counts anywhere, so cost comes from credits (× $0.04, the overage rate). Interactive and non-interactive runs write to two separate stores with different key names; both are read. Turns left on Auto never record which model ran. |
 | **OmO Native** | `~/.omo/agent/sessions/*/*.jsonl` + subagent sessions at `<project>/.omo/senpi-task/children/**` | Per-message usage with pre-computed cost; dedup by API response id. Honors `OMO_CODING_AGENT_DIR`. |
 | **Pi** | `~/.pi/agent/sessions/*/*.jsonl` | Per-message usage with pre-computed cost; dedup by API response id (forked sessions count once). Honors `PI_CODING_AGENT_DIR`. |
+| **Hermes Agent** | `$HERMES_HOME/state.db` (default `~/.hermes/state.db`) | Per-session aggregates from the `sessions` table; uses Hermes' own actual/estimated cost. |
 
 **Network requests**: only when leaderboard/chat is opted in (sends aggregated data to Supabase) or when a webhook fires. Without these features, the app runs completely offline. AI translation keys, if set, call the provider you chose directly.
 

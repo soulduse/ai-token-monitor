@@ -19,6 +19,7 @@
   "sources.omo": "OmO",
   "sources.pi": "Pi",
   "sources.grok": "Grok",
+  "sources.hermes": "Hermes",
   "sources.summary.count": "{{total}}개 중 {{active}}개 사용",
   "sources.open": "소스 메뉴 열기",
   "today.title": "오늘",
