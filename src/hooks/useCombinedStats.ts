@@ -12,9 +12,10 @@ interface UseCombinedStatsProps {
   includeGrok: boolean;
   includeKiro: boolean;
   includeOmo: boolean;
+  includePi: boolean;
 }
 
-export function useCombinedStats({ includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeOmo }: UseCombinedStatsProps) {
+export function useCombinedStats({ includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeOmo, includePi }: UseCombinedStatsProps) {
   const claude = useTokenStats("claude");
   const codex = useTokenStats("codex");
   const opencode = useTokenStats("opencode");
@@ -24,6 +25,7 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
   const grok = useTokenStats("grok");
   const kiro = useTokenStats("kiro");
   const omo = useTokenStats("omo");
+  const pi = useTokenStats("pi");
 
   const stats = useMemo<AllStats | null>(() => {
     const sources: (AllStats | null)[] = [];
@@ -36,6 +38,7 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
     if (includeGrok) sources.push(grok.stats);
     if (includeKiro) sources.push(kiro.stats);
     if (includeOmo) sources.push(omo.stats);
+    if (includePi) sources.push(pi.stats);
 
     const validStats = sources.filter((s): s is AllStats => s !== null);
     // Every pushed source was null, so any per-provider fallback here would just
@@ -44,9 +47,9 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
     if (validStats.length === 1) return validStats[0];
 
     return mergeStats(validStats);
-  }, [claude.stats, codex.stats, opencode.stats, kimi.stats, glm.stats, gjc.stats, grok.stats, kiro.stats, omo.stats, includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeOmo]);
+  }, [claude.stats, codex.stats, opencode.stats, kimi.stats, glm.stats, gjc.stats, grok.stats, kiro.stats, omo.stats, pi.stats, includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeOmo, includePi]);
 
-  const loading = (includeClaude && claude.loading) || (includeCodex && codex.loading) || (includeOpencode && opencode.loading) || (includeKimi && kimi.loading) || (includeGlm && glm.loading) || (includeGjc && gjc.loading) || (includeGrok && grok.loading) || (includeKiro && kiro.loading) || (includeOmo && omo.loading);
+  const loading = (includeClaude && claude.loading) || (includeCodex && codex.loading) || (includeOpencode && opencode.loading) || (includeKimi && kimi.loading) || (includeGlm && glm.loading) || (includeGjc && gjc.loading) || (includeGrok && grok.loading) || (includeKiro && kiro.loading) || (includeOmo && omo.loading) || (includePi && pi.loading);
   const error = useMemo(() => {
     if (stats) return null;
 
@@ -59,9 +62,10 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
     if (includeGrok && grok.error) return grok.error;
     if (includeKiro && kiro.error) return kiro.error;
     if (includeOmo && omo.error) return omo.error;
+    if (includePi && pi.error) return pi.error;
 
     return null;
-  }, [stats, includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeOmo, claude.error, codex.error, opencode.error, kimi.error, glm.error, gjc.error, grok.error, kiro.error, omo.error]);
+  }, [stats, includeClaude, includeCodex, includeOpencode, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeOmo, includePi, claude.error, codex.error, opencode.error, kimi.error, glm.error, gjc.error, grok.error, kiro.error, omo.error, pi.error]);
 
   return { stats, loading, error };
 }

@@ -111,6 +111,7 @@ export interface UserPreferences {
   include_grok: boolean;
   include_kiro: boolean;
   include_omo: boolean;
+  include_pi: boolean;
   theme: "github" | "purple" | "ocean" | "sunset";
   color_mode: "system" | "light" | "dark";
   language: "en" | "ko" | "ja" | "zh-CN" | "zh-TW" | "fr" | "es" | "de" | "tr" | "it";

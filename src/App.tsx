@@ -81,6 +81,7 @@ function AppContent() {
     includeGrok: prefs.include_grok,
     includeKiro: prefs.include_kiro,
     includeOmo: prefs.include_omo,
+    includePi: prefs.include_pi,
   });
   const t = useI18n();
   const { user, profile } = useAuth();
