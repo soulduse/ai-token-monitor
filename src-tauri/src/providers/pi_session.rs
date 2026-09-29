@@ -6,8 +6,10 @@
 //!   `message.responseId`
 //! - `reasoning` tokens are already included in `output`; never added again.
 //!
-//! Main sessions live at a fixed depth `<sessions root>/*/*.jsonl`. What differs
-//! per agent is captured by [`SessionLayout`]: naming, and whether subagent
+//! Main sessions live at a fixed depth `<sessions root>/*/*.jsonl`, plus
+//! `<custom dir>/*.jsonl` when the agent is pointed at a flat session dir
+//! (see [`SessionDirs`]). What differs per agent is captured by
+//! [`SessionLayout`]: naming, the settings file format, and whether subagent
 //! child sessions are discovered through the header cwds.
 
 use std::collections::hash_map::Entry;
@@ -39,19 +41,189 @@ pub(super) trait SessionLayout: Clone + Default + Send + 'static {
     /// Subagent child sessions, as a glob relative to a main header's cwd.
     /// `None` disables child discovery entirely.
     const CHILDREN_GLOB: Option<&'static str>;
+    /// Global settings files in the agent dir, in lookup order; the first one
+    /// that exists is the only one read.
+    const SETTINGS_FILES: &'static [&'static str];
+    /// Whether the settings file may carry comments and trailing commas.
+    const SETTINGS_JSONC: bool;
 }
 
-// --- Agent dir resolution ---
+// --- Dir resolution ---
 
-/// Pure resolver: the env value when set and non-empty, else `~/<dot_dir>/agent`.
-/// Takes the env value as an argument so tests exercise it without env races.
-pub(super) fn resolve_agent_dir(env_value: Option<&str>, dot_dir: &str) -> PathBuf {
-    match env_value.filter(|v| !v.is_empty()) {
-        Some(dir) => PathBuf::from(dir),
-        None => dirs::home_dir()
-            .unwrap_or_default()
-            .join(dot_dir)
-            .join("agent"),
+/// `~` expansion exactly as the agent's `normalizePath` (pi-mono
+/// `utils/paths.ts`): only a bare `~` or a leading `~/` (`~\` on Windows).
+/// `~user` and `$VAR` stay literal — the agent never expands them either.
+pub(super) fn expand_tilde(value: &str, home: &Path) -> PathBuf {
+    if value == "~" {
+        return home.to_path_buf();
+    }
+    let rest = value
+        .strip_prefix("~/")
+        .or_else(|| value.strip_prefix("~\\").filter(|_| cfg!(windows)));
+    match rest {
+        Some(rest) => home.join(rest),
+        None => PathBuf::from(value),
+    }
+}
+
+/// Custom flat session dir, resolved like the agent's startup: the
+/// `*_CODING_AGENT_SESSION_DIR` env value when set and non-empty, else
+/// `sessionDir` from the global settings file in the agent dir. `--session-dir`
+/// is per invocation and cannot be discovered. A relative result is dropped:
+/// the agent resolves it against its own launch cwd, which is unknown here.
+pub(super) fn resolve_custom_session_dir<L: SessionLayout>(
+    env_value: Option<&str>,
+    agent_dir: &Path,
+    home: &Path,
+) -> Option<PathBuf> {
+    let configured = match env_value.filter(|v| !v.is_empty()) {
+        Some(value) => value.to_string(),
+        None => settings_session_dir::<L>(agent_dir)?,
+    };
+    Some(expand_tilde(&configured, home)).filter(|dir| dir.is_absolute())
+}
+
+/// `sessionDir` of the agent's global settings file; `None` when the file is
+/// missing or unparsable (the agent then falls back to its defaults too).
+fn settings_session_dir<L: SessionLayout>(agent_dir: &Path) -> Option<String> {
+    let path = L::SETTINGS_FILES
+        .iter()
+        .map(|name| agent_dir.join(name))
+        .find(|path| path.exists())?;
+    let content = fs::read_to_string(path).ok()?;
+    let content = content.strip_prefix('\u{feff}').unwrap_or(&content);
+    let settings: Value = if L::SETTINGS_JSONC {
+        serde_json::from_str(&strip_jsonc(content)?).ok()?
+    } else {
+        serde_json::from_str(content).ok()?
+    };
+    settings
+        .get("sessionDir")
+        .and_then(Value::as_str)
+        .filter(|dir| !dir.is_empty())
+        .map(ToString::to_string)
+}
+
+/// JSONC → JSON as senpi's `parseSettingsJson`: comments outside strings and
+/// trailing commas before `}`/`]` become spaces. `None` on an unterminated
+/// block comment, which senpi rejects as well.
+fn strip_jsonc(content: &str) -> Option<String> {
+    let chars: Vec<char> = content.chars().collect();
+    let mut out: Vec<char> = Vec::with_capacity(chars.len());
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if in_string {
+            out.push(c);
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+        match (c, chars.get(i + 1)) {
+            ('"', _) => {
+                in_string = true;
+                out.push(c);
+                i += 1;
+            }
+            ('/', Some('/')) => {
+                while i < chars.len() && chars[i] != '\n' && chars[i] != '\r' {
+                    out.push(' ');
+                    i += 1;
+                }
+            }
+            ('/', Some('*')) => {
+                out.extend([' ', ' ']);
+                i += 2;
+                loop {
+                    match chars.get(i) {
+                        None => return None,
+                        Some('*') if chars.get(i + 1) == Some(&'/') => {
+                            out.extend([' ', ' ']);
+                            i += 2;
+                            break;
+                        }
+                        Some(&nl @ ('\n' | '\r')) => out.push(nl),
+                        Some(_) => out.push(' '),
+                    }
+                    i += 1;
+                }
+            }
+            _ => {
+                out.push(c);
+                i += 1;
+            }
+        }
+    }
+
+    // Trailing commas: a `,` whose next non-whitespace char closes a container.
+    in_string = false;
+    escaped = false;
+    for i in 0..out.len() {
+        let c = out[i];
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        if c == '"' {
+            in_string = true;
+        } else if c == ','
+            && matches!(out[i + 1..].iter().find(|n| !n.is_whitespace()), Some('}' | ']'))
+        {
+            out[i] = ' ';
+        }
+    }
+    Some(out.into_iter().collect())
+}
+
+/// Where one agent writes main sessions: the per-project tree under the agent
+/// dir, plus an optional flat custom dir. Both are scanned — history written
+/// before the override was set stays in the default root — and a response
+/// copied into both counts once through the usual `responseId` dedup.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct SessionDirs {
+    root: PathBuf,
+    custom: Option<PathBuf>,
+}
+
+impl SessionDirs {
+    pub(super) fn new(root: PathBuf, custom: Option<PathBuf>) -> Self {
+        Self { root, custom }
+    }
+
+    /// True when either dir exists.
+    pub(super) fn any_exists(&self) -> bool {
+        self.existing().next().is_some()
+    }
+
+    /// Existing dirs, root first, for the file watcher.
+    pub(super) fn existing(&self) -> impl Iterator<Item = &PathBuf> {
+        std::iter::once(&self.root)
+            .chain(self.custom.iter().filter(|custom| **custom != self.root))
+            .filter(|dir| dir.exists())
+    }
+
+    /// Mtime/size of every main session file across both dirs. A path matched
+    /// by both globs (custom dir = one project dir of the root) appears once.
+    fn collect_main_meta(&self) -> HashMap<PathBuf, (SystemTime, u64)> {
+        let mut meta = collect_file_meta(&main_sessions_pattern(&self.root));
+        if let Some(custom) = &self.custom {
+            meta.extend(collect_file_meta(&flat_sessions_pattern(custom)));
+        }
+        meta
     }
 }
 
@@ -91,7 +263,7 @@ impl<L: SessionLayout> SessionStatsCache<L> {
         lock_unpoisoned(&self.cache).as_ref().map(|c| c.stats.clone())
     }
 
-    pub(super) fn fetch(&'static self, sessions_root: &Path) -> Result<AllStats, String> {
+    pub(super) fn fetch(&'static self, dirs: &SessionDirs) -> Result<AllStats, String> {
         let was_invalidated = self.invalidated.swap(false, Ordering::Relaxed);
 
         if !was_invalidated {
@@ -116,10 +288,10 @@ impl<L: SessionLayout> SessionStatsCache<L> {
             return Err(format!("{} stats computation in progress", L::NAME));
         };
 
-        Ok(self.refresh(sessions_root))
+        Ok(self.refresh(dirs))
     }
 
-    fn refresh(&self, sessions_root: &Path) -> AllStats {
+    fn refresh(&self, dirs: &SessionDirs) -> AllStats {
         let start = Instant::now();
         let mut state = {
             let cache = lock_unpoisoned(&self.cache);
@@ -128,7 +300,7 @@ impl<L: SessionLayout> SessionStatsCache<L> {
                 None => ScanState::default(),
             }
         };
-        let stats = state.refresh(sessions_root);
+        let stats = state.refresh_dirs(dirs);
         {
             let mut cache = lock_unpoisoned(&self.cache);
             *cache = Some(StatsCache {
@@ -165,6 +337,13 @@ struct SessionEntry {
 fn main_sessions_pattern(sessions_root: &Path) -> String {
     let escaped = glob::Pattern::escape(&sessions_root.to_string_lossy());
     format!("{escaped}/*/*.jsonl")
+}
+
+/// A custom session dir is FLAT: `<dir>/<ts>_<id>.jsonl`, no project subdirs
+/// (pi `SessionManager.create` with a `sessionDir`). Escaped like the root.
+fn flat_sessions_pattern(dir: &Path) -> String {
+    let escaped = glob::Pattern::escape(&dir.to_string_lossy());
+    format!("{escaped}/*.jsonl")
 }
 
 /// Child sessions under a header cwd. The cwd is escaped so project paths
@@ -330,9 +509,9 @@ impl<L: SessionLayout> ScanState<L> {
     /// every cwd found in headers. Later refreshes diff main files by
     /// (mtime, size) and re-glob ONLY the children dirs of changed/new main
     /// files' cwds; with no main change the cached stats are returned without
-    /// touching any child dir.
-    pub(super) fn refresh(&mut self, sessions_root: &Path) -> AllStats {
-        let current_main = collect_file_meta(&main_sessions_pattern(sessions_root));
+    /// touching any child dir. Files of the custom flat dir are main files.
+    pub(super) fn refresh_dirs(&mut self, dirs: &SessionDirs) -> AllStats {
+        let current_main = dirs.collect_main_meta();
 
         let mut changed: Vec<PathBuf> = Vec::new();
         let mut deleted: Vec<PathBuf> = Vec::new();
@@ -423,6 +602,12 @@ impl<L: SessionLayout> ScanState<L> {
         let stats = self.rebuild_stats();
         self.cached_stats = Some(stats.clone());
         stats
+    }
+
+    /// Default sessions root only — the pre-override entry point tests drive.
+    #[cfg(test)]
+    pub(super) fn refresh(&mut self, sessions_root: &Path) -> AllStats {
+        self.refresh_dirs(&SessionDirs::new(sessions_root.to_path_buf(), None))
     }
 
     /// Re-glob one cwd's children dir; re-parse changed/new child files and

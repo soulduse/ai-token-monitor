@@ -4,16 +4,23 @@
 //! scan live in the shared `pi_session` engine.
 //!
 //! Layout (verified on real logs):
-//! - agent dir = `$OMO_CODING_AGENT_DIR` (if set and non-empty) else `~/.omo/agent`
+//! - agent dir = `$OMO_CODING_AGENT_DIR` (if set and non-empty after trimming)
+//!   else `~/.omo/agent`. The `omo` launcher (`bin/lib/agent-dir.js`
+//!   `canonicalAgentDir`) trims and `path.resolve`s the value WITHOUT `~`
+//!   expansion, so `~` is kept literal here too.
 //! - main sessions: `<agent dir>/sessions/*/*.jsonl` (fixed depth 1 subdir)
+//! - custom session dir = `--session-dir` > `$OMO_CODING_AGENT_SESSION_DIR` >
+//!   `sessionDir` in `<agent dir>/settings.jsonc` (else `settings.json`); the
+//!   senpi engine then writes FLAT `<dir>/<ts>_<id>.jsonl`. Env and settings
+//!   are scanned next to the default root; `--session-dir` cannot be discovered.
 //! - subagent child sessions live OUTSIDE the agent dir at
 //!   `<cwd>/.omo/senpi-task/children/st_*/sessions/st_*/*.jsonl`, where `<cwd>`
 //!   comes from main session headers (line 1)
 //! - `reasoning` tokens are already included in `output`; never added again.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use super::pi_session::{self, SessionLayout, SessionStatsCache};
+use super::pi_session::{self, SessionDirs, SessionLayout, SessionStatsCache};
 use super::traits::TokenProvider;
 use super::types::AllStats;
 
@@ -26,21 +33,39 @@ impl SessionLayout for Omo {
     const FALLBACK_MODEL: &'static str = "omo";
     const CHILDREN_GLOB: Option<&'static str> =
         Some(".omo/senpi-task/children/st_*/sessions/st_*/*.jsonl");
+    // senpi settings-manager: `settings.jsonc` wins when present, and both are
+    // parsed as JSONC.
+    const SETTINGS_FILES: &'static [&'static str] = &["settings.jsonc", "settings.json"];
+    const SETTINGS_JSONC: bool = true;
 }
 
 #[cfg(test)]
 type ScanState = pi_session::ScanState<Omo>;
 
-// --- Agent dir resolution ---
+// --- Dir resolution ---
 
-/// Pure resolver: `$OMO_CODING_AGENT_DIR` when set and non-empty, else `~/.omo/agent`.
+/// Pure resolver: `$OMO_CODING_AGENT_DIR` trimmed when non-empty, else
+/// `~/.omo/agent`. No `~` expansion, matching the omo launcher.
 fn resolve_agent_dir(env_value: Option<&str>) -> PathBuf {
-    pi_session::resolve_agent_dir(env_value, ".omo")
+    match env_value.map(str::trim).filter(|v| !v.is_empty()) {
+        Some(dir) => PathBuf::from(dir),
+        None => dirs::home_dir()
+            .unwrap_or_default()
+            .join(".omo")
+            .join("agent"),
+    }
 }
 
-/// Sessions root scanned by the provider: env-or-default agent dir + `sessions`.
-pub fn default_sessions_root() -> PathBuf {
+/// Default sessions root: env-or-default agent dir + `sessions`.
+#[cfg(test)]
+fn default_sessions_root() -> PathBuf {
     resolve_agent_dir(std::env::var("OMO_CODING_AGENT_DIR").ok().as_deref()).join("sessions")
+}
+
+/// Session dirs the watcher follows: the default root and the custom flat dir,
+/// whichever exist.
+pub fn watch_dirs() -> Vec<PathBuf> {
+    OmoProvider::new().session_dirs().existing().cloned().collect()
 }
 
 // --- Cache ---
@@ -77,6 +102,22 @@ impl OmoProvider {
     fn sessions_root(&self) -> PathBuf {
         self.agent_dir.join("sessions")
     }
+
+    /// Resolved on every call so a `sessionDir` edited in settings is picked
+    /// up without a restart.
+    fn session_dirs(&self) -> SessionDirs {
+        self.session_dirs_with(
+            std::env::var("OMO_CODING_AGENT_SESSION_DIR").ok().as_deref(),
+            &dirs::home_dir().unwrap_or_default(),
+        )
+    }
+
+    /// Pure part of [`Self::session_dirs`]: env value and home passed in.
+    fn session_dirs_with(&self, session_env: Option<&str>, home: &Path) -> SessionDirs {
+        let custom =
+            pi_session::resolve_custom_session_dir::<Omo>(session_env, &self.agent_dir, home);
+        SessionDirs::new(self.sessions_root(), custom)
+    }
 }
 
 impl Default for OmoProvider {
@@ -91,11 +132,11 @@ impl TokenProvider for OmoProvider {
     }
 
     fn fetch_stats(&self) -> Result<AllStats, String> {
-        CACHE.fetch(&self.sessions_root())
+        CACHE.fetch(&self.session_dirs())
     }
 
     fn is_available(&self) -> bool {
-        self.sessions_root().exists()
+        self.session_dirs().any_exists()
     }
 }
 
@@ -755,5 +796,66 @@ mod tests {
         let provider = OmoProvider::with_agent_dir(PathBuf::from("/opt/omo-agent"));
         assert_eq!(provider.agent_dir, PathBuf::from("/opt/omo-agent"));
         assert_eq!(provider.sessions_root(), PathBuf::from("/opt/omo-agent/sessions"));
+    }
+
+    // (18) The omo launcher trims the agent dir env and never expands `~`
+    // (bin/lib/agent-dir.js canonicalAgentDir); the session dir env and
+    // settings `sessionDir` ARE `~`-expanded by the senpi engine.
+    #[test]
+    fn agent_dir_is_trimmed_not_tilde_expanded_but_session_dir_is() {
+        let home = dirs::home_dir().expect("home dir available in tests");
+        assert_eq!(resolve_agent_dir(Some("  /custom/agent\n")), PathBuf::from("/custom/agent"));
+        assert_eq!(resolve_agent_dir(Some("   ")), home.join(".omo").join("agent"));
+        assert_eq!(resolve_agent_dir(Some("~/omo")), PathBuf::from("~/omo"));
+
+        let root = temp_root("custom-resolve");
+        let agent = root.join("agent");
+        let fake_home = root.join("home");
+        let resolve = |env: Option<&str>| pi_session::resolve_custom_session_dir::<Omo>(env, &agent, &fake_home);
+        assert_eq!(resolve(Some("~/env")), Some(fake_home.join("env")));
+        assert_eq!(resolve(None), None);
+
+        // settings.json is JSONC for senpi: comments and trailing commas.
+        write_file(
+            &agent.join("settings.json"),
+            "{\n  // where sessions go\n  \"sessionDir\": \"~/json\", /* a\n b */\n  \"url\": \"http://x//y\",\n}",
+        );
+        assert_eq!(resolve(None), Some(fake_home.join("json")));
+        // settings.jsonc wins when present, even over a valid settings.json.
+        write_file(&agent.join("settings.jsonc"), "{\"sessionDir\": \"/jsonc\",}");
+        assert_eq!(resolve(None), Some(PathBuf::from("/jsonc")));
+        write_file(&agent.join("settings.jsonc"), "{\"sessionDir\": \"/jsonc\" /* open");
+        assert_eq!(resolve(None), None, "unterminated block comment is a parse error");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // (19) Main sessions in a flat custom dir are main sessions: their header
+    // cwds still lead to child sessions, and a response copied from the
+    // default root counts once.
+    #[test]
+    fn flat_custom_dir_mains_discover_children_and_dedup_with_root() {
+        let root = temp_root("custom-scan");
+        let sessions = root.join("agent").join("sessions");
+        let custom = root.join("flat");
+        let cwd = root.join("proj");
+        write_file(&sessions.join("p").join("main.jsonl"), &[session_header(&cwd, "s"), usage_line("m1", 1)].join("\n"));
+        write_file(
+            &custom.join("2026-09-01T09-00-00-000Z_f.jsonl"),
+            &[session_header(&cwd, "f"), usage_line("m1", 1), usage_line("m2", 10)].join("\n"),
+        );
+        write_file(&child_path(&cwd, "st_1"), &[session_header(&cwd, "c"), usage_line("c1", 100)].join("\n"));
+
+        let dirs = SessionDirs::new(sessions.clone(), Some(custom.clone()));
+        let stats = ScanState::default().refresh_dirs(&dirs);
+        assert_eq!((totals(&stats).0, stats.total_messages), (111, 3));
+
+        let provider = OmoProvider::with_agent_dir(root.join("agent"));
+        let custom_str = custom.to_string_lossy().into_owned();
+        let watched: Vec<PathBuf> =
+            provider.session_dirs_with(Some(&custom_str), &root).existing().cloned().collect();
+        assert_eq!(watched, vec![sessions, custom]);
+
+        let _ = fs::remove_dir_all(&root);
     }
 }
