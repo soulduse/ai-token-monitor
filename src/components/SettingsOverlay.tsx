@@ -260,6 +260,16 @@ function GeneralTab({
   updatePrefs: ReturnType<typeof useSettings>["updatePrefs"];
   onReplayOnboarding: () => void;
 }) {
+  // The TeamAI toggle only means something where TeamAI is installed; everyone
+  // else never sees it.
+  const [teamaiAvailable, setTeamaiAvailable] = useState(false);
+
+  useEffect(() => {
+    invoke<boolean>("is_teamai_available")
+      .then(setTeamaiAvailable)
+      .catch(() => setTeamaiAvailable(false));
+  }, []);
+
   return (
     <div>
       <SettingRow label={useI18n()("settings.theme")}>
@@ -314,6 +324,15 @@ function GeneralTab({
           onChange={(v) => updatePrefs({ usage_tracking_enabled: v })}
         />
       </SettingRow>
+
+      {teamaiAvailable && (
+        <SettingRow label={useI18n()("settings.teamai")}>
+          <ToggleSwitch
+            checked={prefs.include_teamai}
+            onChange={(v) => updatePrefs({ include_teamai: v })}
+          />
+        </SettingRow>
+      )}
 
       <SettingRow label={useI18n()("settings.monthlySalary")}>
         <ToggleSwitch

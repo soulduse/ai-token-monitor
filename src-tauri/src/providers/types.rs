@@ -149,6 +149,16 @@ pub struct UserPreferences {
     #[serde(default)]
     pub include_pi: bool,
     pub include_hermes: bool,
+    /// Show TeamAI's per-account quota table in the usage card when TeamAI is
+    /// installed. On by default: it only renders when TeamAI data is detected.
+    #[serde(default = "default_true")]
+    pub include_teamai: bool,
+    /// TeamAI account label masking: "none" | "partial" | "full".
+    #[serde(default = "default_teamai_redact")]
+    pub teamai_redact: String,
+    /// The one-line TeamAI suggestion shown to users without TeamAI was closed.
+    #[serde(default)]
+    pub teamai_promo_dismissed: bool,
     #[serde(default = "default_gjc_dirs")]
     pub gjc_dirs: Vec<String>,
     #[serde(default = "default_codex_dirs")]
@@ -242,6 +252,10 @@ fn default_gemini_dirs() -> Vec<String> {
     vec!["~/.gemini".to_string()]
 }
 
+fn default_teamai_redact() -> String {
+    "none".to_string()
+}
+
 fn default_true() -> bool {
     true
 }
@@ -329,6 +343,9 @@ impl Default for UserPreferences {
             include_omo: false,
             include_pi: false,
             include_hermes: false,
+            include_teamai: true,
+            teamai_redact: default_teamai_redact(),
+            teamai_promo_dismissed: false,
             gjc_dirs: default_gjc_dirs(),
             codex_dirs: default_codex_dirs(),
             gemini_dirs: default_gemini_dirs(),

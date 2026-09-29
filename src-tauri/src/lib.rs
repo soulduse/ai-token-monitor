@@ -4,6 +4,7 @@ mod commands;
 mod hydration;
 mod oauth_usage;
 mod providers;
+mod teamai_usage;
 mod url_metadata;
 mod webhooks;
 
@@ -1242,6 +1243,8 @@ pub fn run() {
             commands::is_pi_available,
             commands::get_hermes_stats,
             commands::is_hermes_available,
+            commands::get_teamai_usage,
+            commands::is_teamai_available,
             commands::get_preferences,
             commands::set_preferences,
             commands::get_stable_device_id,

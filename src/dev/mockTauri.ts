@@ -74,6 +74,9 @@ const mockPrefs: UserPreferences = {
   include_omo: false,
   include_pi: false,
   include_hermes: false,
+  include_teamai: true,
+  teamai_redact: "none",
+  teamai_promo_dismissed: false,
   theme: "github",
   color_mode: "dark",
   language: "en",
@@ -212,6 +215,34 @@ export function installMockTauri(): void {
       prepaid_balance: 0,
       fetched_at: new Date().toISOString(),
     }),
+    is_teamai_available: () => true,
+    get_teamai_usage: () => {
+      const now = Date.now();
+      const w = (utilization: number, hours: number, minutes: number | null = null) =>
+        ({ utilization, resets_at: now + hours * 3_600_000, minutes });
+      const claude = (label: string, renewal_days: number, five: number | null, week: number, model: number) => ({
+        id: `claude:${label}`, config_index: 0, label, plan: "Max 20x", status: "active", renewal_days,
+        five_hour: five == null ? null : w(five, 3), seven_day: w(week, 100), seven_day_model: w(model, 100),
+      });
+      return {
+        running: true,
+        updated_at: now - 5_000,
+        model_label: "Fable",
+        claude: [
+          claude("wallpaper@example.com", 9, 3, 29, 0),
+          claude("zombie.official@example.com", 24, 12, 13, 0),
+          claude("richkim@example.com", 6, 21, 7, 0),
+          claude("khy@example.com", 6, null, 75, 11),
+          claude("khw@example.com", 4, 1, 64, 25),
+          { ...claude("doga@example.com", 2, 0, 98, 98), status: "cooldown" },
+        ],
+        codex: [
+          { id: "codex:a", config_index: 0, label: "doga@example.com", plan: "Pro Lite", status: "active", windows: [w(0, 167, 10_080)] },
+          { id: "codex:b", config_index: 0, label: "dave@example.com", plan: "Pro Lite", status: "active", windows: [w(21, 107, 10_080)] },
+          { id: "codex:c", config_index: 0, label: "khy@example.com", plan: "Pro", status: "active", windows: [w(97, 107, 10_080)] },
+        ],
+      };
+    },
     get_preferences: () => mockPrefs,
     get_ai_keys: () => null,
     detect_cli_tools: () => [
