@@ -6,6 +6,8 @@ import { useSettings } from "../contexts/SettingsContext";
 import { useOnboarding } from "../contexts/OnboardingContext";
 import { useAuth } from "../hooks/useAuth";
 import { restoreServerHistory } from "../lib/serverHistory";
+import { translatesWithCli } from "../lib/translationMode";
+import { useCliTools } from "../hooks/useCliTools";
 import { useI18n, LANGUAGE_OPTIONS } from "../i18n/I18nContext";
 import { InfoTooltip } from "./InfoTooltip";
 import type { Locale } from "../i18n/I18nContext";
@@ -1135,17 +1137,14 @@ function AiTranslationSection({
   onTranslationProviderChange: (provider: string | undefined) => void;
   onPreferredCliChange: (cli: string | undefined) => void;
 }) {
-  interface CliTool { name: string; available: boolean; }
-  const [cliTools, setCliTools] = useState<CliTool[]>([]);
-
-  useEffect(() => {
-    invoke<CliTool[]>("detect_cli_tools")
-      .then(setCliTools)
-      .catch(() => setCliTools([]));
-  }, []);
-
+  const cliTools = useCliTools();
   const t = useI18n();
   const keys = aiKeys ?? {};
+  // With no saved choice the backend picks the mode; show the one it will use.
+  const usesCli = translatesWithCli(
+    { ai_keys: aiKeys, ai_model: aiModel, translation_provider: translationProvider },
+    cliTools.some((tool) => tool.available),
+  );
 
   const availableModels = AI_PROVIDERS.flatMap((p) => {
     const key = keys[p.id as keyof typeof keys];
@@ -1258,7 +1257,7 @@ function AiTranslationSection({
               type="radio"
               name="translationProvider"
               value="api"
-              checked={!translationProvider || translationProvider === "api"}
+              checked={!usesCli}
               onChange={() => onTranslationProviderChange("api")}
             />
             {t("settings.translationProviderApi")}
@@ -1268,17 +1267,22 @@ function AiTranslationSection({
               type="radio"
               name="translationProvider"
               value="cli"
-              checked={translationProvider === "cli"}
+              checked={usesCli}
               onChange={() => onTranslationProviderChange("cli")}
             />
             {t("settings.translationProviderCli")}
           </label>
         </div>
-        {translationProvider === "cli" && (
+        {usesCli && (
           <div>
             <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 8 }}>
               {t("settings.translationProviderCliDesc")}
             </div>
+            {!translationProvider && (
+              <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 8 }}>
+                {t("settings.translationProviderAuto")}
+              </div>
+            )}
             <div style={{ marginBottom: 8 }}>
               {cliTools.length === 0 ? (
                 <div style={{ fontSize: 10, color: "var(--text-muted)" }}>

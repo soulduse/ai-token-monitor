@@ -223,6 +223,12 @@ impl AiKeys {
             || self.webhook_telegram_bot_token.is_some()
             || self.webhook_telegram_chat_id.is_some()
     }
+
+    /// A key for one of the translation model providers (webhook secrets
+    /// share this store but cannot translate).
+    pub fn has_translation_key(&self) -> bool {
+        self.gemini.is_some() || self.openai.is_some() || self.anthropic.is_some() || self.kiro.is_some()
+    }
 }
 
 fn default_theme() -> String {
@@ -363,6 +369,44 @@ impl Default for UserPreferences {
             translation_provider: None,
             preferred_cli: None,
         }
+    }
+}
+
+impl UserPreferences {
+    /// Whether translation runs through a local CLI. An explicit choice always
+    /// wins; with none saved, a configured API key + model keeps the API path,
+    /// and otherwise a detected CLI is used so translation works out of the box.
+    /// `cli_detected` is only probed when it can change the answer.
+    pub fn translates_with_cli(&self, api_configured: bool, cli_detected: impl FnOnce() -> bool) -> bool {
+        match self.translation_provider.as_deref() {
+            Some(provider) => provider == "cli",
+            None => !api_configured && cli_detected(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod translation_provider_tests {
+    use super::UserPreferences;
+
+    fn prefs(provider: Option<&str>) -> UserPreferences {
+        UserPreferences {
+            translation_provider: provider.map(String::from),
+            ..UserPreferences::default()
+        }
+    }
+
+    #[test]
+    fn explicit_choice_is_kept() {
+        assert!(prefs(Some("cli")).translates_with_cli(true, || false));
+        assert!(!prefs(Some("api")).translates_with_cli(false, || true));
+    }
+
+    #[test]
+    fn unset_prefers_configured_api_then_detected_cli() {
+        assert!(!prefs(None).translates_with_cli(true, || panic!("CLI probe not needed")));
+        assert!(prefs(None).translates_with_cli(false, || true));
+        assert!(!prefs(None).translates_with_cli(false, || false));
     }
 }
 
