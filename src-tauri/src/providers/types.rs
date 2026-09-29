@@ -144,6 +144,10 @@ pub struct UserPreferences {
     pub include_kiro: bool,
     #[serde(default)]
     pub include_omo: bool,
+    /// Show TeamAI's per-account quota table in the usage card when TeamAI is
+    /// installed. On by default: it only renders when TeamAI data is detected.
+    #[serde(default = "default_true")]
+    pub include_teamai: bool,
     #[serde(default = "default_gjc_dirs")]
     pub gjc_dirs: Vec<String>,
     #[serde(default = "default_codex_dirs")]
@@ -311,6 +315,7 @@ impl Default for UserPreferences {
             include_grok: false,
             include_kiro: false,
             include_omo: false,
+            include_teamai: true,
             gjc_dirs: default_gjc_dirs(),
             codex_dirs: default_codex_dirs(),
             salary_enabled: false,

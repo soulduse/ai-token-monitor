@@ -3,6 +3,7 @@ mod commands;
 mod hydration;
 mod oauth_usage;
 mod providers;
+mod teamai_usage;
 mod url_metadata;
 mod webhooks;
 
@@ -1129,6 +1130,8 @@ pub fn run() {
             commands::is_gjc_available,
             commands::get_omo_stats,
             commands::is_omo_available,
+            commands::get_teamai_usage,
+            commands::is_teamai_available,
             commands::get_preferences,
             commands::set_preferences,
             commands::get_stable_device_id,

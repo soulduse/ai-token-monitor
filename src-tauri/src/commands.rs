@@ -19,6 +19,7 @@ use crate::providers::omo::OmoProvider;
 use crate::providers::pricing;
 use crate::providers::traits::TokenProvider;
 use crate::providers::types::{AiKeys, AllStats, UserPreferences};
+use crate::teamai_usage::{self, TeamAIUsage};
 
 use tauri::Emitter;
 use tauri_plugin_dialog::DialogExt;
@@ -181,6 +182,21 @@ pub async fn get_grok_usage() -> Option<GrokCredits> {
     .await
     .ok()
     .flatten()
+}
+
+/// Per-account quota table from a local TeamAI install. Plain file reads plus
+/// a short localhost probe, so it runs off the async runtime.
+#[tauri::command]
+pub async fn get_teamai_usage() -> Option<TeamAIUsage> {
+    tauri::async_runtime::spawn_blocking(teamai_usage::read_usage)
+        .await
+        .ok()
+        .flatten()
+}
+
+#[tauri::command]
+pub fn is_teamai_available() -> bool {
+    teamai_usage::is_available()
 }
 
 #[tauri::command]
