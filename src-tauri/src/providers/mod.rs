@@ -7,6 +7,7 @@ pub mod kiro;
 pub mod kimi;
 pub mod omo;
 pub mod opencode;
+mod pi_session;
 pub mod pricing;
 pub(crate) mod resilience;
 pub mod traits;
