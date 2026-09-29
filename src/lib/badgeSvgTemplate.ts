@@ -20,6 +20,7 @@ export const PROVIDER_COLORS: Record<LeaderboardProvider, string> = {
   grok: "#475569",
   kiro: "#7c5cfc",
   omo: "#0ea5e9",
+  hermes: "#0d9488",
 };
 
 export const PROVIDER_LABELS: Record<LeaderboardProvider, string> = {
@@ -32,6 +33,7 @@ export const PROVIDER_LABELS: Record<LeaderboardProvider, string> = {
   grok: "Grok",
   kiro: "Kiro",
   omo: "OmO",
+  hermes: "Hermes",
 };
 
 export const PERIOD_LABELS: Record<string, string> = {

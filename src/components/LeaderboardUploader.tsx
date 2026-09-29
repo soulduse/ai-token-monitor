@@ -38,6 +38,7 @@ export function LeaderboardUploader() {
   const { stats: grokStats } = useTokenStats("grok");
   const { stats: kiroStats } = useTokenStats("kiro");
   const { stats: omoStats } = useTokenStats("omo");
+  const { stats: hermesStats } = useTokenStats("hermes");
 
   const claude = useSnapshotUploader({
     stats: prefs.include_claude ? claudeStats : null,
@@ -95,6 +96,13 @@ export function LeaderboardUploader() {
     provider: "omo",
   });
 
+  const hermes = useSnapshotUploader({
+    stats: prefs.include_hermes ? hermesStats : null,
+    user,
+    optedIn,
+    provider: "hermes",
+  });
+
   const runners = useMemo<Partial<Record<LeaderboardProvider, BackfillRunner>>>(
     () => ({
       claude: prefs.include_claude && claude.ready ? claude.manualBackfill : undefined,
@@ -106,6 +114,7 @@ export function LeaderboardUploader() {
       grok: prefs.include_grok && grok.ready ? grok.manualBackfill : undefined,
       kiro: prefs.include_kiro && kiro.ready ? kiro.manualBackfill : undefined,
       omo: prefs.include_omo && omo.ready ? omo.manualBackfill : undefined,
+      hermes: prefs.include_hermes && hermes.ready ? hermes.manualBackfill : undefined,
     }),
     [
       prefs.include_claude,
@@ -117,6 +126,7 @@ export function LeaderboardUploader() {
       prefs.include_grok,
       prefs.include_kiro,
       prefs.include_omo,
+      prefs.include_hermes,
       claude.ready,
       codex.ready,
       opencode.ready,
@@ -126,6 +136,7 @@ export function LeaderboardUploader() {
       grok.ready,
       kiro.ready,
       omo.ready,
+      hermes.ready,
       claude.manualBackfill,
       codex.manualBackfill,
       opencode.manualBackfill,
@@ -135,6 +146,7 @@ export function LeaderboardUploader() {
       grok.manualBackfill,
       kiro.manualBackfill,
       omo.manualBackfill,
+      hermes.manualBackfill,
     ],
   );
 

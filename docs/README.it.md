@@ -7,7 +7,7 @@
 
 ![AI Token Monitor — monitoraggio in tempo reale di token e costi degli strumenti di AI coding, direttamente dalla barra dei menu](images/hero.png)
 
-**AI Token Monitor** è una leggera app per la barra di sistema di macOS e Windows che risponde a una sola domanda, tutto il giorno: *quanto mi stanno costando davvero i miei strumenti di AI coding?* Legge i log di sessione locali che **Claude Code**, **Codex**, **OpenCode**, **GJC**, **Grok** e **Kiro** già scrivono, calcola il costo di ogni token con tariffe per modello (letture dalla cache incluse) e mostra la spesa di oggi accanto all'orologio — con grafici, avvisi sui limiti del piano, classifica opzionale, chat e notifiche webhook a un clic di distanza.
+**AI Token Monitor** è una leggera app per la barra di sistema di macOS e Windows che risponde a una sola domanda, tutto il giorno: *quanto mi stanno costando davvero i miei strumenti di AI coding?* Legge i log di sessione locali che **Claude Code**, **Codex**, **OpenCode**, **Gemini CLI**, **GJC**, **Grok** e **Kiro** già scrivono, calcola il costo di ogni token con tariffe per modello (letture dalla cache incluse) e mostra la spesa di oggi accanto all'orologio — con grafici, avvisi sui limiti del piano, classifica opzionale, chat e notifiche webhook a un clic di distanza.
 
 - **Zero configurazione** — niente chiavi API, niente proxy. Se hai eseguito Claude Code o Codex almeno una volta, funziona subito.
 - **Spesa a colpo d'occhio** — costo in tempo reale nella barra dei menu / barra di sistema, dashboard completa con un clic.
@@ -149,9 +149,11 @@ Dati condivisi: conteggio giornaliero dei token, costi, messaggi/sessioni. **Nes
 | **Claude Code** | `~/.claude/projects/**/*.jsonl` | Conteggi sessioni/chiamate strumenti da `~/.claude/stats-cache.json`. Supporta root multiple. |
 | **Codex** | `~/.codex/sessions/**/*.jsonl` | Supporta root multiple. |
 | **OpenCode** | `~/.local/share/opencode/**/*.jsonl` | Costi per modello dal registro prezzi integrato. |
+| **Gemini CLI** | `~/.gemini/tmp/*/chats/session-*.jsonl` (+ subagent `chats/<session>/*.jsonl`, formato legacy `session-*.json`) | `tokens` per risposta (prompt / cache / output / ragionamento / strumenti); i token in cache sono scorporati dal prompt, quelli di ragionamento fatturati come output. Deduplicazione tramite ID del messaggio. |
 | **Grok** | `~/.grok/logs/unified.jsonl` | Token reali per richiesta da `shell.turn.inference_done`; modello e progetto uniti da `~/.grok/sessions`. Grok tronca questo log a rotazione, quindi i totali giornalieri vengono accumulati in uno snapshot locale. macOS, Linux e Windows (`%USERPROFILE%\\.grok`). I crediti settimanali SuperGrok si leggono da `billing: fetched credits config`. |
 | **Kiro** | `~/.kiro/sessions/cli/*.json` + `data.sqlite3` | **Crediti, non token** — Kiro misura un'"unità di lavoro" per turno e non registra alcun conteggio di token, quindi il costo deriva dai crediti (× $0.04, la tariffa di eccedenza). Le esecuzioni interattive e non interattive scrivono in due store separati con nomi di chiave diversi; vengono letti entrambi. I turni lasciati su Auto non registrano quale modello sia stato usato. |
 | **OmO Native** | `~/.omo/agent/sessions/*/*.jsonl` + sessioni subagent in `<project>/.omo/senpi-task/children/**` | Utilizzo per messaggio con costo pre-calcolato; deduplicazione tramite ID della risposta API. Rispetta `OMO_CODING_AGENT_DIR`. |
+| **Pi** | `~/.pi/agent/sessions/*/*.jsonl` | Utilizzo per messaggio con costo pre-calcolato; deduplicazione tramite ID della risposta API (le sessioni fork vengono contate una sola volta). Rispetta `PI_CODING_AGENT_DIR`. |
 
 **Richieste di rete**: solo quando classifica/chat sono attivati (invio dati aggregati a Supabase) o quando scatta un webhook. Senza queste funzionalita, l'app funziona completamente offline. Le chiavi di traduzione AI, se configurate, inviano richieste direttamente al provider scelto.
 

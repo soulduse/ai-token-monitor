@@ -23,6 +23,7 @@ interface PricingTable {
   claude: PricingRow[];
   codex: PricingRow[];
   grok?: PricingRow[];
+  gemini?: PricingRow[];
 }
 
 interface Props {
@@ -57,6 +58,7 @@ export function TodaySummary({ today, weekAvg, nav, dailyTokens }: Props) {
     prefs.include_claude ? { label: "Claude", rows: pricing?.claude } : null,
     prefs.include_codex ? { label: "Codex", rows: pricing?.codex } : null,
     prefs.include_grok ? { label: "Grok", rows: pricing?.grok } : null,
+    prefs.include_gemini ? { label: "Gemini", rows: pricing?.gemini } : null,
   ].filter((s): s is { label: string; rows: PricingRow[] } => !!s?.rows?.length);
 
   const comparison = weekAvg > 0

@@ -7,7 +7,7 @@
 
 ![AI Token Monitor — real-time token & cost tracking for AI coding tools, right from your menu bar](docs/images/hero.png)
 
-**AI Token Monitor** is a lightweight system tray app for macOS and Windows that answers one question, all day long: *how much are my AI coding tools actually costing me?* It reads the local session logs that **Claude Code**, **Codex**, **OpenCode**, **GJC**, **Grok**, **Kiro**, and **OmO** already write, prices every token with per-model rates (cache reads included), and puts today's spend right next to your clock — with charts, plan-limit alerts, an opt-in leaderboard, chat, and webhook notifications one click away.
+**AI Token Monitor** is a lightweight system tray app for macOS and Windows that answers one question, all day long: *how much are my AI coding tools actually costing me?* It reads the local session logs that **Claude Code**, **Codex**, **OpenCode**, **Gemini CLI**, **GJC**, **Grok**, **Kiro**, **OmO**, **Pi**, and **Hermes Agent** already write, prices every token with per-model rates (cache reads included), and puts today's spend right next to your clock — with charts, plan-limit alerts, an opt-in leaderboard, chat, and webhook notifications one click away.
 
 - **Zero setup** — no API keys, no proxies. If you've run Claude Code or Codex once, it just works.
 - **Spend at a glance** — live cost in the menu bar / system tray, full dashboard on click.
@@ -162,10 +162,13 @@ Shared data: daily token count, cost, messages/sessions. **No code or conversati
 | **Claude Code** | `~/.claude/projects/**/*.jsonl` | Session/tool-call counts from `~/.claude/stats-cache.json`. Supports multiple roots. |
 | **Codex** | `~/.codex/sessions/**/*.jsonl` | Supports multiple roots. |
 | **OpenCode** | `~/.local/share/opencode/**/*.jsonl` | Per-model pricing from bundled registry. |
+| **Gemini CLI** | `~/.gemini/tmp/*/chats/session-*.jsonl` (+ subagent `chats/<session>/*.jsonl`, legacy `session-*.json`) | Per-response `tokens` (prompt / cached / candidates / thoughts / tool); cached tokens are carved out of the prompt count, thoughts bill as output; Pro models switch to long-context rates above 200k prompt tokens. Dedup by message id. Gemini CLI deletes chats older than 30 days by default (`general.sessionRetention`), so older history disappears with them. |
 | **GJC (Gajae Code)** | `~/.gjc/agent/sessions/**/*.jsonl` | Per-message usage (`message.usage`) with pre-computed cost; dedup by API response id. Supports multiple roots. |
 | **Grok** | `~/.grok/logs/unified.jsonl` | Exact per-request tokens from `shell.turn.inference_done`; model/project joined from `~/.grok/sessions`. Grok truncates this rolling log, so days are accumulated into a local snapshot. SuperGrok weekly credits are read from `billing: fetched credits config`. macOS, Linux, and Windows (`%USERPROFILE%\\.grok`). |
 | **Kiro** | `~/.kiro/sessions/cli/*.json` + `data.sqlite3` | **Credits, not tokens** — Kiro meters a per-turn "unit of work" and records no token counts anywhere, so cost comes from credits (× $0.04, the overage rate). Interactive and non-interactive runs write to two separate stores with different key names; both are read. Turns left on Auto never record which model ran. |
 | **OmO Native** | `~/.omo/agent/sessions/*/*.jsonl` + subagent sessions at `<project>/.omo/senpi-task/children/**` | Per-message usage with pre-computed cost; dedup by API response id. Honors `OMO_CODING_AGENT_DIR`. |
+| **Pi** | `~/.pi/agent/sessions/*/*.jsonl` | Per-message usage with pre-computed cost; dedup by API response id (forked sessions count once). Honors `PI_CODING_AGENT_DIR`. |
+| **Hermes Agent** | `$HERMES_HOME/state.db` (default `~/.hermes/state.db`) | Per-session aggregates from the `sessions` table; uses Hermes' own actual/estimated cost. |
 
 **Network requests**: only when leaderboard/chat is opted in (sends aggregated data to Supabase) or when a webhook fires. Without these features, the app runs completely offline. AI translation keys, if set, call the provider you chose directly.
 

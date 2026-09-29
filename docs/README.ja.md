@@ -7,7 +7,7 @@
 
 ![AI Token Monitor — AI コーディングツールのトークンとコストをメニューバーでリアルタイム追跡](images/hero.png)
 
-**AI Token Monitor** は「自分の AI コーディングツールは実際いくらかかっているのか?」という質問に一日中答えてくれる、macOS / Windows 向けの軽量なシステムトレイアプリです。**Claude Code**、**Codex**、**OpenCode**、**GJC**、**Grok**、**Kiro** がすでに書き出しているローカルのセッションログを読み取り、モデル別単価(キャッシュ読み取り含む)ですべてのトークンのコストを計算し、今日の支出を時計のすぐ隣に表示します。チャート、プラン上限アラート、オプトイン式のリーダーボード・チャット・Webhook 通知もワンクリックで開けます。
+**AI Token Monitor** は「自分の AI コーディングツールは実際いくらかかっているのか?」という質問に一日中答えてくれる、macOS / Windows 向けの軽量なシステムトレイアプリです。**Claude Code**、**Codex**、**OpenCode**、**Gemini CLI**、**GJC**、**Grok**、**Kiro** がすでに書き出しているローカルのセッションログを読み取り、モデル別単価(キャッシュ読み取り含む)ですべてのトークンのコストを計算し、今日の支出を時計のすぐ隣に表示します。チャート、プラン上限アラート、オプトイン式のリーダーボード・チャット・Webhook 通知もワンクリックで開けます。
 
 - **セットアップ不要** — API キーもプロキシも不要。Claude Code や Codex を一度でも実行していれば、すぐに動きます。
 - **支出がひと目でわかる** — メニューバー / システムトレイにリアルタイムのコストを表示、クリックでフルダッシュボード。
@@ -149,9 +149,11 @@ npm run tauri build   # プロダクションビルド
 | **Claude Code** | `~/.claude/projects/**/*.jsonl` | `~/.claude/stats-cache.json` からセッション/ツール呼び出し数を補足。複数ルート対応。 |
 | **Codex** | `~/.codex/sessions/**/*.jsonl` | 複数ルート対応。 |
 | **OpenCode** | `~/.local/share/opencode/**/*.jsonl` | 内蔵プライシングレジストリでモデル別コスト計算。 |
+| **Gemini CLI** | `~/.gemini/tmp/*/chats/session-*.jsonl`(+ サブエージェント `chats/<session>/*.jsonl`、旧形式 `session-*.json`) | 応答ごとの `tokens`(プロンプト/キャッシュ/出力/思考/ツール)を使用。キャッシュトークンはプロンプト数から分離し、思考トークンは出力として課金。メッセージIDで重複排除します。 |
 | **Grok** | `~/.grok/logs/unified.jsonl` | `shell.turn.inference_done` のリクエスト単位の実測トークン。モデル・プロジェクトは `~/.grok/sessions` から結合。Grok がこのローリングログの先頭を切り詰めるため、日別集計をローカルスナップショットに蓄積します。 macOS、Linux、Windows（`%USERPROFILE%\\.grok`）に対応。SuperGrok の週間クレジットは `billing: fetched credits config` から読みます。 |
 | **Kiro** | `~/.kiro/sessions/cli/*.json` + `data.sqlite3` | **トークンではなくクレジット** — Kiro はターン単位の「作業量」で計量し、トークン数をどこにも記録しないため、コストはクレジット（× $0.04、超過レート）から算出します。対話型と非対話型でキー名の異なる 2 つのストアに書き込まれるため、両方を読みます。Auto のターンは実際のモデルが記録されません。 |
 | **OmO Native** | `~/.omo/agent/sessions/*/*.jsonl` + `<project>/.omo/senpi-task/children/**` のサブエージェントセッション | メッセージ単位の使用量と事前計算済みコスト。APIレスポンスIDで重複排除します。`OMO_CODING_AGENT_DIR` に対応。 |
+| **Pi** | `~/.pi/agent/sessions/*/*.jsonl` | メッセージ単位の使用量と事前計算済みコスト。APIレスポンスIDで重複排除します（フォークしたセッションは1回だけ集計）。`PI_CODING_AGENT_DIR` に対応。 |
 
 **ネットワークリクエスト**：リーダーボード/チャットをオプトインした場合のみ Supabase に集計データを送信し、Webhook 発火時に外部へ送信します。これらの機能を使わなければ、アプリは完全にオフラインで動作します。AI 翻訳キーを設定した場合のみ、該当プロバイダーへ直接リクエストが送信されます。
 

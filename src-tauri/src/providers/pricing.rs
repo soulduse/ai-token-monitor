@@ -21,6 +21,8 @@ struct PricingConfig {
     glm: Option<ProviderConfig>,
     #[serde(default)]
     grok: Option<ProviderConfig>,
+    #[serde(default)]
+    gemini: Option<ProviderConfig>,
 }
 
 #[derive(Deserialize)]
@@ -220,6 +222,30 @@ impl GrokPricing {
                 output: self.output,
                 cached_input: self.cached_input,
             }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GeminiPricing {
+    pub input: f64,
+    pub output: f64,
+    pub cache_read: f64,
+    /// 0 means a single flat tier (no threshold).
+    pub high_threshold_tokens: u64,
+    pub high_input: f64,
+    pub high_output: f64,
+    pub high_cache_read: f64,
+}
+
+impl GeminiPricing {
+    /// Flat rates for one request: Pro models bill the whole request at the
+    /// long-context rates once its prompt exceeds the threshold (200k).
+    pub fn tier_for(&self, prompt_tokens: u64) -> (f64, f64, f64) {
+        if self.high_threshold_tokens > 0 && prompt_tokens > self.high_threshold_tokens {
+            (self.high_input, self.high_output, self.high_cache_read)
+        } else {
+            (self.input, self.output, self.cache_read)
         }
     }
 }
@@ -424,9 +450,9 @@ fn foreign_table(canonical: &str) -> Option<&'static str> {
     None
 }
 
-/// Families that have no pricing table of their own but are still recognizable
-/// model names. Only [`names_a_family`] consults these: a vendor prefix in front
-/// of `gemini-3` is still routing metadata even though no table prices Gemini.
+/// Families that are recognizable model names beyond the provider tables above.
+/// Only [`names_a_family`] consults these: a vendor prefix in front of
+/// `gemini-3` is routing metadata, so it is stripped to keep one model key.
 const OTHER_FAMILIES: &[&str] = &["gemini", "deepseek", "qwen", "llama", "mistral"];
 
 /// Price a non-Anthropic model found in a Claude-shaped log, expressed as
@@ -594,6 +620,36 @@ pub fn get_opencode_pricing(model: &str) -> OpenCodePricing {
     }
 }
 
+pub fn get_gemini_pricing(model: &str) -> GeminiPricing {
+    let cfg = config();
+    // Dedicated gemini table first, then the opencode table's gemini rows.
+    if let Some(table) = cfg.gemini.as_ref().map(|g| (g, "gemini"))
+        .or_else(|| cfg.opencode.as_ref().map(|oc| (oc, "opencode")))
+    {
+        let p = resolved_pricing(table.0, table.1, model);
+        let high = p.high_context;
+        return GeminiPricing {
+            input: p.input,
+            output: p.output,
+            cache_read: p.cache_read,
+            high_threshold_tokens: high.map_or(0, |h| h.threshold_tokens),
+            high_input: high.map_or(p.input, |h| h.input),
+            high_output: high.map_or(p.output, |h| h.output),
+            high_cache_read: high.map_or(p.cache_read, |h| h.cached_input),
+        };
+    }
+    // Last resort defaults (Gemini 2.5 Pro)
+    GeminiPricing {
+        input: 1.25,
+        output: 10.0,
+        cache_read: 0.125,
+        high_threshold_tokens: 200_000,
+        high_input: 2.50,
+        high_output: 15.0,
+        high_cache_read: 0.25,
+    }
+}
+
 // --- Frontend API (pricing table for tooltip display) ---
 
 #[derive(Serialize, Clone)]
@@ -619,6 +675,8 @@ pub struct PricingTable {
     pub glm: Vec<PricingRow>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub grok: Vec<PricingRow>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub gemini: Vec<PricingRow>,
 }
 
 fn format_price(val: f64) -> String {
@@ -670,6 +728,7 @@ pub fn get_pricing_table() -> PricingTable {
         // Grok quotes a discounted cached-input rate, like Codex — so the cache
         // column reads from cached_input rather than cache_read.
         grok: cfg.grok.as_ref().map(|g| deduplicated_rows(g, true)).unwrap_or_default(),
+        gemini: cfg.gemini.as_ref().map(|g| deduplicated_rows(g, false)).unwrap_or_default(),
     }
 }
 
@@ -1582,5 +1641,88 @@ mod tests {
         let p = get_codex_pricing("gpt-5.5-2026-04-23");
         assert!((p.input - 5.00).abs() < 0.001, "GPT-5.5 dated snapshot must match gpt-5.5, got input ${}", p.input);
         assert!((p.output - 30.00).abs() < 0.001);
+    }
+
+    #[test]
+    fn gemini_25_pro_pricing() {
+        let p = get_gemini_pricing("gemini-2.5-pro-preview");
+        assert!((p.input - 1.25).abs() < 0.001);
+        assert!((p.output - 10.0).abs() < 0.001);
+        assert!((p.cache_read - 0.125).abs() < 0.001);
+    }
+
+    #[test]
+    fn gemini_25_flash_pricing() {
+        let p = get_gemini_pricing("gemini-2.5-flash");
+        assert!((p.input - 0.30).abs() < 0.001);
+        assert!((p.output - 2.50).abs() < 0.001);
+    }
+
+    // Current 3.x models must hit their own rows, not the "gemini-3" catch-all:
+    // 3.5 Flash-Lite vs 3.5 Flash, and dotted ids folded to hyphens.
+    #[test]
+    fn gemini_3x_models_resolve_to_own_rows() {
+        let cases = [
+            ("gemini-3.5-flash-lite", 0.30, 2.50),
+            ("gemini-3.5-flash", 1.50, 9.00),
+            ("gemini-3.1-flash-lite-preview", 0.25, 1.50),
+            ("gemini-3.1-pro-preview", 2.00, 12.00),
+        ];
+        for (model, input, output) in cases {
+            let p = get_gemini_pricing(&normalize_model_id(model));
+            assert!((p.input - input).abs() < 0.001, "{model} input: got ${}", p.input);
+            assert!((p.output - output).abs() < 0.001, "{model} output: got ${}", p.output);
+        }
+    }
+
+    // Pro models bill the whole request at long-context rates above 200k.
+    #[test]
+    fn gemini_pro_long_context_tier() {
+        let p = get_gemini_pricing(&normalize_model_id("gemini-2.5-pro"));
+        assert_eq!(p.tier_for(200_000), (1.25, 10.0, 0.125));
+        assert_eq!(p.tier_for(200_001), (2.50, 15.0, 0.25));
+        let p = get_gemini_pricing(&normalize_model_id("gemini-3.1-pro-preview"));
+        assert_eq!(p.tier_for(300_000), (4.0, 18.0, 0.4));
+        // Flash has no long-context tier.
+        let p = get_gemini_pricing(&normalize_model_id("gemini-3.5-flash"));
+        assert_eq!(p.tier_for(900_000), (1.5, 9.0, 0.15));
+    }
+
+    // 3.6–3.8 Flash promo pricing ends 2026-12-31; the scheduled row doubles it.
+    #[test]
+    fn gemini_38_flash_price_doubles_in_2027() {
+        let g = config().gemini.as_ref().expect("gemini table");
+        let entry = find_pricing(g, "gemini-3-8-flash");
+        let before = entry.resolve_for("2026-12-31");
+        let after = entry.resolve_for("2027-01-01");
+        assert!((before.input - 0.75).abs() < 0.001 && (before.output - 3.75).abs() < 0.001);
+        assert!((after.input - 1.50).abs() < 0.001 && (after.output - 7.50).abs() < 0.001);
+    }
+
+    // Gemini 3 Flash and 2.5 Flash-Lite must match their own entries instead of
+    // falling through the substring chain to "gemini-3" (Pro) / "gemini-2.5-flash".
+    #[test]
+    fn gemini_3_flash_not_billed_as_3_pro() {
+        let p = get_gemini_pricing("gemini-3-flash-preview");
+        assert!((p.input - 0.50).abs() < 0.001, "gemini-3-flash input must be $0.50/MTok, got ${}", p.input);
+        assert!((p.output - 3.00).abs() < 0.001);
+    }
+
+    // Gemma 4 is a valid Gemini CLI model but has no paid tier; it must not
+    // fall through to the 2.5 Pro default.
+    #[test]
+    fn gemma_is_free_not_billed_as_default() {
+        for model in ["gemma-4-31b-it", "gemma-4-26b-a4b-it"] {
+            let p = get_gemini_pricing(&normalize_model_id(model));
+            assert_eq!((p.input, p.output, p.cache_read), (0.0, 0.0, 0.0), "{model}");
+        }
+    }
+
+    #[test]
+    fn gemini_25_flash_lite_not_billed_as_flash() {
+        // Normalized ids (dots folded to hyphens) must land on the same entry.
+        let p = get_gemini_pricing(&normalize_model_id("gemini-2.5-flash-lite"));
+        assert!((p.input - 0.10).abs() < 0.001, "gemini-2.5-flash-lite input must be $0.10/MTok, got ${}", p.input);
+        assert!((p.output - 0.40).abs() < 0.001);
     }
 }

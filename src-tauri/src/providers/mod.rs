@@ -1,12 +1,16 @@
 pub mod claude_code;
 pub mod codex;
+pub mod gemini;
 pub mod gjc;
 pub mod glm;
 pub mod grok;
+pub mod hermes;
 pub mod kiro;
 pub mod kimi;
 pub mod omo;
 pub mod opencode;
+pub mod pi;
+mod pi_session;
 pub mod pricing;
 pub(crate) mod resilience;
 pub mod traits;

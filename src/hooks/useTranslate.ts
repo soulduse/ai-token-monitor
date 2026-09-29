@@ -1,9 +1,14 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 export function useTranslate(targetLanguage: string) {
   const [translations, setTranslations] = useState<Record<string, string>>({});
   const [translating, setTranslating] = useState<Set<string>>(new Set());
+
+  // Cached translations are in the old language after a language switch.
+  useEffect(() => {
+    setTranslations({});
+  }, [targetLanguage]);
 
   const translateText = useCallback(async (text: string, targetLang: string, sourceLang?: string): Promise<string | null> => {
     try {
@@ -31,6 +36,9 @@ export function useTranslate(targetLanguage: string) {
   }, []);
 
   const translate = useCallback(async (messageId: string, text: string): Promise<string | null> => {
+    // Each call spends API credit or CLI subscription quota — reuse the result.
+    const cached = translations[messageId];
+    if (cached) return cached;
     setTranslating((prev) => new Set(prev).add(messageId));
     try {
       const result = await translateText(text, targetLanguage);
@@ -45,7 +53,7 @@ export function useTranslate(targetLanguage: string) {
         return next;
       });
     }
-  }, [targetLanguage, translateText]);
+  }, [targetLanguage, translateText, translations]);
 
   return { translations, translating, translate, translateText, translateReply };
 }

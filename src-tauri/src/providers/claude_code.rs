@@ -514,9 +514,26 @@ impl SessionEntry {
         self.rank() > other.rank()
     }
 
-    fn rank(&self) -> (u64, u64, &str, &str, &str) {
+    #[allow(clippy::type_complexity)]
+    fn rank(&self) -> (u64, u64, u64, u64, u64, u32, &str, &str, &str, &str, &[String], &[String]) {
         let input_side = self.input_tokens + self.cache_read_input_tokens + self.cache_creation_input_tokens;
-        (self.output_tokens, input_side, &self.timestamp, &self.session_id, &self.model)
+        (
+            self.output_tokens,
+            input_side,
+            // Cost-affecting splits (input vs cache read vs creation, 1h cache,
+            // web search), then attribution fields (cwd and tools feed the
+            // analytics), so the order is total over everything aggregated.
+            self.input_tokens,
+            self.cache_read_input_tokens,
+            self.cache_creation_1h_tokens,
+            self.web_search_requests,
+            &self.timestamp,
+            &self.session_id,
+            &self.model,
+            &self.cwd,
+            &self.tool_names,
+            &self.bash_commands,
+        )
     }
 }
 
@@ -1144,6 +1161,24 @@ mod tests {
 
         assert_eq!(merged(&full, &partial), (500, "abc-123".to_string()));
         assert_eq!(merged(&partial, &full), (500, "abc-123".to_string()));
+    }
+
+    // Same totals but a different input vs cache-read split (~10x price gap):
+    // the survivor must not depend on merge order.
+    #[test]
+    fn merge_entries_breaks_ties_on_input_split() {
+        let a = parse_session_line(sample_jsonl_line()).expect("should parse");
+        let mut b = a.clone();
+        b.input_tokens += 100;
+        b.cache_read_input_tokens -= 100;
+        let key = || "msg-1:req-1".to_string();
+        let survivor = |first: &SessionEntry, second: &SessionEntry| {
+            let mut into = HashMap::new();
+            merge_entries(&mut into, HashMap::from([(key(), first.clone())]));
+            merge_entries(&mut into, HashMap::from([(key(), second.clone())]));
+            into[&key()].input_tokens
+        };
+        assert_eq!(survivor(&a, &b), survivor(&b, &a));
     }
 
     #[test]

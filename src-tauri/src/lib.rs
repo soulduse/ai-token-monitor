@@ -1,4 +1,5 @@
 mod ai_translate;
+mod cli_translate;
 mod commands;
 mod hydration;
 mod oauth_usage;
@@ -7,7 +8,7 @@ mod teamai_usage;
 mod url_metadata;
 mod webhooks;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::Mutex;
@@ -397,6 +398,27 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             (true, 0.0)
         };
 
+        let (pi_warm, pi_cost) = if prefs.include_pi {
+            let s = providers::pi::get_cached_stats();
+            (s.is_some(), today_cost_of(&s, &today))
+        } else {
+            (true, 0.0)
+        };
+
+        let (hermes_warm, hermes_cost) = if prefs.include_hermes {
+            let s = providers::hermes::get_cached_stats();
+            (s.is_some(), today_cost_of(&s, &today))
+        } else {
+            (true, 0.0)
+        };
+
+        let (gemini_warm, gemini_cost) = if prefs.include_gemini {
+            let s = providers::gemini::get_cached_stats();
+            (s.is_some(), today_cost_of(&s, &today))
+        } else {
+            (true, 0.0)
+        };
+
         let computed = claude_cost
             + codex_cost
             + opencode_cost
@@ -405,7 +427,10 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             + gjc_cost
             + grok_cost
             + kiro_cost
-            + omo_cost;
+            + omo_cost
+            + pi_cost
+            + hermes_cost
+            + gemini_cost;
         let warm = claude_warm
             && codex_warm
             && opencode_warm
@@ -414,7 +439,10 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             && gjc_warm
             && grok_warm
             && kiro_warm
-            && omo_warm;
+            && omo_warm
+            && pi_warm
+            && hermes_warm
+            && gemini_warm;
 
         let today_cost = if warm {
             // Every enabled provider has parsed — this is the real number.
@@ -549,20 +577,86 @@ fn get_all_watch_dirs() -> Vec<PathBuf> {
         }
     }
 
+    // Pi: sessions root (honours PI_CODING_AGENT_DIR), gated on include_pi
+    // for the same reason as OmO.
+    if prefs.include_pi {
+        let pi_sessions = providers::pi::default_sessions_root();
+        if pi_sessions.exists() {
+            dirs.push(pi_sessions);
+        }
+    }
+
+    // Hermes Agent keeps a single SQLite db (+ WAL sidecar) in its home dir
+    // ($HERMES_HOME, default ~/.hermes). Gated on include_hermes like OmO:
+    // the home dir also holds config/plugins, so watching it unconditionally
+    // would re-parse every provider on unrelated writes.
+    if prefs.include_hermes {
+        let hermes_dir = providers::hermes::hermes_home();
+        if hermes_dir.exists() && !dirs.contains(&hermes_dir) {
+            dirs.push(hermes_dir);
+        }
+    }
+
+    // Gemini CLI: `<home>/tmp` holds every project's chat recordings (plus
+    // shell history and checkpoints). Gated on include_gemini like OmO, since
+    // the CLI rewrites these on every turn and each event re-parses every
+    // provider.
+    if prefs.include_gemini {
+        let gemini = providers::gemini::GeminiProvider::new(prefs.gemini_dirs.clone());
+        for root in gemini.tmp_roots() {
+            if root.exists() {
+                dirs.push(root);
+            }
+        }
+    }
+
     dirs
+}
+
+/// Hermes keeps its db at the top of its home dir, which also holds the
+/// installed agent repo and venv (`$HERMES_HOME/hermes-agent`). Watching it
+/// recursively would re-parse every provider on `hermes update` and, on Linux,
+/// spend an inotify watch per venv subdirectory.
+fn watch_mode(dir: &Path) -> RecursiveMode {
+    if dir == providers::hermes::hermes_home() {
+        RecursiveMode::NonRecursive
+    } else {
+        RecursiveMode::Recursive
+    }
+}
+
+/// Whether a changed file can carry usage. Directly under Hermes' home only the
+/// state db counts: the gateway re-stamps `gateway_state.json` every minute and
+/// plugins keep their own `.db` files there, and each event re-parses every
+/// provider. `hermes_homes` holds the configured and canonical spellings, since
+/// FSEvents reports resolved paths.
+fn is_stats_change(path: &Path, hermes_homes: &[PathBuf]) -> bool {
+    if path
+        .parent()
+        .is_some_and(|dir| hermes_homes.iter().any(|h| h == dir))
+    {
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        return name == "state.db" || name == "state.db-wal";
+    }
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    ext == "jsonl" || ext == "json" || ext == "db" || ext == "db-wal"
 }
 
 fn start_file_watcher(app_handle: tauri::AppHandle) {
     thread::spawn(move || {
         let (tx, rx) = mpsc::channel();
 
+        let hermes_home = providers::hermes::hermes_home();
+        let hermes_homes: Vec<PathBuf> = std::iter::once(hermes_home.clone())
+            .chain(hermes_home.canonicalize().ok())
+            .collect();
         let mut watcher = match notify::recommended_watcher(move |res: Result<Event, _>| {
             if let Ok(event) = res {
                 if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
-                    let dominated = event.paths.iter().any(|p| {
-                        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
-                        ext == "jsonl" || ext == "json" || ext == "db"
-                    });
+                    let dominated = event
+                        .paths
+                        .iter()
+                        .any(|p| is_stats_change(p, &hermes_homes));
                     if dominated {
                         let _ = tx.send(());
                     }
@@ -576,7 +670,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
         let mut watched_dirs: Vec<PathBuf> = Vec::new();
         for dir in get_all_watch_dirs() {
             if dir.exists() {
-                let _ = watcher.watch(&dir, RecursiveMode::Recursive);
+                let _ = watcher.watch(&dir, watch_mode(&dir));
                 watched_dirs.push(dir);
             }
         }
@@ -625,6 +719,9 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                     providers::grok::invalidate_stats_cache();
                     providers::kiro::invalidate_stats_cache();
                     providers::omo::invalidate_stats_cache();
+                    providers::pi::invalidate_stats_cache();
+                    providers::gemini::invalidate_stats_cache();
+                    providers::hermes::invalidate_stats_cache();
                     // Re-parse in background, then notify the frontend. Emitting only
                     // after the parse completes means the frontend's get_*_stats calls
                     // hit the warm cache instead of racing this thread and parsing the
@@ -658,6 +755,15 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                         if prefs.include_omo {
                             let _ = providers::omo::OmoProvider::new().fetch_stats();
                         }
+                        if prefs.include_pi {
+                            let _ = providers::pi::PiProvider::new().fetch_stats();
+                        }
+                        if prefs.include_hermes {
+                            let _ = providers::hermes::HermesProvider::new().fetch_stats();
+                        }
+                        if prefs.include_gemini {
+                            let _ = providers::gemini::GeminiProvider::new(prefs.gemini_dirs.clone()).fetch_stats();
+                        }
                         update_tray_title(&app_for_refresh);
                         let _ = app_for_refresh.emit("stats-updated", ());
                     });
@@ -673,7 +779,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                             let _ = watcher.unwatch(dir);
                         }
                         for dir in &new_watch {
-                            let _ = watcher.watch(dir, RecursiveMode::Recursive);
+                            let _ = watcher.watch(dir, watch_mode(dir));
                         }
                         watched_dirs = new_watch;
                         providers::claude_code::invalidate_stats_cache();
@@ -685,6 +791,9 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                         providers::grok::invalidate_stats_cache();
                         providers::kiro::invalidate_stats_cache();
                         providers::omo::invalidate_stats_cache();
+                        providers::pi::invalidate_stats_cache();
+                        providers::gemini::invalidate_stats_cache();
+                        providers::hermes::invalidate_stats_cache();
                         let _ = app_handle.emit("stats-updated", ());
                     }
                     update_tray_title(&app_handle);
@@ -1130,6 +1239,10 @@ pub fn run() {
             commands::is_gjc_available,
             commands::get_omo_stats,
             commands::is_omo_available,
+            commands::get_pi_stats,
+            commands::is_pi_available,
+            commands::get_hermes_stats,
+            commands::is_hermes_available,
             commands::get_teamai_usage,
             commands::is_teamai_available,
             commands::get_preferences,
@@ -1141,6 +1254,8 @@ pub fn run() {
             commands::validate_claude_dir,
             commands::detect_codex_dirs,
             commands::validate_codex_dir,
+            commands::get_gemini_stats,
+            commands::is_gemini_available,
             get_home_dir,
             set_dialog_open,
             hide_window,
@@ -1163,7 +1278,8 @@ pub fn run() {
             commands::test_webhook,
             ai_translate::translate_text,
             ai_translate::translate_reply,
-            url_metadata::fetch_url_metadata
+            url_metadata::fetch_url_metadata,
+            commands::detect_cli_tools
         ])
         .setup(|app| {
             // Build tray icon — direct click toggle
@@ -1437,4 +1553,23 @@ fn position_window_near_tray(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hermes_home_changes_count_only_for_state_db() {
+        let home = PathBuf::from("/home/u/.hermes");
+        let homes = [home.clone()];
+        assert!(is_stats_change(&home.join("state.db"), &homes));
+        assert!(is_stats_change(&home.join("state.db-wal"), &homes));
+        assert!(!is_stats_change(&home.join("gateway_state.json"), &homes));
+        assert!(!is_stats_change(&home.join("response_store.db"), &homes));
+        // Other providers' dirs keep the extension filter.
+        assert!(is_stats_change(Path::new("/home/u/.claude/projects/a/s.jsonl"), &homes));
+        assert!(is_stats_change(Path::new("/home/u/.local/share/opencode/opencode.db-wal"), &homes));
+        assert!(!is_stats_change(Path::new("/home/u/.claude/projects/a/notes.md"), &homes));
+    }
 }

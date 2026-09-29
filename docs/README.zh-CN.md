@@ -7,7 +7,7 @@
 
 ![AI Token Monitor — 在菜单栏实时追踪 AI 编程工具的令牌与费用](images/hero.png)
 
-**AI Token Monitor** 是一款轻量的 macOS / Windows 系统托盘应用,全天候回答一个问题:*我的 AI 编程工具到底花了多少钱?* 它读取 **Claude Code**、**Codex**、**OpenCode**、**GJC**、**Grok** 和 **Kiro** 本来就在写入的本地会话日志,按各模型单价(含缓存读取)为每个令牌计费,并把今日支出直接显示在时钟旁边——图表、套餐限额提醒、可选的排行榜、聊天和 Webhook 通知都只需一次点击。
+**AI Token Monitor** 是一款轻量的 macOS / Windows 系统托盘应用,全天候回答一个问题:*我的 AI 编程工具到底花了多少钱?* 它读取 **Claude Code**、**Codex**、**OpenCode**、**Gemini CLI**、**GJC**、**Grok** 和 **Kiro** 本来就在写入的本地会话日志,按各模型单价(含缓存读取)为每个令牌计费,并把今日支出直接显示在时钟旁边——图表、套餐限额提醒、可选的排行榜、聊天和 Webhook 通知都只需一次点击。
 
 - **零配置** — 无需 API 密钥、无需代理。只要运行过一次 Claude Code 或 Codex,即刻可用。
 - **支出一目了然** — 菜单栏 / 系统托盘实时显示费用,点击即可打开完整仪表盘。
@@ -149,9 +149,11 @@ npm run tauri build   # 生产构建
 | **Claude Code** | `~/.claude/projects/**/*.jsonl` | 从 `~/.claude/stats-cache.json` 补充会话/工具调用数。支持多根目录。 |
 | **Codex** | `~/.codex/sessions/**/*.jsonl` | 支持多根目录。 |
 | **OpenCode** | `~/.local/share/opencode/**/*.jsonl` | 内置价格注册表按模型计算费用。 |
+| **Gemini CLI** | `~/.gemini/tmp/*/chats/session-*.jsonl`(+ 子代理 `chats/<session>/*.jsonl`、旧版 `session-*.json`) | 使用每条响应的 `tokens`(提示/缓存/输出/思考/工具)；缓存令牌从提示数中扣除，思考令牌按输出计费；按消息 ID 去重。 |
 | **Grok** | `~/.grok/logs/unified.jsonl` | 来自 `shell.turn.inference_done` 的每次请求实测 token；模型与项目从 `~/.grok/sessions` 关联。Grok 会截断该滚动日志的开头，因此按天汇总累积到本地快照。 支持 macOS、Linux 和 Windows（`%USERPROFILE%\\.grok`）。SuperGrok 每周额度从 `billing: fetched credits config` 读取。 |
 | **Kiro** | `~/.kiro/sessions/cli/*.json` + `data.sqlite3` | **计费单位是积分而非 token** — Kiro 按每轮「工作量」计量，且不在任何位置记录 token 数，因此成本由积分换算（× $0.04，超额费率）。交互式与非交互式运行分别写入键名不同的两个存储，二者都会读取。使用 Auto 的轮次不会记录实际使用的模型。 |
 | **OmO Native** | `~/.omo/agent/sessions/*/*.jsonl` + `<project>/.omo/senpi-task/children/**` 中的子代理会话 | 按消息记录用量并使用预计算成本；按 API 响应 ID 去重。遵循 `OMO_CODING_AGENT_DIR`。 |
+| **Pi** | `~/.pi/agent/sessions/*/*.jsonl` | 按消息记录用量并使用预计算成本；按 API 响应 ID 去重（分叉的会话只计一次）。遵循 `PI_CODING_AGENT_DIR`。 |
 
 **网络请求**:仅在开启排行榜/聊天时(向 Supabase 发送汇总数据)或 Webhook 触发时才会发起网络请求。不使用这些功能时,应用完全离线运行。配置 AI 翻译密钥后,才会直接向相应提供商发送请求。
 

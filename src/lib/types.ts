@@ -80,7 +80,7 @@ export interface AllStats {
   rate_limits?: CodexRateLimits | null;
 }
 
-export type LeaderboardProvider = "claude" | "codex" | "opencode" | "kimi" | "glm" | "gjc" | "grok" | "kiro" | "omo";
+export type LeaderboardProvider = "claude" | "codex" | "opencode" | "kimi" | "glm" | "gjc" | "grok" | "kiro" | "omo" | "hermes";
 
 /** SuperGrok / unified-billing snapshot from Grok CLI's rolling log. */
 export interface GrokCredits {
@@ -152,12 +152,15 @@ export interface UserPreferences {
   include_claude: boolean;
   include_codex: boolean;
   include_opencode: boolean;
+  include_gemini: boolean;
   include_kimi: boolean;
   include_glm: boolean;
   include_gjc: boolean;
   include_grok: boolean;
   include_kiro: boolean;
   include_omo: boolean;
+  include_pi: boolean;
+  include_hermes: boolean;
   include_teamai: boolean;
   teamai_redact: TeamAIRedactLevel;
   teamai_promo_dismissed: boolean;
@@ -165,6 +168,7 @@ export interface UserPreferences {
   color_mode: "system" | "light" | "dark";
   language: "en" | "ko" | "ja" | "zh-CN" | "zh-TW" | "fr" | "es" | "de" | "tr" | "it";
   config_dirs: string[];
+  gemini_dirs: string[];
   codex_dirs: string[];
   gjc_dirs: string[];
   salary_enabled: boolean;
@@ -182,6 +186,8 @@ export interface UserPreferences {
     webhook_telegram_chat_id?: string;
   };
   ai_model?: string;
+  translation_provider?: string;
+  preferred_cli?: string;
   webhook_config?: WebhookConfig;
   autostart_enabled: boolean;
   quick_action_items: string[];

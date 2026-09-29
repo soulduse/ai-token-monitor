@@ -12,10 +12,13 @@ use crate::providers::codex::CodexProvider;
 use crate::providers::gjc::GjcProvider;
 use crate::providers::glm::GlmProvider;
 use crate::providers::grok::{GrokCredits, GrokProvider};
+use crate::providers::hermes::HermesProvider;
 use crate::providers::kiro::{KiroBreakdown, KiroProvider};
 use crate::providers::kimi::KimiProvider;
+use crate::providers::gemini::GeminiProvider;
 use crate::providers::opencode::OpenCodeProvider;
 use crate::providers::omo::OmoProvider;
+use crate::providers::pi::PiProvider;
 use crate::providers::pricing;
 use crate::providers::traits::TokenProvider;
 use crate::providers::types::{AiKeys, AllStats, UserPreferences};
@@ -322,6 +325,60 @@ pub async fn get_omo_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
 #[tauri::command]
 pub fn is_omo_available() -> bool {
     OmoProvider::new().is_available()
+}
+
+#[tauri::command]
+pub async fn get_pi_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
+    let result = tauri::async_runtime::spawn_blocking(|| {
+        let provider = PiProvider::new();
+        if !provider.is_available() {
+            return Err("Pi stats not available".to_string());
+        }
+        provider.fetch_stats()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    match result {
+        Ok(mut stats) => {
+            crate::hydration::apply(&mut stats, "pi");
+            crate::update_tray_title(&app);
+            Ok(stats)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+#[tauri::command]
+pub fn is_pi_available() -> bool {
+    PiProvider::new().is_available()
+}
+
+#[tauri::command]
+pub async fn get_hermes_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
+    let result = tauri::async_runtime::spawn_blocking(|| {
+        let provider = HermesProvider::new();
+        if !provider.is_available() {
+            return Err("Hermes stats not available".to_string());
+        }
+        provider.fetch_stats()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    match result {
+        Ok(mut stats) => {
+            crate::hydration::apply(&mut stats, "hermes");
+            crate::update_tray_title(&app);
+            Ok(stats)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+#[tauri::command]
+pub fn is_hermes_available() -> bool {
+    HermesProvider::new().is_available()
 }
 
 #[tauri::command]
@@ -1019,6 +1076,34 @@ pub async fn enable_usage_tracking(app: tauri::AppHandle) -> Result<(), String> 
 }
 
 #[tauri::command]
+pub async fn get_gemini_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
+    let result = tauri::async_runtime::spawn_blocking(|| {
+        let prefs = get_preferences();
+        let provider = GeminiProvider::new(prefs.gemini_dirs);
+        if !provider.is_available() {
+            return Err("Gemini CLI stats not available".to_string());
+        }
+        provider.fetch_stats()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    match result {
+        Ok(mut stats) => {
+            crate::hydration::apply(&mut stats, "gemini");
+            crate::update_tray_title(&app);
+            Ok(stats)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+#[tauri::command]
+pub fn is_gemini_available() -> bool {
+    GeminiProvider::new(get_preferences().gemini_dirs).is_available()
+}
+
+#[tauri::command]
 pub async fn test_webhook(platform: String) -> Result<String, String> {
     let secrets = load_ai_keys().ok_or("No webhook credentials configured")?;
     crate::webhooks::test_webhook_endpoint(&platform, &secrets).await
@@ -1041,6 +1126,11 @@ pub fn clear_server_history(app: tauri::AppHandle) -> Result<(), String> {
     crate::hydration::clear_store()?;
     let _ = app.emit("stats-updated", ());
     Ok(())
+}
+
+#[tauri::command]
+pub fn detect_cli_tools() -> Vec<crate::cli_translate::CliTool> {
+    crate::cli_translate::detect_available_cli_tools()
 }
 
 #[cfg(test)]
