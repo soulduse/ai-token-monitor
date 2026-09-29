@@ -248,6 +248,7 @@ export function installMockTauri(): void {
     detect_cli_tools: () => [
       { name: "gemini", available: false },
       { name: "claude", available: true },
+      { name: "codex", available: true },
     ],
     get_pricing_table: () => ({
       version: "mock",
