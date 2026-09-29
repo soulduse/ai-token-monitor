@@ -48,7 +48,27 @@ pub fn hermes_home() -> PathBuf {
             return PathBuf::from(trimmed);
         }
     }
-    dirs::home_dir().unwrap_or_default().join(".hermes")
+    platform_default_home(
+        std::env::var("HERMES_DATA_DIR_SUFFIX").ok().as_deref().unwrap_or(""),
+        std::env::var("LOCALAPPDATA").ok().as_deref(),
+    )
+}
+
+/// Mirrors Hermes' `_get_platform_default_hermes_home`: `%LOCALAPPDATA%\hermes`
+/// on Windows (falling back to `~/AppData/Local`), `~/.hermes` elsewhere, each
+/// with the optional `HERMES_DATA_DIR_SUFFIX` appended.
+fn platform_default_home(suffix: &str, local_appdata: Option<&str>) -> PathBuf {
+    let home = dirs::home_dir().unwrap_or_default();
+    if cfg!(windows) {
+        let base = local_appdata
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join("AppData").join("Local"));
+        base.join(format!("hermes{suffix}"))
+    } else {
+        home.join(format!(".hermes{suffix}"))
+    }
 }
 
 fn db_path() -> PathBuf {
@@ -64,7 +84,6 @@ struct SessionRow {
     output_tokens: u64,
     cache_read_tokens: u64,
     cache_write_tokens: u64,
-    reasoning_tokens: u64,
     cost_usd: f64,
 }
 
@@ -102,7 +121,6 @@ fn query_sessions(db: &PathBuf) -> Result<Vec<SessionRow>, String> {
                 COALESCE(output_tokens, 0),
                 COALESCE(cache_read_tokens, 0),
                 COALESCE(cache_write_tokens, 0),
-                COALESCE(reasoning_tokens, 0),
                 COALESCE(actual_cost_usd, estimated_cost_usd, 0)
             FROM sessions
             WHERE model IS NOT NULL AND TRIM(model) != ''
@@ -123,8 +141,7 @@ fn query_sessions(db: &PathBuf) -> Result<Vec<SessionRow>, String> {
                 output_tokens: row.get::<_, i64>(4)?.max(0) as u64,
                 cache_read_tokens: row.get::<_, i64>(5)?.max(0) as u64,
                 cache_write_tokens: row.get::<_, i64>(6)?.max(0) as u64,
-                reasoning_tokens: row.get::<_, i64>(7)?.max(0) as u64,
-                cost_usd: row.get::<_, f64>(8)?,
+                cost_usd: row.get::<_, f64>(7)?,
             })
         })
         .map_err(|e| format!("Failed to query Hermes sessions: {}", e))?
@@ -141,15 +158,21 @@ fn build_stats(rows: &[SessionRow]) -> AllStats {
     let mut first_date: Option<String> = None;
 
     for row in rows {
-        // Reasoning tokens are billed as output by every Hermes billing provider,
-        // so fold them into output for display and totals.
-        let output = row.output_tokens + row.reasoning_tokens;
+        // Hermes stores `output_tokens` from completion_tokens / output_tokens,
+        // which already include reasoning; `reasoning_tokens` is only the
+        // breakdown (Hermes' own cost and totals use output alone).
+        let output = row.output_tokens;
         let total_tokens =
             row.input_tokens + output + row.cache_read_tokens + row.cache_write_tokens;
         if total_tokens == 0 && row.cost_usd <= 0.0 {
             continue;
         }
 
+        // Hermes keeps one usage total per session, so the whole session is
+        // credited to the day it started. A session spanning several days
+        // under-reports the later days, but the date never moves — crediting
+        // to last activity instead would shift an already-uploaded total onto
+        // a new day and count it twice on the leaderboard.
         let date = started_at_to_local_date(row.started_at);
         if first_date.as_ref().map_or(true, |d| date < *d) {
             first_date = Some(date.clone());
@@ -356,12 +379,27 @@ mod tests {
         assert_eq!(stats.total_messages, 14);
         assert_eq!(stats.daily[0].sessions, 2);
 
-        // reasoning folded into output: 500 + 50 = 550.
-        assert_eq!(stats.daily[0].output_tokens, 550 + 100);
+        // reasoning (50) is already inside output (500) and is not added again.
+        assert_eq!(stats.daily[0].output_tokens, 500 + 100);
         let hermes_total = stats.daily[0].tokens.get("hermes-4-405b").copied().unwrap_or(0);
-        assert_eq!(hermes_total, 1000 + 550 + 200 + 100);
+        assert_eq!(hermes_total, 1000 + 500 + 200 + 100);
 
         let _ = fs::remove_file(&db);
+    }
+
+    #[test]
+    fn platform_default_home_applies_suffix() {
+        let home = dirs::home_dir().unwrap_or_default();
+        if cfg!(windows) {
+            assert_eq!(
+                platform_default_home("-dev", Some(r"C:\Users\u\AppData\Local")),
+                PathBuf::from(r"C:\Users\u\AppData\Local").join("hermes-dev")
+            );
+            assert_eq!(platform_default_home("", None), home.join("AppData").join("Local").join("hermes"));
+        } else {
+            assert_eq!(platform_default_home("", Some("/ignored")), home.join(".hermes"));
+            assert_eq!(platform_default_home("-dev", None), home.join(".hermes-dev"));
+        }
     }
 
     #[test]

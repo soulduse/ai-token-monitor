@@ -7,7 +7,7 @@ mod providers;
 mod url_metadata;
 mod webhooks;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::Mutex;
@@ -612,6 +612,18 @@ fn get_all_watch_dirs() -> Vec<PathBuf> {
     dirs
 }
 
+/// Hermes keeps its db at the top of its home dir, which also holds the
+/// installed agent repo and venv (`$HERMES_HOME/hermes-agent`). Watching it
+/// recursively would re-parse every provider on `hermes update` and, on Linux,
+/// spend an inotify watch per venv subdirectory.
+fn watch_mode(dir: &Path) -> RecursiveMode {
+    if dir == providers::hermes::hermes_home() {
+        RecursiveMode::NonRecursive
+    } else {
+        RecursiveMode::Recursive
+    }
+}
+
 fn start_file_watcher(app_handle: tauri::AppHandle) {
     thread::spawn(move || {
         let (tx, rx) = mpsc::channel();
@@ -636,7 +648,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
         let mut watched_dirs: Vec<PathBuf> = Vec::new();
         for dir in get_all_watch_dirs() {
             if dir.exists() {
-                let _ = watcher.watch(&dir, RecursiveMode::Recursive);
+                let _ = watcher.watch(&dir, watch_mode(&dir));
                 watched_dirs.push(dir);
             }
         }
@@ -745,7 +757,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                             let _ = watcher.unwatch(dir);
                         }
                         for dir in &new_watch {
-                            let _ = watcher.watch(dir, RecursiveMode::Recursive);
+                            let _ = watcher.watch(dir, watch_mode(dir));
                         }
                         watched_dirs = new_watch;
                         providers::claude_code::invalidate_stats_cache();
