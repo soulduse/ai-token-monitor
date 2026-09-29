@@ -271,6 +271,8 @@ fn call_gemini_cli(prompt: &str) -> Result<String, String> {
     cmd.env("GEMINI_CLI_TRUST_WORKSPACE", "true");
     cmd.arg("--policy")
         .arg(&policy)
+        .arg("--model")
+        .arg(resolve_gemini_model())
         .arg("-p")
         .arg("Follow the instructions above.");
     run_with_timeout(cmd, prompt)
@@ -334,6 +336,16 @@ fn write_private_file(name: &str, contents: &str) -> Result<PathBuf, String> {
         e.to_string()
     })?;
     Ok(path)
+}
+
+/// Resolve the Gemini model: `AI_TOKEN_MONITOR_GEMINI_MODEL`, else
+/// `gemini-3.1-flash-lite`. Without `--model` the CLI defaults to
+/// gemini-2.5-pro, far more than a chat translation needs.
+fn resolve_gemini_model() -> String {
+    std::env::var("AI_TOKEN_MONITOR_GEMINI_MODEL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "gemini-3.1-flash-lite".to_string())
 }
 
 /// Resolve the Claude model to use for translation.
@@ -778,6 +790,20 @@ mod tests {
     // Both env-var paths are exercised in a single test because cargo runs
     // tests in parallel by default and the env var is process-global;
     // splitting them causes flaky races under `cargo test`.
+    #[test]
+    fn resolve_gemini_model_env_contract() {
+        unsafe { std::env::remove_var("AI_TOKEN_MONITOR_GEMINI_MODEL") };
+        assert_eq!(resolve_gemini_model(), "gemini-3.1-flash-lite");
+
+        unsafe { std::env::set_var("AI_TOKEN_MONITOR_GEMINI_MODEL", "gemini-3.5-flash") };
+        assert_eq!(resolve_gemini_model(), "gemini-3.5-flash");
+
+        unsafe { std::env::set_var("AI_TOKEN_MONITOR_GEMINI_MODEL", "  ") };
+        assert_eq!(resolve_gemini_model(), "gemini-3.1-flash-lite");
+
+        unsafe { std::env::remove_var("AI_TOKEN_MONITOR_GEMINI_MODEL") };
+    }
+
     #[test]
     fn resolve_claude_model_env_contract() {
         unsafe { std::env::remove_var("AI_TOKEN_MONITOR_CLAUDE_MODEL") };
