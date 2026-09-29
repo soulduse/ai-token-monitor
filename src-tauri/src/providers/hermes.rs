@@ -286,6 +286,11 @@ fn query_db(db: &Path) -> Result<HermesUsage, String> {
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
     .map_err(|e| format!("Failed to open Hermes state.db: {}", e))?;
+    // One read transaction for every SELECT below: WAL gives it a single
+    // snapshot, so a commit landing between the sessions and usage reads can't
+    // make them disagree. Dropping the connection ends it.
+    conn.execute_batch("BEGIN")
+        .map_err(|e| format!("Failed to read Hermes state.db: {}", e))?;
 
     let session_cols = table_columns(&conn, "sessions")?;
     if session_cols.is_empty() {
@@ -545,9 +550,24 @@ fn build_stats(data: &HermesUsage) -> AllStats {
     }
 }
 
+/// A broken profile db (corrupt, not SQLite) is skipped rather than taking
+/// down every other profile's usage; only when no db can be read is it an error.
 fn load_stats(dbs: &[PathBuf]) -> Result<AllStats, String> {
-    let parsed = dbs.iter().map(|db| query_db(db)).collect::<Result<Vec<_>, _>>()?;
-    Ok(build_stats(&merge_dbs(parsed)))
+    let mut parsed = Vec::new();
+    let mut first_error = None;
+    for db in dbs {
+        match query_db(db) {
+            Ok(usage) => parsed.push(usage),
+            Err(e) => {
+                eprintln!("[HERMES] skipping {}: {}", db.display(), e);
+                first_error.get_or_insert(e);
+            }
+        }
+    }
+    match first_error {
+        Some(e) if parsed.is_empty() => Err(e),
+        _ => Ok(build_stats(&merge_dbs(parsed))),
+    }
 }
 
 pub struct HermesProvider;
@@ -1233,6 +1253,26 @@ CREATE TABLE IF NOT EXISTS sessions (
         // HERMES_HOME naming a single profile reads only that profile.
         let work = home.join("profiles").join("work");
         assert_eq!(db_dirs_in(&work), vec![work.clone()]);
+
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    // One corrupt profile db must not hide every other profile's usage.
+    #[test]
+    fn corrupt_profile_db_is_skipped() {
+        let home = scratch_dir("corrupt");
+        let default_db = home.join("state.db");
+        let broken_db = home.join("profiles").join("broken").join("state.db");
+
+        let conn = create_db(&default_db, Schema::Current);
+        insert_session(&conn, &Session { id: "d1", tokens: [100, 10, 0, 0, 0], ..Default::default() });
+        drop(conn);
+        fs::create_dir_all(broken_db.parent().unwrap()).unwrap();
+        fs::write(&broken_db, "not a sqlite database").unwrap();
+
+        let stats = load_stats(&[default_db.clone(), broken_db.clone()]).expect("default db still read");
+        assert_eq!(model_total(&stats, "claude-sonnet-5"), 110);
+        assert!(load_stats(&[broken_db]).is_err(), "nothing readable is still an error");
 
         let _ = fs::remove_dir_all(&home);
     }
