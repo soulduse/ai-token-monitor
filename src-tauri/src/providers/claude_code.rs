@@ -514,9 +514,20 @@ impl SessionEntry {
         self.rank() > other.rank()
     }
 
-    fn rank(&self) -> (u64, u64, &str, &str, &str) {
+    fn rank(&self) -> (u64, u64, u64, u32, &str, &str, &str, &str) {
         let input_side = self.input_tokens + self.cache_read_input_tokens + self.cache_creation_input_tokens;
-        (self.output_tokens, input_side, &self.timestamp, &self.session_id, &self.model)
+        (
+            self.output_tokens,
+            input_side,
+            // Cost-affecting splits, then attribution fields (cwd feeds the
+            // per-project analytics), so the order is total.
+            self.cache_creation_1h_tokens,
+            self.web_search_requests,
+            &self.timestamp,
+            &self.session_id,
+            &self.model,
+            &self.cwd,
+        )
     }
 }
 
