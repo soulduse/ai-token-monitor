@@ -624,17 +624,38 @@ fn watch_mode(dir: &Path) -> RecursiveMode {
     }
 }
 
+/// Whether a changed file can carry usage. Directly under Hermes' home only the
+/// state db counts: the gateway re-stamps `gateway_state.json` every minute and
+/// plugins keep their own `.db` files there, and each event re-parses every
+/// provider. `hermes_homes` holds the configured and canonical spellings, since
+/// FSEvents reports resolved paths.
+fn is_stats_change(path: &Path, hermes_homes: &[PathBuf]) -> bool {
+    if path
+        .parent()
+        .is_some_and(|dir| hermes_homes.iter().any(|h| h == dir))
+    {
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        return name == "state.db" || name == "state.db-wal";
+    }
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    ext == "jsonl" || ext == "json" || ext == "db" || ext == "db-wal"
+}
+
 fn start_file_watcher(app_handle: tauri::AppHandle) {
     thread::spawn(move || {
         let (tx, rx) = mpsc::channel();
 
+        let hermes_home = providers::hermes::hermes_home();
+        let hermes_homes: Vec<PathBuf> = std::iter::once(hermes_home.clone())
+            .chain(hermes_home.canonicalize().ok())
+            .collect();
         let mut watcher = match notify::recommended_watcher(move |res: Result<Event, _>| {
             if let Ok(event) = res {
                 if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
-                    let dominated = event.paths.iter().any(|p| {
-                        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
-                        ext == "jsonl" || ext == "json" || ext == "db" || ext == "db-wal"
-                    });
+                    let dominated = event
+                        .paths
+                        .iter()
+                        .any(|p| is_stats_change(p, &hermes_homes));
                     if dominated {
                         let _ = tx.send(());
                     }
@@ -1529,4 +1550,23 @@ fn position_window_near_tray(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hermes_home_changes_count_only_for_state_db() {
+        let home = PathBuf::from("/home/u/.hermes");
+        let homes = [home.clone()];
+        assert!(is_stats_change(&home.join("state.db"), &homes));
+        assert!(is_stats_change(&home.join("state.db-wal"), &homes));
+        assert!(!is_stats_change(&home.join("gateway_state.json"), &homes));
+        assert!(!is_stats_change(&home.join("response_store.db"), &homes));
+        // Other providers' dirs keep the extension filter.
+        assert!(is_stats_change(Path::new("/home/u/.claude/projects/a/s.jsonl"), &homes));
+        assert!(is_stats_change(Path::new("/home/u/.local/share/opencode/opencode.db-wal"), &homes));
+        assert!(!is_stats_change(Path::new("/home/u/.claude/projects/a/notes.md"), &homes));
+    }
 }
