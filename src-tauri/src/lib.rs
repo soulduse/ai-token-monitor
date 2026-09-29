@@ -613,9 +613,14 @@ fn get_all_watch_dirs() -> Vec<PathBuf> {
 /// Hermes keeps its db at the top of its home dir, which also holds the
 /// installed agent repo and venv (`$HERMES_HOME/hermes-agent`). Watching it
 /// recursively would re-parse every provider on `hermes update` and, on Linux,
-/// spend an inotify watch per venv subdirectory.
+/// spend an inotify watch per venv subdirectory. Pi/OmO custom session dirs are
+/// flat, and a broad setting (`sessionDir: "~"`) must not watch a whole tree.
 fn watch_mode(dir: &Path) -> RecursiveMode {
-    if dir == providers::hermes::hermes_home() {
+    let flat_session_dir = |d: Option<PathBuf>| d.is_some_and(|d| d == dir);
+    if dir == providers::hermes::hermes_home()
+        || flat_session_dir(providers::pi::flat_watch_dir())
+        || flat_session_dir(providers::omo::flat_watch_dir())
+    {
         RecursiveMode::NonRecursive
     } else {
         RecursiveMode::Recursive

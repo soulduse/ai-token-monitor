@@ -216,6 +216,14 @@ impl SessionDirs {
             .filter(|dir| dir.exists())
     }
 
+    /// The existing custom dir, when it is separate from the root. Its layout
+    /// is flat (`<dir>/*.jsonl`), so the watcher needs only that level.
+    pub(super) fn flat_dir(&self) -> Option<&PathBuf> {
+        self.custom
+            .as_ref()
+            .filter(|custom| **custom != self.root && custom.exists())
+    }
+
     /// Mtime/size of every main session file across both dirs. A path matched
     /// by both globs (custom dir = one project dir of the root) appears once.
     fn collect_main_meta(&self) -> HashMap<PathBuf, (SystemTime, u64)> {
@@ -781,4 +789,25 @@ fn extract_date_from_file_mtime(path: &Path) -> String {
             local.format("%Y-%m-%d").to_string()
         })
         .unwrap_or_else(|| chrono::Local::now().format("%Y-%m-%d").to_string())
+}
+
+#[cfg(test)]
+mod session_dirs_tests {
+    use super::SessionDirs;
+
+    #[test]
+    fn flat_dir_is_only_a_separate_existing_custom_dir() {
+        let base = std::env::temp_dir().join(format!("pi-session-flat-{}", std::process::id()));
+        let root = base.join("sessions");
+        let custom = base.join("flat");
+        std::fs::create_dir_all(&root).expect("root");
+        std::fs::create_dir_all(&custom).expect("custom");
+
+        assert_eq!(SessionDirs::new(root.clone(), Some(custom.clone())).flat_dir(), Some(&custom));
+        assert_eq!(SessionDirs::new(root.clone(), Some(root.clone())).flat_dir(), None);
+        assert_eq!(SessionDirs::new(root.clone(), Some(base.join("missing"))).flat_dir(), None);
+        assert_eq!(SessionDirs::new(root, None).flat_dir(), None);
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }

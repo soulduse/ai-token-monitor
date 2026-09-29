@@ -56,6 +56,12 @@ pub fn watch_dirs() -> Vec<PathBuf> {
     PiProvider::new().session_dirs().existing().cloned().collect()
 }
 
+/// The flat custom session dir, if any: watched non-recursively, since a
+/// broad setting like `sessionDir: "~"` must not watch the whole tree.
+pub fn flat_watch_dir() -> Option<PathBuf> {
+    PiProvider::new().session_dirs().flat_dir().cloned()
+}
+
 // --- Cache ---
 
 static CACHE: SessionStatsCache<Pi> = SessionStatsCache::new();
