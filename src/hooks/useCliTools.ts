@@ -1,10 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-
-export interface CliTool {
-  name: string;
-  available: boolean;
-}
+import type { CliTool } from "../lib/translationMode";
 
 /** Translation CLIs found on this machine, probed once per mount. */
 export function useCliTools(): CliTool[] {

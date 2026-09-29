@@ -11,7 +11,7 @@ import type { MentionAutocompleteRef } from "./MentionAutocomplete";
 import { getAllCachedProfiles, getCachedProfile } from "../lib/profileCache";
 import { uploadChatImage } from "../lib/chatImageUpload";
 import { describeTranslateError } from "../lib/translateError";
-import { hasApiTranslation, translatesWithCli } from "../lib/translationMode";
+import { defaultCli, hasApiTranslation, translatesWithCli } from "../lib/translationMode";
 import { useI18n, LANGUAGE_NAMES } from "../i18n/I18nContext";
 import type { ChatMessage } from "../hooks/useChat";
 import { SettingsOverlay } from "./SettingsOverlay";
@@ -145,9 +145,9 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
     translations, translating, translate, translateReply: invokeTranslateReply,
     error: translateError, clearError: clearTranslateError,
   } = useTranslate(langName);
-  const cliDetected = useCliTools().some((tool) => tool.available);
+  const defaultCliDetected = defaultCli(useCliTools()) !== undefined;
   // CLI mode translates through a local gemini/claude/codex CLI — no API key or model needed.
-  const canTranslate = translatesWithCli(prefs, cliDetected) || hasApiTranslation(prefs);
+  const canTranslate = translatesWithCli(prefs, defaultCliDetected) || hasApiTranslation(prefs);
   const myNickname = useMemo(() => getCachedProfile(userId)?.nickname ?? null, [userId, messages.length]);
   const { typingUsers, sendTyping, stopTyping } = useTypingIndicator(userId, myNickname, activated);
   const [input, setInput] = useState("");

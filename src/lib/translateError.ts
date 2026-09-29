@@ -13,8 +13,11 @@ export function describeTranslateError(raw: string, t: Translate): string {
   if (raw.includes("Codex CLI is not logged in")) return t("chat.translateError.codexNotLoggedIn");
   const codexModel = raw.match(/^Codex CLI cannot use the model (.+)\.$/);
   if (codexModel) return t("chat.translateError.codexModel", { model: codexModel[1] });
+  if (raw.includes("Codex CLI") && raw.includes("translation discarded")) {
+    return t("chat.translateError.codexToolUse");
+  }
   if (raw.includes("too old for translation")) return t("chat.translateError.cliOutdated");
-  if (raw.includes("No gemini, claude or codex CLI found")) return t("chat.translateError.noCli");
+  if (raw.includes("No gemini or claude CLI found")) return t("chat.translateError.noCli");
   const notFound = raw.match(/^(\w+) CLI not found/);
   if (notFound) return t("chat.translateError.cliNotFound", { cli: notFound[1] });
   if (raw.includes("timed out")) return t("chat.translateError.timeout");
