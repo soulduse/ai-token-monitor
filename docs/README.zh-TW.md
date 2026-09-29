@@ -152,8 +152,8 @@ npm run tauri build   # 生產建置
 | **Gemini CLI** | `~/.gemini/tmp/*/chats/session-*.jsonl`(+ 子代理 `chats/<session>/*.jsonl`、舊版 `session-*.json`) | 使用每則回應的 `tokens`(提示/快取/輸出/思考/工具)；快取權杖從提示數中扣除，思考權杖按輸出計費；依訊息 ID 去重。 |
 | **Grok** | `~/.grok/logs/unified.jsonl` | 來自 `shell.turn.inference_done` 的每次請求實測 token；模型與專案從 `~/.grok/sessions` 關聯。Grok 會截斷此滾動日誌的開頭，因此將每日彙總累積到本機快照。 支援 macOS、Linux 與 Windows（`%USERPROFILE%\\.grok`）。SuperGrok 每週額度從 `billing: fetched credits config` 讀取。 |
 | **Kiro** | `~/.kiro/sessions/cli/*.json` + `data.sqlite3` | **計費單位是點數而非 token** — Kiro 以每輪「工作量」計量，且不在任何位置記錄 token 數，因此成本由點數換算（× $0.04，超額費率）。互動式與非互動式執行分別寫入鍵名不同的兩個儲存，兩者都會讀取。使用 Auto 的輪次不會記錄實際使用的模型。 |
-| **OmO Native** | `~/.omo/agent/sessions/*/*.jsonl` + `<project>/.omo/senpi-task/children/**` 中的子代理工作階段 | 依訊息記錄用量並使用預先計算的成本；依 API 回應 ID 去重。遵循 `OMO_CODING_AGENT_DIR`。 |
-| **Pi** | `~/.pi/agent/sessions/*/*.jsonl` | 依訊息記錄用量並使用預先計算的成本；依 API 回應 ID 去重（分叉的工作階段只計一次）。遵循 `PI_CODING_AGENT_DIR`。 |
+| **OmO Native** | `~/.omo/agent/sessions/*/*.jsonl` + `<project>/.omo/senpi-task/children/**` 中的子代理工作階段 | 依訊息記錄用量並使用預先計算的成本；依 API 回應 ID 去重。遵循 `OMO_CODING_AGENT_DIR`；透過 `OMO_CODING_AGENT_SESSION_DIR` 或代理目錄 `settings.json(c)` 中的 `sessionDir` 指定的扁平工作階段目錄也會與預設目錄一併讀取。 |
+| **Pi** | `~/.pi/agent/sessions/*/*.jsonl` | 依訊息記錄用量並使用預先計算的成本；依 API 回應 ID 去重（分叉的工作階段只計一次）。遵循 `PI_CODING_AGENT_DIR`（展開開頭的 `~`）；透過 `PI_CODING_AGENT_SESSION_DIR` 或代理目錄 `settings.json` 中的 `sessionDir` 指定的扁平工作階段目錄也會與預設目錄一併讀取（單次執行的 `--session-dir` 無法偵測）。 |
 
 **網路請求**:僅在啟用排行榜/聊天時(向 Supabase 傳送彙總資料)或 Webhook 觸發時才會發起網路請求。未使用這些功能時,應用完全離線運作。設定 AI 翻譯金鑰後,才會直接向對應供應商傳送請求。
 
