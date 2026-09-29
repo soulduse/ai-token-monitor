@@ -148,6 +148,7 @@ pub struct UserPreferences {
     pub include_omo: bool,
     #[serde(default)]
     pub include_pi: bool,
+    #[serde(default)]
     pub include_hermes: bool,
     /// Show TeamAI's per-account quota table in the usage card when TeamAI is
     /// installed. On by default: it only renders when TeamAI data is detected.
@@ -362,5 +363,25 @@ impl Default for UserPreferences {
             translation_provider: None,
             preferred_cli: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod preferences_compat_tests {
+    use super::UserPreferences;
+
+    /// A prefs file written by an older release lacks every field added since.
+    /// Any new field without `#[serde(default)]` makes the whole file fail to
+    /// parse, and get_preferences() then resets *all* settings to defaults
+    /// (v0.23.0: `include_hermes`). Keep only the fields the very first
+    /// releases already wrote and require that it still loads.
+    #[test]
+    fn old_prefs_file_without_newer_fields_still_parses() {
+        let json = r#"{"number_format":"full","show_tray_cost":false,"leaderboard_opted_in":true}"#;
+        let prefs: UserPreferences = serde_json::from_str(json).expect("old prefs file must parse");
+        assert_eq!(prefs.number_format, "full");
+        assert!(!prefs.show_tray_cost);
+        assert!(prefs.leaderboard_opted_in);
+        assert!(!prefs.include_hermes);
     }
 }
