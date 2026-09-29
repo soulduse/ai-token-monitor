@@ -564,26 +564,23 @@ fn get_all_watch_dirs() -> Vec<PathBuf> {
         dirs.push(default_gjc);
     }
 
-    // OmO: watch only the main sessions root (honours OMO_CODING_AGENT_DIR).
+    // OmO: watch only the main session dirs — the sessions root (honours
+    // OMO_CODING_AGENT_DIR) plus a custom flat session dir
+    // (OMO_CODING_AGENT_SESSION_DIR / settings `sessionDir`) when set.
     // Subagent sessions under <project>/.omo/senpi-task/children are not
     // watched: the provider re-stats a project's children whenever that
     // project's main session file changes. Gated on include_omo like Grok,
     // since OmO appends on every message and each event re-parses every
     // provider.
     if prefs.include_omo {
-        let omo_sessions = providers::omo::default_sessions_root();
-        if omo_sessions.exists() {
-            dirs.push(omo_sessions);
-        }
+        dirs.extend(providers::omo::watch_dirs());
     }
 
-    // Pi: sessions root (honours PI_CODING_AGENT_DIR), gated on include_pi
-    // for the same reason as OmO.
+    // Pi: sessions root (honours PI_CODING_AGENT_DIR) plus a custom flat
+    // session dir (PI_CODING_AGENT_SESSION_DIR / settings `sessionDir`),
+    // gated on include_pi for the same reason as OmO.
     if prefs.include_pi {
-        let pi_sessions = providers::pi::default_sessions_root();
-        if pi_sessions.exists() {
-            dirs.push(pi_sessions);
-        }
+        dirs.extend(providers::pi::watch_dirs());
     }
 
     // Hermes Agent keeps a single SQLite db (+ WAL sidecar) in its home dir
@@ -616,9 +613,14 @@ fn get_all_watch_dirs() -> Vec<PathBuf> {
 /// Hermes keeps its db at the top of its home dir, which also holds the
 /// installed agent repo and venv (`$HERMES_HOME/hermes-agent`). Watching it
 /// recursively would re-parse every provider on `hermes update` and, on Linux,
-/// spend an inotify watch per venv subdirectory.
+/// spend an inotify watch per venv subdirectory. Pi/OmO custom session dirs are
+/// flat, and a broad setting (`sessionDir: "~"`) must not watch a whole tree.
 fn watch_mode(dir: &Path) -> RecursiveMode {
-    if dir == providers::hermes::hermes_home() {
+    let flat_session_dir = |d: Option<PathBuf>| d.is_some_and(|d| d == dir);
+    if dir == providers::hermes::hermes_home()
+        || flat_session_dir(providers::pi::flat_watch_dir())
+        || flat_session_dir(providers::omo::flat_watch_dir())
+    {
         RecursiveMode::NonRecursive
     } else {
         RecursiveMode::Recursive
