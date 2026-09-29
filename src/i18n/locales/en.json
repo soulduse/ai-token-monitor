@@ -291,6 +291,7 @@
   "usageAlert.teamaiRedactFull": "Fully masked · click to show",
   "usageAlert.teamaiPromo": "Multiple accounts? See all their limits at once with TeamAI",
   "usageAlert.teamaiPromoDismiss": "Don't show again",
+  "usageAlert.teamaiPreview": "What it looks like with TeamAI (sample)",
   "usageTracking.title": "Claude Usage Tracking",
   "usageTracking.description": "Monitor your Claude Code session and weekly usage limits in real-time. This requires access to your Claude Code login credentials.",
   "usageTracking.enable": "Enable",

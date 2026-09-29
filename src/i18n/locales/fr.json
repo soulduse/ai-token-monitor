@@ -285,6 +285,7 @@
   "usageAlert.teamaiRedactFull": "Masquage complet · cliquer pour afficher",
   "usageAlert.teamaiPromo": "Plusieurs comptes ? Toutes les limites d'un coup d'œil avec TeamAI",
   "usageAlert.teamaiPromoDismiss": "Ne plus afficher",
+  "usageAlert.teamaiPreview": "Aperçu avec TeamAI (exemple)",
   "usageTracking.title": "Suivi d'utilisation Claude",
   "usageTracking.description": "Surveillez vos limites de session et hebdomadaires de Claude Code en temps réel. Nécessite l'accès à vos identifiants de connexion Claude Code.",
   "usageTracking.enable": "Activer",

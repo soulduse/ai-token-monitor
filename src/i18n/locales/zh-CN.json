@@ -285,6 +285,7 @@
   "usageAlert.teamaiRedactFull": "完全隐藏 · 点击显示",
   "usageAlert.teamaiPromo": "使用多个账号？用 TeamAI 一眼看清所有账号额度",
   "usageAlert.teamaiPromoDismiss": "不再显示",
+  "usageAlert.teamaiPreview": "使用 TeamAI 后的效果（示例）",
   "usageTracking.title": "Claude 用量追踪",
   "usageTracking.description": "实时监控 Claude Code 会话和每周使用限额。需要访问 Claude Code 登录凭据。",
   "usageTracking.enable": "启用",

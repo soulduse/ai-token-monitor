@@ -15,6 +15,7 @@
 
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
+use std::env;
 use std::fs;
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
@@ -27,7 +28,17 @@ const MODEL_WINDOW_PREFIX: &str = "7d_";
 const FABLE_WINDOW: &str = "7d_oi";
 const SERVER_PROBE_TIMEOUT: Duration = Duration::from_millis(150);
 
+/// Dev builds only: `AI_TOKEN_MONITOR_HIDE_TEAMAI=1` makes an installed TeamAI
+/// look absent, so the not-installed UI (the TeamAI suggestion) can be seen on
+/// a machine that runs TeamAI. Compiled out of release builds.
+fn hidden_for_dev() -> bool {
+    cfg!(debug_assertions) && env::var_os("AI_TOKEN_MONITOR_HIDE_TEAMAI").is_some()
+}
+
 fn data_dir() -> Option<PathBuf> {
+    if hidden_for_dev() {
+        return None;
+    }
     dirs::home_dir().map(|home| home.join(".config").join("teamai"))
 }
 

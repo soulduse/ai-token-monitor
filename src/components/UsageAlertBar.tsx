@@ -562,6 +562,7 @@ function TeamAIPromo({ onDismiss }: { onDismiss: () => void }) {
 
   return (
     <div style={{
+      position: "relative",
       display: "flex",
       alignItems: "center",
       gap: 6,
@@ -569,6 +570,7 @@ function TeamAIPromo({ onDismiss }: { onDismiss: () => void }) {
       paddingTop: 8,
       borderTop: "1px solid rgba(255,255,255,0.06)",
     }}>
+      {hover && <TeamAIPreview />}
       <button
         onClick={() => { openUrl(TEAMAI_REPO_URL).catch(() => {}); }}
         onMouseEnter={() => setHover(true)}
@@ -866,6 +868,69 @@ function TeamAICodexRows({
           ))}
         </TeamAIAccountRow>
       ))}
+    </div>
+  );
+}
+
+// Sample fleet for the TeamAI preview: labels are already anonymous and the
+// numbers cover every gauge color, so the popover shows what the real table
+// looks like without touching anyone's data.
+function teamaiDemoUsage(): TeamAIUsage {
+  const now = Date.now();
+  const w = (utilization: number, hours: number, minutes: number | null = null): TeamAIWindow =>
+    ({ utilization, resets_at: now + hours * 3_600_000, minutes });
+  const claude = (n: number, five: number, week: number, model: number, renewal: number): TeamAIClaudeAccount => ({
+    id: `demo-claude-${n}`,
+    config_index: n - 1,
+    label: `account #${n}`,
+    plan: "Max 20x",
+    status: "active",
+    renewal_days: renewal,
+    five_hour: w(five, 3),
+    seven_day: w(week, 130),
+    seven_day_model: w(model, 130),
+  });
+  return {
+    running: true,
+    updated_at: now,
+    model_label: "Fable",
+    claude: [
+      claude(1, 4, 29, 0, 9),
+      claude(2, 21, 13, 0, 24),
+      claude(3, 7, 65, 11, 6),
+      claude(4, 0, 98, 98, 3),
+    ],
+    codex: [
+      { id: "demo-codex-5", config_index: 4, label: "account #5", plan: "Pro", status: "active", windows: [w(21, 107, 10_080)] },
+      { id: "demo-codex-6", config_index: 5, label: "account #6", plan: "Pro", status: "active", windows: [w(97, 60, 10_080)] },
+    ],
+  };
+}
+
+function TeamAIPreview() {
+  const t = useI18n();
+  const demo = teamaiDemoUsage();
+
+  return (
+    <div style={{
+      position: "absolute",
+      left: 0,
+      right: 0,
+      bottom: "calc(100% + 6px)",
+      zIndex: 10,
+      padding: "10px 12px",
+      background: "var(--bg-card)",
+      border: "1px solid var(--border-secondary)",
+      borderRadius: "var(--radius-md)",
+      boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
+      pointerEvents: "none",
+    }}>
+      <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)", marginBottom: 8 }}>
+        {t("usageAlert.teamaiPreview")}
+      </div>
+      <TeamAIClaudeRows accounts={demo.claude} modelLabel={demo.model_label} redact="none" t={t} />
+      <div style={{ height: 8 }} />
+      <TeamAICodexRows accounts={demo.codex} redact="none" t={t} />
     </div>
   );
 }

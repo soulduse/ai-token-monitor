@@ -285,6 +285,7 @@
   "usageAlert.teamaiRedactFull": "Vollständig maskiert · klicken zum Anzeigen",
   "usageAlert.teamaiPromo": "Mehrere Konten? Mit TeamAI alle Kontolimits auf einen Blick",
   "usageAlert.teamaiPromoDismiss": "Nicht mehr anzeigen",
+  "usageAlert.teamaiPreview": "So sieht es mit TeamAI aus (Beispiel)",
   "usageTracking.title": "Claude Nutzungsverfolgung",
   "usageTracking.description": "Überwachen Sie Ihre Claude Code Sitzungs- und Wochenlimits in Echtzeit. Dies erfordert Zugriff auf Ihre Claude Code Anmeldedaten.",
   "usageTracking.enable": "Aktivieren",
