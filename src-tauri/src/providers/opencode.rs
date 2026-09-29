@@ -670,12 +670,14 @@ fn calculate_opencode_cost(
     cache_read: u64,
     cache_write: u64,
 ) -> f64 {
-    let pricing = pricing::get_opencode_pricing(model);
-    // OpenCode stores input/output/cache as separate non-overlapping counts
-    (input as f64 / 1_000_000.0) * pricing.input
-        + (output as f64 / 1_000_000.0) * pricing.output
-        + (cache_read as f64 / 1_000_000.0) * pricing.cache_read
-        + (cache_write as f64 / 1_000_000.0) * pricing.cache_write
+    // OpenCode stores input/output/cache as separate non-overlapping counts, so
+    // the full prompt (for the long-context tier) is their sum.
+    let (input_rate, output_rate, cache_read_rate, cache_write_rate) =
+        pricing::get_opencode_pricing(model).tier_for(input + cache_read + cache_write);
+    (input as f64 / 1_000_000.0) * input_rate
+        + (output as f64 / 1_000_000.0) * output_rate
+        + (cache_read as f64 / 1_000_000.0) * cache_read_rate
+        + (cache_write as f64 / 1_000_000.0) * cache_write_rate
 }
 
 #[cfg(test)]
