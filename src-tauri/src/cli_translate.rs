@@ -171,10 +171,10 @@ fn cli_command(name: &str) -> Result<Command, String> {
 
     // An empty scratch dir keeps project files (CLAUDE.md, GEMINI.md, settings)
     // out of the prompt and gives any workspace-scoped tool nothing to read.
-    let work_dir = std::env::temp_dir().join("ai-token-monitor-translate");
-    if std::fs::create_dir_all(&work_dir).is_ok() {
-        cmd.current_dir(work_dir);
-    }
+    let work_dir = private_dir()?.join("work");
+    std::fs::create_dir_all(&work_dir)
+        .map_err(|e| format!("Failed to prepare CLI working dir: {}", e))?;
+    cmd.current_dir(work_dir);
 
     cmd.env("BROWSER", "true").env("NO_BROWSER", "true");
     // Also covers `.cmd` shims: std runs them via `cmd.exe /c` with batch-safe
@@ -280,10 +280,59 @@ const DENY_ALL_TOOLS_POLICY: &str = "[[rule]]\ntoolName = \"*\"\ndecision = \"de
 
 /// Writes the deny-all policy next to (not inside) the empty working dir, so
 /// the working dir stays empty.
-fn deny_all_policy_file() -> Result<std::path::PathBuf, String> {
-    let path = std::env::temp_dir().join("ai-token-monitor-translate-policy.toml");
-    std::fs::write(&path, DENY_ALL_TOOLS_POLICY)
-        .map_err(|e| format!("Failed to write gemini policy: {}", e))?;
+fn deny_all_policy_file() -> Result<PathBuf, String> {
+    write_private_file("gemini-policy.toml", DENY_ALL_TOOLS_POLICY)
+        .map_err(|e| format!("Failed to write gemini policy: {}", e))
+}
+
+/// A per-user dir for the working dir, gemini policy and codex catalog. A
+/// shared temp dir (Linux `/tmp`) would let another local user pre-create
+/// these paths: swap the catalog to re-enable tools, or plant workspace
+/// settings in the working dir that gemini is told to trust.
+fn private_dir() -> Result<PathBuf, String> {
+    let dir = dirs::data_local_dir()
+        .ok_or("No local data dir for CLI translation")?
+        .join("ai-token-monitor")
+        .join("cli-translate");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to prepare CLI translation dir: {}", e))?;
+    let meta = std::fs::symlink_metadata(&dir)
+        .map_err(|e| format!("Failed to inspect CLI translation dir: {}", e))?;
+    if !meta.is_dir() {
+        return Err("CLI translation dir is not a plain directory".to_string());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        // SAFETY: geteuid has no preconditions and cannot fail.
+        if meta.uid() != unsafe { libc::geteuid() } {
+            return Err("CLI translation dir is owned by another user".to_string());
+        }
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| format!("Failed to secure CLI translation dir: {}", e))?;
+    }
+    Ok(dir)
+}
+
+/// Write `contents` to `<private dir>/<name>` atomically: a fresh file created
+/// with create_new (never follows an existing path or link), then renamed over
+/// the target, so a concurrent translation never reads a half-written file.
+fn write_private_file(name: &str, contents: &str) -> Result<PathBuf, String> {
+    use std::io::Write as _;
+    let dir = private_dir()?;
+    let tmp = dir.join(format!(".{}.{:016x}", name, rand::random::<u64>()));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)
+        .map_err(|e| e.to_string())?;
+    file.write_all(contents.as_bytes()).map_err(|e| e.to_string())?;
+    drop(file);
+    let path = dir.join(name);
+    std::fs::rename(&tmp, &path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        e.to_string()
+    })?;
     Ok(path)
 }
 
@@ -401,10 +450,8 @@ fn codex_model_catalog(model: &str) -> Value {
 
 /// Written next to (not inside) the empty working dir, like the gemini policy.
 fn codex_catalog_file(model: &str) -> Result<PathBuf, String> {
-    let path = std::env::temp_dir().join("ai-token-monitor-translate-codex-models.json");
-    std::fs::write(&path, codex_model_catalog(model).to_string())
-        .map_err(|e| format!("Failed to write codex model catalog: {}", e))?;
-    Ok(path)
+    write_private_file("codex-models.json", &codex_model_catalog(model).to_string())
+        .map_err(|e| format!("Failed to write codex model catalog: {}", e))
 }
 
 /// Arguments for `codex exec`. No shell is involved: each entry is one argv
@@ -660,6 +707,26 @@ mod tests {
         let text = std::fs::read_to_string(path).expect("policy readable");
         assert!(text.contains("toolName = \"*\""));
         assert!(text.contains("decision = \"deny\""));
+    }
+
+    // A link planted at the target path is replaced, never written through.
+    #[cfg(unix)]
+    #[test]
+    fn private_file_write_does_not_follow_a_planted_symlink() {
+        let victim = std::env::temp_dir().join(format!("atm-victim-{}", std::process::id()));
+        std::fs::write(&victim, "keep").unwrap();
+        let name = format!("qa-link-{}.json", std::process::id());
+        let target = private_dir().unwrap().join(&name);
+        let _ = std::fs::remove_file(&target);
+        std::os::unix::fs::symlink(&victim, &target).unwrap();
+
+        let path = write_private_file(&name, "{}").expect("written");
+
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep");
+        assert!(!std::fs::symlink_metadata(&path).unwrap().file_type().is_symlink());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{}");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&victim);
     }
 
     #[test]
