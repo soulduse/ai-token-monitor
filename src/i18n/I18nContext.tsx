@@ -58,7 +58,9 @@ export function I18nProvider({ locale, children }: Props) {
       let text = (messages as Translations)[key] ?? fallback[key] ?? key;
       if (params) {
         for (const [k, v] of Object.entries(params)) {
-          text = text.replace(`{{${k}}}`, String(v));
+          // A replacer function inserts the value literally — raw CLI/API errors can
+          // contain `$&` or `$'`, which a replacement string would expand.
+          text = text.replace(`{{${k}}}`, () => String(v));
         }
       }
       return text;

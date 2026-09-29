@@ -281,6 +281,18 @@ export function installMockTauri(): void {
     save_capture_png: () => true,
   };
 
+  // `?mockTauri=1&mockTranslateError=<backend error>` makes both translate commands fail
+  // with that string, to QA the chat's error bar, e.g.
+  // `Claude CLI is too old for translation. Run \`claude update\` and try again.`
+  // Without it they stay unhandled (resolve null → no translation, no error).
+  const translateError = new URLSearchParams(window.location.search).get("mockTranslateError");
+  if (translateError) {
+    // CLI mode needs no key/model, so the translate buttons skip the setup popup.
+    mockPrefs.translation_provider = "cli";
+    handlers.translate_text = () => Promise.reject(translateError);
+    handlers.translate_reply = () => Promise.reject(translateError);
+  }
+
   // Tauri's event API cleanup path calls this directly (outside invoke).
   (window as unknown as Record<string, unknown>).__TAURI_EVENT_PLUGIN_INTERNALS__ = {
     unregisterListener: () => {},

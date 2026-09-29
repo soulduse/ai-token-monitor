@@ -1,7 +1,8 @@
+use crate::oauth_usage::{hide_console_window, kill_process_tree, CliSearchEnv};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -19,19 +20,18 @@ pub struct CliTool {
 /// Candidate paths for the gemini CLI. GUI launches (Finder, autostart) get a
 /// minimal PATH, so the common install dirs are probed explicitly on top of it.
 fn gemini_cli_candidates() -> Vec<PathBuf> {
-    let bin_name = if cfg!(target_os = "windows") {
-        "gemini.cmd"
-    } else {
-        "gemini"
-    };
-    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
-        .map(|path| std::env::split_paths(&path).collect())
-        .unwrap_or_default();
-    if let Some(home) = dirs::home_dir() {
+    gemini_cli_candidates_from(&CliSearchEnv::current(), cfg!(target_os = "windows"))
+}
+
+/// Gemini is npm-only, so on Windows it is always the `gemini.cmd` shim.
+fn gemini_cli_candidates_from(env: &CliSearchEnv, windows: bool) -> Vec<PathBuf> {
+    let bin_name = if windows { "gemini.cmd" } else { "gemini" };
+    let mut dirs = env.search_dirs(windows);
+    if let Some(home) = &env.home {
         dirs.push(home.join(".npm-global/bin"));
         dirs.push(home.join(".local/bin"));
     }
-    if !cfg!(target_os = "windows") {
+    if !windows {
         dirs.push(PathBuf::from("/opt/homebrew/bin"));
         dirs.push(PathBuf::from("/usr/local/bin"));
     }
@@ -131,10 +131,6 @@ fn drain<R: Read + Send + 'static>(pipe: Option<R>) -> JoinHandle<Vec<u8>> {
     })
 }
 
-fn kill(child: &mut Child) {
-    let _ = child.kill();
-    let _ = child.wait();
-}
 
 /// Build a command for a resolved CLI: isolated working directory, no browser
 /// pop-ups for login flows, and the CLI's own dir on PATH so npm shims
@@ -161,13 +157,9 @@ fn cli_command(name: &str) -> Result<Command, String> {
     }
 
     cmd.env("BROWSER", "true").env("NO_BROWSER", "true");
-
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
+    // Also covers `.cmd` shims: std runs them via `cmd.exe /c` with batch-safe
+    // argument quoting (Rust >= 1.77.2); the prompt itself goes over stdin.
+    hide_console_window(&mut cmd);
 
     Ok(cmd)
 }
@@ -202,11 +194,11 @@ fn run_with_timeout(mut cmd: Command, stdin_data: &str) -> Result<String, String
             Ok(Some(status)) => break status,
             Ok(None) if start.elapsed() < timeout => thread::sleep(Duration::from_millis(100)),
             Ok(None) => {
-                kill(&mut child);
+                kill_process_tree(&mut child);
                 return Err(format!("CLI timed out after {} seconds", CLI_TIMEOUT_SECS));
             }
             Err(e) => {
-                kill(&mut child);
+                kill_process_tree(&mut child);
                 return Err(format!("Failed to poll CLI: {}", e));
             }
         }
@@ -488,5 +480,23 @@ mod tests {
     #[test]
     fn unknown_cli_is_never_resolved() {
         assert!(resolve_cli("sh").is_none());
+    }
+
+    #[test]
+    fn windows_gemini_candidates_use_cmd_shim_and_npm_dir() {
+        let env = CliSearchEnv {
+            overrides: vec![],
+            path: Some(std::env::join_paths(["/nodejs"]).unwrap()),
+            home: Some(PathBuf::from("/home/u")),
+            appdata: Some(PathBuf::from("/appdata")),
+        };
+        let candidates = gemini_cli_candidates_from(&env, true);
+        assert_eq!(candidates[0], PathBuf::from("/nodejs/gemini.cmd"));
+        assert!(candidates.contains(&PathBuf::from("/appdata/npm/gemini.cmd")));
+        assert!(candidates.iter().all(|c| c.extension().is_some_and(|ext| ext == "cmd")));
+
+        let unix = gemini_cli_candidates_from(&env, false);
+        assert_eq!(unix[0], PathBuf::from("/nodejs/gemini"));
+        assert!(!unix.iter().any(|c| c.starts_with("/appdata")));
     }
 }

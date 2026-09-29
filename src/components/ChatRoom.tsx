@@ -9,9 +9,12 @@ import { MentionAutocomplete } from "./MentionAutocomplete";
 import type { MentionAutocompleteRef } from "./MentionAutocomplete";
 import { getAllCachedProfiles, getCachedProfile } from "../lib/profileCache";
 import { uploadChatImage } from "../lib/chatImageUpload";
+import { describeTranslateError } from "../lib/translateError";
 import { useI18n, LANGUAGE_NAMES } from "../i18n/I18nContext";
 import type { ChatMessage } from "../hooks/useChat";
 import { SettingsOverlay } from "./SettingsOverlay";
+
+const TRANSLATE_ERROR_VISIBLE_MS = 8000;
 
 export function ChatRoom({ activated = true, visible = true }: { activated?: boolean; visible?: boolean }) {
   const { user, loading: authLoading, signIn, available } = useAuth();
@@ -136,7 +139,10 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
     sendMessage, deleteMessage, loadMore, toggleReaction,
   } = useChat(userId, activated, visible);
   const langName = LANGUAGE_NAMES[prefs.language] ?? prefs.language;
-  const { translations, translating, translate, translateReply: invokeTranslateReply } = useTranslate(langName);
+  const {
+    translations, translating, translate, translateReply: invokeTranslateReply,
+    error: translateError, clearError: clearTranslateError,
+  } = useTranslate(langName);
   const hasAiKey = !!(prefs.ai_keys?.gemini || prefs.ai_keys?.openai || prefs.ai_keys?.anthropic || prefs.ai_keys?.kiro);
   const hasAiModel = !!prefs.ai_model;
   // CLI mode translates through the local gemini/claude CLI — no API key or model needed.
@@ -397,6 +403,14 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
     }
   }, [pendingImage]);
 
+
+  // Failures carry actionable advice (update the CLI, set an API key), so they
+  // stay up longer than the 3s send warnings and can be dismissed early.
+  useEffect(() => {
+    if (!translateError) return;
+    const timer = setTimeout(clearTranslateError, TRANSLATE_ERROR_VISIBLE_MS);
+    return () => clearTimeout(timer);
+  }, [translateError, clearTranslateError]);
 
   const handleReply = useCallback((message: ChatMessage) => {
     setReplyingTo(message);
@@ -841,6 +855,45 @@ function ChatContent({ userId, activated, visible }: { userId: string; activated
           background: "var(--bg-card)",
         }}>
           {rateLimited ? t("chat.rateLimited") : imageError}
+        </div>
+      )}
+
+      {/* Translation failure (message or reply) */}
+      {translateError && (
+        <div
+          role="alert"
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 6,
+            padding: "4px 8px",
+            fontSize: 10,
+            fontWeight: 600,
+            color: "var(--accent-pink, #ef4444)",
+            background: "var(--bg-card)",
+          }}
+        >
+          <span style={{ flex: 1, textAlign: "center", wordBreak: "break-word", whiteSpace: "pre-wrap" }}>
+            {describeTranslateError(translateError.message, t)}
+          </span>
+          <button
+            onClick={clearTranslateError}
+            aria-label={t("chat.translateError.dismiss")}
+            title={t("chat.translateError.dismiss")}
+            style={{
+              background: "none",
+              border: "none",
+              padding: 0,
+              color: "inherit",
+              fontSize: 12,
+              lineHeight: 1,
+              cursor: "pointer",
+              opacity: 0.7,
+              flexShrink: 0,
+            }}
+          >
+            ×
+          </button>
         </div>
       )}
 
