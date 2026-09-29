@@ -602,8 +602,21 @@ pub(crate) fn hide_console_window(cmd: &mut Command) {
     let _ = cmd;
 }
 
+/// Set up a CLI child: no console window on Windows, and on Unix a process
+/// group of its own so `kill_process_tree` reaches what it spawns (npm
+/// installs are node wrappers that launch the real binary).
+pub(crate) fn prepare_cli_command(cmd: &mut Command) {
+    hide_console_window(cmd);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+}
+
 /// Kill a CLI child and wait for it. On Windows a `.cmd` shim runs under
-/// cmd.exe, so the whole process tree is taken down, not just cmd.exe.
+/// cmd.exe, so the whole process tree is taken down, not just cmd.exe; on
+/// Unix the child's process group (see `prepare_cli_command`).
 pub(crate) fn kill_process_tree(child: &mut Child) {
     // A `.cmd` shim's child is cmd.exe; killing only it would leave the node
     // process (and the CLI request) running, so take down the whole tree.
@@ -618,6 +631,15 @@ pub(crate) fn kill_process_tree(child: &mut Child) {
         hide_console_window(&mut taskkill);
         let _ = taskkill.status();
     }
+    #[cfg(unix)]
+    if let Ok(pid) = libc::pid_t::try_from(child.id()) {
+        // SAFETY: plain syscall. A negative pid names the process group the
+        // child leads; without `prepare_cli_command` no such group exists and
+        // the call fails harmlessly with ESRCH.
+        unsafe {
+            libc::kill(-pid, libc::SIGKILL);
+        }
+    }
     let _ = child.kill();
     let _ = child.wait();
 }
@@ -628,7 +650,7 @@ fn run_claude_auth_status(cli: &Path) -> bool {
     }
 
     let mut cmd = Command::new(cli);
-    hide_console_window(&mut cmd);
+    prepare_cli_command(&mut cmd);
     let mut child = match cmd
         .args(["auth", "status", "--json"])
         .env("BROWSER", "true")

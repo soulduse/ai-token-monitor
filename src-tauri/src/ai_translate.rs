@@ -583,11 +583,12 @@ mod tests {
 }
 
 /// Mirrors the chat's translate gate (`translationMode.ts`): an unset provider
-/// falls back to a detected CLI when no API key + model is configured.
+/// falls back to a detected gemini/claude CLI when no API key + model is
+/// configured. Codex is never picked implicitly.
 fn translates_with_cli(prefs: &UserPreferences) -> bool {
     let api_configured = prefs.ai_model.is_some()
         && crate::commands::get_ai_keys().is_some_and(|keys| keys.has_translation_key());
-    prefs.translates_with_cli(api_configured, crate::cli_translate::any_cli_available)
+    prefs.translates_with_cli(api_configured, crate::cli_translate::default_cli_available)
 }
 
 #[tauri::command]
