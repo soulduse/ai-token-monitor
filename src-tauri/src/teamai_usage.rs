@@ -250,6 +250,8 @@ pub enum TeamAIAccountStatus {
 #[derive(Debug, Clone, Serialize)]
 pub struct TeamAIClaudeAccount {
     pub id: String,
+    /// Position in TeamAI's config, which its "full" redaction numbers by.
+    pub config_index: usize,
     pub label: String,
     pub plan: String,
     pub status: TeamAIAccountStatus,
@@ -262,6 +264,8 @@ pub struct TeamAIClaudeAccount {
 #[derive(Debug, Clone, Serialize)]
 pub struct TeamAICodexAccount {
     pub id: String,
+    /// Position in TeamAI's config, which its "full" redaction numbers by.
+    pub config_index: usize,
     pub label: String,
     pub plan: Option<String>,
     pub status: TeamAIAccountStatus,
@@ -346,8 +350,8 @@ fn model_label(window_name: &str) -> String {
 
 /// TeamAI's quota order: pinned priority first, then least-spent on the
 /// binding window, ties broken by the sooner reset, unmeasured last.
-fn sort_by_headroom<'a>(accounts: &mut [(&'a RawAccount, &'a RawAccountState)]) {
-    accounts.sort_by(|(a, sa), (b, sb)| {
+fn sort_by_headroom<'a>(accounts: &mut [(usize, &'a RawAccount, &'a RawAccountState)]) {
+    accounts.sort_by(|(_, a, sa), (_, b, sb)| {
         if a.priority.is_some() || b.priority.is_some() {
             return a.priority.unwrap_or(i64::MAX).cmp(&b.priority.unwrap_or(i64::MAX));
         }
@@ -399,15 +403,16 @@ pub fn read_usage() -> Option<TeamAIUsage> {
     let mut codex = Vec::new();
 
     for provider in ["claude", "codex"] {
-        let mut group: Vec<(&RawAccount, &RawAccountState)> = config
+        let mut group: Vec<(usize, &RawAccount, &RawAccountState)> = config
             .accounts
             .iter()
-            .filter(|a| a.provider == provider)
-            .map(|a| (a, state.accounts.get(&a.credential_id).unwrap_or(&empty)))
+            .enumerate()
+            .filter(|(_, a)| a.provider == provider)
+            .map(|(i, a)| (i, a, state.accounts.get(&a.credential_id).unwrap_or(&empty)))
             .collect();
         sort_by_headroom(&mut group);
 
-        for (account, saved) in group {
+        for (config_index, account, saved) in group {
             let status = saved.status(account.enabled, now_ms);
             if provider == "claude" {
                 let profile = saved.profile.as_ref();
@@ -417,6 +422,7 @@ pub fn read_usage() -> Option<TeamAIUsage> {
                 }
                 claude.push(TeamAIClaudeAccount {
                     id: account.credential_id.clone(),
+                    config_index,
                     label: account.label.clone(),
                     plan: profile.map(|p| p.claude_plan()).unwrap_or_else(|| "OAuth".to_string()),
                     status: match profile {
@@ -433,6 +439,7 @@ pub fn read_usage() -> Option<TeamAIUsage> {
             } else {
                 codex.push(TeamAICodexAccount {
                     id: account.credential_id.clone(),
+                    config_index,
                     label: account.label.clone(),
                     plan: saved.profile.as_ref().and_then(|p| p.codex_plan()),
                     status,

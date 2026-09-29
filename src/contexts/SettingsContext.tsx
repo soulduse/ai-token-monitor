@@ -28,6 +28,7 @@ const defaultPrefs: UserPreferences = {
   include_kiro: false,
   include_omo: false,
   include_teamai: true,
+  teamai_redact: "none",
   theme: "github",
   color_mode: "system",
   language: "en",

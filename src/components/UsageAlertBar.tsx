@@ -14,6 +14,7 @@ import type {
   TeamAIAccountStatus,
   TeamAIClaudeAccount,
   TeamAICodexAccount,
+  TeamAIRedactLevel,
   TeamAIUsage,
   TeamAIWindow,
 } from "../lib/types";
@@ -473,6 +474,82 @@ function ddayColor(days: number): string {
   return "#22c55e";
 }
 
+// Label masking ported from TeamAI's redact.ts so a screenshot of this card
+// hides the same way `teamai capture` does. "partial" keeps the first two and
+// the last character (the owner still recognizes the row); "full" numbers
+// accounts by their position in TeamAI's config.
+function maskPart(text: string): string {
+  if (text.length <= 3) return "•".repeat(Math.max(1, text.length));
+  return `${text.slice(0, 2)}${"•".repeat(text.length - 3)}${text.slice(-1)}`;
+}
+
+function maskDomain(domain: string): string {
+  const dot = domain.lastIndexOf(".");
+  if (dot <= 0) return maskPart(domain);
+  const name = domain.slice(0, dot);
+  return `${name.slice(0, 2)}${"•".repeat(Math.max(1, name.length - 2))}${domain.slice(dot)}`;
+}
+
+function maskLabel(label: string, level: TeamAIRedactLevel, configIndex: number): string {
+  if (level === "none") return label;
+  if (level === "full") return `account #${configIndex + 1}`;
+  const at = label.indexOf("@");
+  return at > 0 ? `${maskPart(label.slice(0, at))}@${maskDomain(label.slice(at + 1))}` : maskPart(label);
+}
+
+const TEAMAI_REDACT_NEXT: Record<TeamAIRedactLevel, TeamAIRedactLevel> = {
+  none: "partial",
+  partial: "full",
+  full: "none",
+};
+
+const TEAMAI_REDACT_KEY: Record<TeamAIRedactLevel, string> = {
+  none: "usageAlert.teamaiRedactNone",
+  partial: "usageAlert.teamaiRedactPartial",
+  full: "usageAlert.teamaiRedactFull",
+};
+
+function RedactButton({
+  level,
+  onChange,
+}: {
+  level: TeamAIRedactLevel;
+  onChange: (level: TeamAIRedactLevel) => void;
+}) {
+  const t = useI18n();
+  const title = t(TEAMAI_REDACT_KEY[level]);
+  const masked = level !== "none";
+
+  return (
+    <button
+      onClick={() => onChange(TEAMAI_REDACT_NEXT[level])}
+      title={title}
+      aria-label={title}
+      aria-pressed={masked}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 18,
+        height: 18,
+        padding: 0,
+        background: "transparent",
+        border: "none",
+        borderRadius: 3,
+        color: masked ? "var(--accent-purple)" : "var(--text-muted)",
+        cursor: "pointer",
+        opacity: masked ? 1 : 0.8,
+      }}
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+        <circle cx="12" cy="12" r="3" />
+        {masked && <path d="M3 3l18 18" />}
+      </svg>
+    </button>
+  );
+}
+
 function TeamAIGauge({ window, t }: { window: TeamAIWindow | null; t: Translate }) {
   const pct = window ? Math.min(Math.max(window.utilization, 0), 100) : 0;
   const remaining = window ? formatCompactRemaining(window.resets_at) : "";
@@ -632,14 +709,17 @@ function teamaiTooltip(
 function TeamAIClaudeRows({
   accounts,
   modelLabel,
+  redact,
   t,
 }: {
   accounts: TeamAIClaudeAccount[];
   modelLabel: string | null;
+  redact: TeamAIRedactLevel;
   t: Translate;
 }) {
   const grid = teamaiGrid(3);
-  const shortLabel = makeShortLabel(accounts.map((a) => a.label));
+  const labelOf = (a: TeamAIClaudeAccount) => maskLabel(a.label, redact, a.config_index);
+  const shortLabel = makeShortLabel(accounts.map(labelOf));
 
   return (
     <div>
@@ -651,8 +731,8 @@ function TeamAIClaudeRows({
       {accounts.map((account) => (
         <TeamAIAccountRow
           key={account.id}
-          label={shortLabel(account.label)}
-          tooltip={teamaiTooltip(account, t, account.renewal_days)}
+          label={shortLabel(labelOf(account))}
+          tooltip={teamaiTooltip({ ...account, label: labelOf(account) }, t, account.renewal_days)}
           status={account.status}
           grid={grid}
           trailing={account.renewal_days != null && (
@@ -672,16 +752,19 @@ function TeamAIClaudeRows({
 
 function TeamAICodexRows({
   accounts,
+  redact,
   t,
 }: {
   accounts: TeamAICodexAccount[];
+  redact: TeamAIRedactLevel;
   t: Translate;
 }) {
+  const labelOf = (a: TeamAICodexAccount) => maskLabel(a.label, redact, a.config_index);
   // Titles follow the windows actually in play, so the header never names a
   // gauge no row draws; a span shared by every account is printed once.
   const gaugeCount = Math.max(1, ...accounts.map((a) => a.windows.length));
   const grid = teamaiGrid(gaugeCount);
-  const shortLabel = makeShortLabel(accounts.map((a) => a.label));
+  const shortLabel = makeShortLabel(accounts.map(labelOf));
   const columns = Array.from({ length: gaugeCount }, (_, i) => {
     const spans = new Set(accounts.map((a) => formatSpan(a.windows[i]?.minutes ?? null)).filter(Boolean));
     return spans.size === 1 ? [...spans][0] : "";
@@ -697,8 +780,8 @@ function TeamAICodexRows({
       {accounts.map((account) => (
         <TeamAIAccountRow
           key={account.id}
-          label={shortLabel(account.label)}
-          tooltip={teamaiTooltip(account, t)}
+          label={shortLabel(labelOf(account))}
+          tooltip={teamaiTooltip({ ...account, label: labelOf(account) }, t)}
           status={account.status}
           grid={grid}
         >
@@ -723,6 +806,8 @@ function TeamAIUsageSection({
   onRefresh: () => void;
 }) {
   const t = useI18n();
+  const { prefs, updatePrefs } = useSettings();
+  const redact = prefs.teamai_redact ?? "none";
   // A stopped TeamAI no longer measures anything: say how old the numbers are
   // instead of presenting them as live.
   const status = usage.running ? (
@@ -750,14 +835,15 @@ function TeamAIUsageSection({
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {status}
+          <RedactButton level={redact} onChange={(level) => updatePrefs({ teamai_redact: level })} />
           <RefreshButton refreshing={false} cooldown={0} onRefresh={onRefresh} />
         </div>
       </div>
       {showClaude && (
-        <TeamAIClaudeRows accounts={usage.claude} modelLabel={usage.model_label} t={t} />
+        <TeamAIClaudeRows accounts={usage.claude} modelLabel={usage.model_label} redact={redact} t={t} />
       )}
       {showClaude && showCodex && <div style={{ height: 10 }} />}
-      {showCodex && <TeamAICodexRows accounts={usage.codex} t={t} />}
+      {showCodex && <TeamAICodexRows accounts={usage.codex} redact={redact} t={t} />}
     </div>
   );
 }

@@ -104,11 +104,16 @@ export interface TeamAIWindow {
   minutes: number | null;
 }
 
+/** Account label masking, same levels as `teamai capture --redact`. */
+export type TeamAIRedactLevel = "none" | "partial" | "full";
+
 export type TeamAIAccountStatus = "active" | "cooldown" | "error" | "disabled" | "inactive";
 
 // Labels are e-mail addresses: local display only, never feed an upload path.
 export interface TeamAIClaudeAccount {
   id: string;
+  /** Position in TeamAI's config — what "full" redaction numbers by. */
+  config_index: number;
   label: string;
   plan: string;
   status: TeamAIAccountStatus;
@@ -120,6 +125,7 @@ export interface TeamAIClaudeAccount {
 
 export interface TeamAICodexAccount {
   id: string;
+  config_index: number;
   label: string;
   plan: string | null;
   status: TeamAIAccountStatus;
@@ -153,6 +159,7 @@ export interface UserPreferences {
   include_kiro: boolean;
   include_omo: boolean;
   include_teamai: boolean;
+  teamai_redact: TeamAIRedactLevel;
   theme: "github" | "purple" | "ocean" | "sunset";
   color_mode: "system" | "light" | "dark";
   language: "en" | "ko" | "ja" | "zh-CN" | "zh-TW" | "fr" | "es" | "de" | "tr" | "it";

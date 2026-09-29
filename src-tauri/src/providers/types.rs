@@ -148,6 +148,9 @@ pub struct UserPreferences {
     /// installed. On by default: it only renders when TeamAI data is detected.
     #[serde(default = "default_true")]
     pub include_teamai: bool,
+    /// TeamAI account label masking: "none" | "partial" | "full".
+    #[serde(default = "default_teamai_redact")]
+    pub teamai_redact: String,
     #[serde(default = "default_gjc_dirs")]
     pub gjc_dirs: Vec<String>,
     #[serde(default = "default_codex_dirs")]
@@ -229,6 +232,10 @@ fn default_codex_dirs() -> Vec<String> {
 
 fn default_gjc_dirs() -> Vec<String> {
     vec!["~/.gjc".to_string()]
+}
+
+fn default_teamai_redact() -> String {
+    "none".to_string()
 }
 
 fn default_true() -> bool {
@@ -316,6 +323,7 @@ impl Default for UserPreferences {
             include_kiro: false,
             include_omo: false,
             include_teamai: true,
+            teamai_redact: default_teamai_redact(),
             gjc_dirs: default_gjc_dirs(),
             codex_dirs: default_codex_dirs(),
             salary_enabled: false,
