@@ -151,6 +151,9 @@ pub struct UserPreferences {
     /// TeamAI account label masking: "none" | "partial" | "full".
     #[serde(default = "default_teamai_redact")]
     pub teamai_redact: String,
+    /// The one-line TeamAI suggestion shown to users without TeamAI was closed.
+    #[serde(default)]
+    pub teamai_promo_dismissed: bool,
     #[serde(default = "default_gjc_dirs")]
     pub gjc_dirs: Vec<String>,
     #[serde(default = "default_codex_dirs")]
@@ -324,6 +327,7 @@ impl Default for UserPreferences {
             include_omo: false,
             include_teamai: true,
             teamai_redact: default_teamai_redact(),
+            teamai_promo_dismissed: false,
             gjc_dirs: default_gjc_dirs(),
             codex_dirs: default_codex_dirs(),
             salary_enabled: false,

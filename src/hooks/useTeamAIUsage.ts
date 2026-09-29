@@ -9,6 +9,9 @@ const POLL_INTERVAL_MS = 30_000;
 
 export function useTeamAIUsage(enabled: boolean) {
   const [usage, setUsage] = useState<TeamAIUsage | null>(null);
+  // Whether TeamAI is installed at all, independent of the display toggle.
+  // null until known, so nothing keyed on "not installed" flashes on mount.
+  const [installed, setInstalled] = useState<boolean | null>(null);
   const requestIdRef = useRef(0);
 
   const refresh = useCallback(async () => {
@@ -28,6 +31,12 @@ export function useTeamAIUsage(enabled: boolean) {
   }, [enabled]);
 
   useEffect(() => {
+    invoke<boolean>("is_teamai_available")
+      .then(setInstalled)
+      .catch(() => setInstalled(null));
+  }, []);
+
+  useEffect(() => {
     refresh();
     if (!enabled) return;
     // Poll only: "stats-updated" fires on every JSONL change and would re-read
@@ -36,5 +45,5 @@ export function useTeamAIUsage(enabled: boolean) {
     return () => window.clearInterval(timer);
   }, [enabled, refresh]);
 
-  return { usage, refresh };
+  return { usage, installed, refresh };
 }

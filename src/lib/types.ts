@@ -160,6 +160,7 @@ export interface UserPreferences {
   include_omo: boolean;
   include_teamai: boolean;
   teamai_redact: TeamAIRedactLevel;
+  teamai_promo_dismissed: boolean;
   theme: "github" | "purple" | "ocean" | "sunset";
   color_mode: "system" | "light" | "dark";
   language: "en" | "ko" | "ja" | "zh-CN" | "zh-TW" | "fr" | "es" | "de" | "tr" | "it";

@@ -289,6 +289,8 @@
   "usageAlert.teamaiRedactNone": "계정 표시 중 · 클릭하여 부분 가리기",
   "usageAlert.teamaiRedactPartial": "부분 가리기 · 클릭하여 전체 가리기",
   "usageAlert.teamaiRedactFull": "전체 가리기 · 클릭하여 표시",
+  "usageAlert.teamaiPromo": "여러 계정을 쓰신다면? TeamAI로 모든 계정 한도를 한눈에",
+  "usageAlert.teamaiPromoDismiss": "다시 보지 않기",
   "usageTracking.title": "Claude 사용량 추적",
   "usageTracking.description": "Claude Code 세션 및 주간 사용 한도를 실시간으로 모니터링합니다. Claude Code 로그인 자격 증명에 대한 접근이 필요합니다.",
   "usageTracking.enable": "활성화",

@@ -283,6 +283,8 @@
   "usageAlert.teamaiRedactNone": "Account visibili · clic per mascherare parzialmente",
   "usageAlert.teamaiRedactPartial": "Mascherati parzialmente · clic per mascherare del tutto",
   "usageAlert.teamaiRedactFull": "Mascherati del tutto · clic per mostrare",
+  "usageAlert.teamaiPromo": "Più account? Vedi i limiti di tutti a colpo d'occhio con TeamAI",
+  "usageAlert.teamaiPromoDismiss": "Non mostrare più",
   "usageTracking.title": "Monitoraggio utilizzo Claude",
   "usageTracking.description": "Monitora i limiti di sessione e settimanali di Claude Code in tempo reale. Richiede l'accesso alle credenziali di Claude Code.",
   "usageTracking.enable": "Attiva",

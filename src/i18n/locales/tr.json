@@ -283,6 +283,8 @@
   "usageAlert.teamaiRedactNone": "Hesaplar görünüyor · kısmen gizlemek için tıklayın",
   "usageAlert.teamaiRedactPartial": "Kısmen gizli · tamamen gizlemek için tıklayın",
   "usageAlert.teamaiRedactFull": "Tamamen gizli · göstermek için tıklayın",
+  "usageAlert.teamaiPromo": "Birden çok hesap mı? TeamAI ile tüm hesap limitlerini tek bakışta görün",
+  "usageAlert.teamaiPromoDismiss": "Bir daha gösterme",
   "usageTracking.title": "Claude Kullanım Takibi",
   "usageTracking.description": "Claude Code oturum ve haftalık kullanım limitlerinizi gerçek zamanlı izleyin. Bu, Claude Code giriş kimlik bilgilerinize erişim gerektirir.",
   "usageTracking.enable": "Etkinleştir",

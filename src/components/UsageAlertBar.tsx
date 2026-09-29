@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useOAuthUsage } from "../hooks/useOAuthUsage";
 import { useGrokUsage } from "../hooks/useGrokUsage";
 import { useTeamAIUsage } from "../hooks/useTeamAIUsage";
@@ -550,6 +551,81 @@ function RedactButton({
   );
 }
 
+const TEAMAI_REPO_URL = "https://github.com/soulduse/team-ai";
+
+// One quiet line for users who run a single account view today: what TeamAI
+// adds for multi-account setups, one click to the repo, and a way to make it
+// go away for good.
+function TeamAIPromo({ onDismiss }: { onDismiss: () => void }) {
+  const t = useI18n();
+  const [hover, setHover] = useState(false);
+
+  return (
+    <div style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      marginTop: 10,
+      paddingTop: 8,
+      borderTop: "1px solid rgba(255,255,255,0.06)",
+    }}>
+      <button
+        onClick={() => { openUrl(TEAMAI_REPO_URL).catch(() => {}); }}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        title={TEAMAI_REPO_URL.replace("https://", "")}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          padding: 0,
+          background: "transparent",
+          border: "none",
+          cursor: "pointer",
+          textAlign: "left",
+          fontSize: 10,
+          lineHeight: 1.4,
+          color: hover ? "var(--accent-purple)" : "var(--text-muted)",
+          transition: "color 0.2s ease",
+        }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+          <circle cx="9" cy="7" r="4" />
+          <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        </svg>
+        <span style={{ textDecoration: hover ? "underline" : "none" }}>
+          {t("usageAlert.teamaiPromo")}
+        </span>
+        <span style={{ flexShrink: 0 }}>→</span>
+      </button>
+      <button
+        onClick={onDismiss}
+        title={t("usageAlert.teamaiPromoDismiss")}
+        aria-label={t("usageAlert.teamaiPromoDismiss")}
+        style={{
+          flexShrink: 0,
+          width: 16,
+          height: 16,
+          padding: 0,
+          background: "transparent",
+          border: "none",
+          cursor: "pointer",
+          fontSize: 12,
+          lineHeight: 1,
+          color: "var(--text-muted)",
+          opacity: 0.7,
+        }}
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
 function TeamAIGauge({ window, t }: { window: TeamAIWindow | null; t: Translate }) {
   const pct = window ? Math.min(Math.max(window.utilization, 0), 100) : 0;
   const remaining = window ? formatCompactRemaining(window.resets_at) : "";
@@ -902,12 +978,12 @@ function ClaudeTrackingPrompt({
 }
 
 export function UsageAlertBar() {
-  const { prefs, refreshPrefs } = useSettings();
+  const { prefs, refreshPrefs, updatePrefs } = useSettings();
   const { usage, status: oauthStatus, refreshing, rateLimitRemaining, refresh } = useOAuthUsage();
   const { stats: codexStats } = useTokenStats("codex");
   const showGrok = prefs.include_grok;
   const { credits: grokCredits } = useGrokUsage(showGrok);
-  const { usage: teamai, refresh: refreshTeamAI } = useTeamAIUsage(prefs.include_teamai);
+  const { usage: teamai, installed: teamaiInstalled, refresh: refreshTeamAI } = useTeamAIUsage(prefs.include_teamai);
   const todayStr = useToday();
   const t = useI18n();
   const [enabling, setEnabling] = useState(false);
@@ -1054,6 +1130,11 @@ export function UsageAlertBar() {
     oauthStatus === "unavailable";
   const showTeamAI = teamaiClaude || teamaiCodex;
   if (!hasClaudeData && !showClaudePrompt && !showClaudeUnavailable && !showTeamAI && !showCodexBlock && !hasGrokCredits) return null;
+  // Only alongside single-account gauges TeamAI would replace, only when it is
+  // definitely not installed, and never again once dismissed. It never makes
+  // the card render on its own.
+  const showTeamAIPromo =
+    teamaiInstalled === false && !prefs.teamai_promo_dismissed && (hasClaudeData || showCodexBlock);
 
   return (
     <div style={{
@@ -1210,6 +1291,10 @@ export function UsageAlertBar() {
             />
           )}
         </div>
+      )}
+
+      {showTeamAIPromo && (
+        <TeamAIPromo onDismiss={() => updatePrefs({ teamai_promo_dismissed: true })} />
       )}
     </div>
   );
