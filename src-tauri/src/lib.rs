@@ -583,14 +583,16 @@ fn get_all_watch_dirs() -> Vec<PathBuf> {
         dirs.extend(providers::pi::watch_dirs());
     }
 
-    // Hermes Agent keeps a single SQLite db (+ WAL sidecar) in its home dir
-    // ($HERMES_HOME, default ~/.hermes). Gated on include_hermes like OmO:
-    // the home dir also holds config/plugins, so watching it unconditionally
-    // would re-parse every provider on unrelated writes.
+    // Hermes Agent keeps a SQLite db (+ WAL sidecar) in its home dir
+    // ($HERMES_HOME, default ~/.hermes) and in each profiles/<name> dir.
+    // Gated on include_hermes like OmO: these dirs also hold config/plugins,
+    // so watching them unconditionally would re-parse every provider on
+    // unrelated writes.
     if prefs.include_hermes {
-        let hermes_dir = providers::hermes::hermes_home();
-        if hermes_dir.exists() && !dirs.contains(&hermes_dir) {
-            dirs.push(hermes_dir);
+        for hermes_dir in providers::hermes::db_dirs() {
+            if hermes_dir.exists() && !dirs.contains(&hermes_dir) {
+                dirs.push(hermes_dir);
+            }
         }
     }
 
@@ -611,13 +613,15 @@ fn get_all_watch_dirs() -> Vec<PathBuf> {
 }
 
 /// Hermes keeps its db at the top of its home dir, which also holds the
-/// installed agent repo and venv (`$HERMES_HOME/hermes-agent`). Watching it
-/// recursively would re-parse every provider on `hermes update` and, on Linux,
-/// spend an inotify watch per venv subdirectory. Pi/OmO custom session dirs are
-/// flat, and a broad setting (`sessionDir: "~"`) must not watch a whole tree.
+/// installed agent repo and venv (`$HERMES_HOME/hermes-agent`), and of each
+/// profile dir, which holds that profile's skills, sessions and caches.
+/// Watching them recursively would re-parse every provider on `hermes update`
+/// and, on Linux, spend an inotify watch per venv subdirectory. Pi/OmO custom
+/// session dirs are flat, and a broad setting (`sessionDir: "~"`) must not
+/// watch a whole tree.
 fn watch_mode(dir: &Path) -> RecursiveMode {
     let flat_session_dir = |d: Option<PathBuf>| d.is_some_and(|d| d == dir);
-    if dir == providers::hermes::hermes_home()
+    if providers::hermes::is_db_dir(dir, &[providers::hermes::hermes_home()])
         || flat_session_dir(providers::pi::flat_watch_dir())
         || flat_session_dir(providers::omo::flat_watch_dir())
     {
@@ -627,15 +631,15 @@ fn watch_mode(dir: &Path) -> RecursiveMode {
     }
 }
 
-/// Whether a changed file can carry usage. Directly under Hermes' home only the
-/// state db counts: the gateway re-stamps `gateway_state.json` every minute and
-/// plugins keep their own `.db` files there, and each event re-parses every
-/// provider. `hermes_homes` holds the configured and canonical spellings, since
-/// FSEvents reports resolved paths.
+/// Whether a changed file can carry usage. Directly under Hermes' home or a
+/// profile dir only the state db counts: the gateway re-stamps
+/// `gateway_state.json` every minute and plugins keep their own `.db` files
+/// there, and each event re-parses every provider. `hermes_homes` holds the
+/// configured and canonical spellings, since FSEvents reports resolved paths.
 fn is_stats_change(path: &Path, hermes_homes: &[PathBuf]) -> bool {
     if path
         .parent()
-        .is_some_and(|dir| hermes_homes.iter().any(|h| h == dir))
+        .is_some_and(|dir| providers::hermes::is_db_dir(dir, hermes_homes))
     {
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         return name == "state.db" || name == "state.db-wal";
@@ -1569,6 +1573,12 @@ mod tests {
         assert!(is_stats_change(&home.join("state.db-wal"), &homes));
         assert!(!is_stats_change(&home.join("gateway_state.json"), &homes));
         assert!(!is_stats_change(&home.join("response_store.db"), &homes));
+        // Profile dirs get the same filter; profiles made after startup match too.
+        let work = home.join("profiles").join("work");
+        assert!(is_stats_change(&work.join("state.db"), &homes));
+        assert!(is_stats_change(&work.join("state.db-wal"), &homes));
+        assert!(!is_stats_change(&work.join("gateway_state.json"), &homes));
+        assert!(!is_stats_change(&work.join("kanban.db"), &homes));
         // Other providers' dirs keep the extension filter.
         assert!(is_stats_change(Path::new("/home/u/.claude/projects/a/s.jsonl"), &homes));
         assert!(is_stats_change(Path::new("/home/u/.local/share/opencode/opencode.db-wal"), &homes));
