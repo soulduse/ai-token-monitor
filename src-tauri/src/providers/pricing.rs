@@ -1138,6 +1138,35 @@ mod tests {
         assert!((p.output - 25.0).abs() < 0.001);
     }
 
+    // Regression guard: "claude-sonnet-5-5" (released 2026-09) contains
+    // "sonnet-5". Prices match Sonnet 5 today, but without its own entry it is
+    // labelled "Sonnet 5" and would silently inherit any future Sonnet 5 change.
+    #[test]
+    fn claude_sonnet_5_5_has_own_entry() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        for id in ["claude-sonnet-5-5", "claude-sonnet-5-5[1m]", "claude-sonnet-5.5"] {
+            assert_eq!(find_pricing(&cfg.claude, id).label, "Sonnet 5.5", "{id}");
+            let p = get_claude_pricing(id);
+            assert!((p.input - 2.0).abs() < 0.001, "{id} input must be $2/MTok, got ${}", p.input);
+            assert!((p.output - 10.0).abs() < 0.001, "{id} output must be $10/MTok, got ${}", p.output);
+            assert!((p.cache_read - 0.20).abs() < 0.001);
+            assert!((p.cache_write_5m - 2.50).abs() < 0.001);
+            assert!((p.cache_write_1h - 4.0).abs() < 0.001);
+        }
+        assert_eq!(find_pricing(&cfg.claude, "claude-sonnet-5").label, "Sonnet 5");
+    }
+
+    #[test]
+    fn opencode_sonnet_5_5_has_own_entry() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let oc = cfg.opencode.as_ref().expect("opencode config present");
+        assert_eq!(find_pricing(oc, "anthropic/claude-sonnet-5-5").label, "Claude Sonnet 5.5");
+        let p = get_opencode_pricing("anthropic/claude-sonnet-5-5");
+        assert!((p.input - 2.0).abs() < 0.001);
+        assert!((p.output - 10.0).abs() < 0.001);
+        assert!((p.cache_read - 0.20).abs() < 0.001);
+    }
+
     #[test]
     fn opencode_sonnet_5_not_billed_as_sonnet_4x() {
         let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
@@ -1433,10 +1462,55 @@ mod tests {
 
     #[test]
     fn codex_gpt52_pricing() {
-        // base gpt-5.2 is $1.25; the gpt-5.2-codex variant is $1.75 (see
-        // codex_gpt52_codex_uses_codex_rate).
+        // Official standard rate for base gpt-5.2 is $1.75/$14 — the same as the
+        // gpt-5.2-codex variant. The earlier $1.25/$10 was the Batch/Flex rate.
         let p = get_codex_pricing("gpt-5.2");
-        assert!((p.input - 1.25).abs() < 0.001);
+        assert!((p.input - 1.75).abs() < 0.001, "gpt-5.2 input must be $1.75, got ${}", p.input);
+        assert!((p.output - 14.00).abs() < 0.001);
+        assert!((p.cached_input - 0.175).abs() < 0.001);
+    }
+
+    // Regression guard: these rows had Batch/Flex rates (half the standard
+    // price) recorded as standard — under-billing 2x (o3 5x). Values below are
+    // the Standard tier from the official pricing page (2026-09-30).
+    #[test]
+    fn codex_legacy_models_use_standard_tier_rates() {
+        for (id, input, output, cached) in [
+            ("gpt-5-mini", 0.25, 2.00, 0.025),
+            ("o3-2025-04-16", 2.00, 8.00, 0.50),
+            ("o4-mini-2025-04-16", 1.10, 4.40, 0.275),
+            ("o3-mini", 1.10, 4.40, 0.55),
+            ("o3-pro", 20.00, 80.00, 0.0),
+            ("gpt-5.2-pro", 21.00, 168.00, 0.0),
+            ("gpt-5-pro", 15.00, 120.00, 0.0),
+            ("gpt-4.1-nano", 0.10, 0.40, 0.025),
+        ] {
+            let p = get_codex_pricing(id);
+            assert!((p.input - input).abs() < 0.001, "{id} input must be ${input}, got ${}", p.input);
+            assert!((p.output - output).abs() < 0.001, "{id} output must be ${output}, got ${}", p.output);
+            assert!((p.cached_input - cached).abs() < 0.001, "{id} cached must be ${cached}, got ${}", p.cached_input);
+        }
+    }
+
+    // Every codex/claude/gemini row must have an opencode twin at the same
+    // price. Missing twins silently fell through to a broader pattern (e.g.
+    // openai/gpt-5.4-mini billed at gpt-5.4's $2.50) or the Sonnet default.
+    #[test]
+    fn opencode_mirrors_every_provider_row() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let oc = cfg.opencode.as_ref().expect("opencode config present");
+        let mut tables = vec![("claude", &cfg.claude), ("codex", &cfg.codex)];
+        if let Some(g) = cfg.gemini.as_ref() {
+            tables.push(("gemini", g));
+        }
+        for (name, table) in tables {
+            for e in &table.models {
+                let twin = oc.models.iter().find(|o| o.match_pattern == e.match_pattern);
+                let twin = twin.unwrap_or_else(|| panic!("opencode is missing {name} row {:?}", e.match_pattern));
+                assert!((twin.input - e.input).abs() < 1e-9, "{name} {:?} input differs", e.match_pattern);
+                assert!((twin.output - e.output).abs() < 1e-9, "{name} {:?} output differs", e.match_pattern);
+            }
+        }
     }
 
     #[test]
@@ -1519,6 +1593,47 @@ mod tests {
         assert!((luna.cached_input - 0.01).abs() < 0.001);
     }
 
+    // Regression guard: GPT-6.1 Sol (released 2026-09-29) canonicalizes to
+    // "gpt-6-1-sol", which does not contain "gpt-6-sol" — without its own entry
+    // it falls to the bare "gpt-6" Astra rate and is over-billed 5x. Only its
+    // cached input differs from GPT-6 Sol ($0.10 vs $0.20).
+    #[test]
+    fn codex_gpt6_1_sol_not_billed_as_astra() {
+        for id in ["gpt-6.1-sol", "gpt-6.1", "openai/gpt-6.1-sol"] {
+            let p = get_codex_pricing(id);
+            assert!((p.input - 2.00).abs() < 0.001, "{id} input must be $2/MTok, got ${}", p.input);
+            assert!((p.output - 10.00).abs() < 0.001, "{id} output must be $10/MTok, got ${}", p.output);
+            assert!((p.cached_input - 0.10).abs() < 0.001, "{id} cached input must be $0.10/MTok, got ${}", p.cached_input);
+        }
+        let sol = get_codex_pricing("gpt-6-sol");
+        assert!((sol.cached_input - 0.20).abs() < 0.001, "gpt-6-sol must keep its $0.20 cached rate");
+    }
+
+    #[test]
+    fn opencode_gpt6_1_sol_not_billed_as_astra() {
+        let p = get_opencode_pricing("openai/gpt-6.1-sol");
+        assert!((p.input - 2.00).abs() < 0.001, "opencode gpt-6.1-sol input must be $2/MTok, got ${}", p.input);
+        assert!((p.output - 10.00).abs() < 0.001);
+        assert!((p.cache_read - 0.10).abs() < 0.001);
+        assert!((p.cache_write - 2.50).abs() < 0.001);
+    }
+
+    // Regression guard: the Daybreak cyber models contain "gpt-5-6" / "gpt-5-5"
+    // after canonicalization, so without their own entries they land on the
+    // base tier ($4/$20, $5/$30) — under-billed against $12.50/$75.
+    #[test]
+    fn codex_cyber_models_not_billed_as_base_tier() {
+        for id in ["gpt-5.6-cyber", "gpt-5.5-cyber"] {
+            let p = get_codex_pricing(id);
+            assert!((p.input - 12.50).abs() < 0.001, "{id} input must be $12.50/MTok, got ${}", p.input);
+            assert!((p.output - 75.00).abs() < 0.001, "{id} output must be $75/MTok, got ${}", p.output);
+            assert!((p.cached_input - 1.25).abs() < 0.001);
+        }
+        let oc = get_opencode_pricing("openai/gpt-5.6-cyber");
+        assert!((oc.input - 12.50).abs() < 0.001);
+        assert!((oc.cache_write - 15.625).abs() < 0.001);
+    }
+
     #[test]
     fn opencode_gpt6_sol_luna_pricing() {
         let sol = get_opencode_pricing("openai/gpt-6-sol");
@@ -1599,8 +1714,8 @@ mod tests {
         assert!((mini.input - 0.25).abs() < 0.001, "gpt-5.1-codex-mini input must be $0.25, got ${}", mini.input);
         assert!((mini.output - 2.00).abs() < 0.001);
         let base = get_codex_pricing("gpt-5.1");
-        assert!((base.input - 0.625).abs() < 0.001, "gpt-5.1 input must be $0.625, got ${}", base.input);
-        assert!((base.output - 5.00).abs() < 0.001);
+        assert!((base.input - 1.25).abs() < 0.001, "gpt-5.1 input must be $1.25, got ${}", base.input);
+        assert!((base.output - 10.00).abs() < 0.001);
     }
 
     // "gpt-5" base must resolve to its own entry, not be shadowed by a gpt-5.x
