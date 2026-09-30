@@ -1569,8 +1569,8 @@ mod tests {
     #[test]
     fn test_pricing_models() {
         let o3 = pricing::get_codex_pricing("o3-2025-04-16");
-        assert!((o3.input - 0.40).abs() < 0.001);
-        assert!((o3.output - 1.60).abs() < 0.001);
+        assert!((o3.input - 2.00).abs() < 0.001);
+        assert!((o3.output - 8.00).abs() < 0.001);
 
         let o4mini = pricing::get_codex_pricing("o4-mini-2025-04-16");
         assert!((o4mini.input - 1.10).abs() < 0.001);
