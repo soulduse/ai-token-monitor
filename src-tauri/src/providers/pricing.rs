@@ -1864,6 +1864,22 @@ mod tests {
         assert!((after.input - 1.50).abs() < 0.001 && (after.output - 7.50).abs() < 0.001);
     }
 
+    // Gemini 4 Argon (announced 2026-09-30, no public API id yet) must not fall
+    // through to the bare "gemini" catch-all and bill at 2.5 Pro rates.
+    #[test]
+    fn gemini_4_not_billed_as_25_pro() {
+        for model in ["gemini-4-argon", "gemini-4-argon-preview", "google/gemini-4"] {
+            let id = normalize_model_id(model);
+            let g = get_gemini_pricing(&id);
+            let o = get_opencode_pricing(&id);
+            for (input, output, cache_read) in [(g.input, g.output, g.cache_read), (o.input, o.output, o.cache_read)] {
+                assert!((input - 2.00).abs() < 0.001, "{model} input must be $2/MTok, got ${input}");
+                assert!((output - 10.00).abs() < 0.001, "{model}");
+                assert!((cache_read - 0.10).abs() < 0.001, "{model}");
+            }
+        }
+    }
+
     // Gemini 3 Flash and 2.5 Flash-Lite must match their own entries instead of
     // falling through the substring chain to "gemini-3" (Pro) / "gemini-2.5-flash".
     #[test]
