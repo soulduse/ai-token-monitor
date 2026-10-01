@@ -1,6 +1,6 @@
 {
-  "version": "1.17.0",
-  "last_updated": "2026-09-30",
+  "version": "1.18.0",
+  "last_updated": "2026-10-01",
   "sources": {
     "claude": "https://platform.claude.com/docs/en/about-claude/pricing",
     "codex": "https://developers.openai.com/api/docs/pricing",
@@ -160,6 +160,7 @@
       { "match": "o3-mini",           "label": "o3-mini",                  "input": 1.10,  "output": 4.40,   "cache_read": 0.55,  "cache_write": 0.0    },
       { "match": "o3",                "label": "o3",                       "input": 2.00,  "output": 8.00,   "cache_read": 0.50,  "cache_write": 0.0    },
       { "match": "codex-mini",        "label": "codex-mini",               "input": 1.50,  "output": 6.00,   "cache_read": 0.025, "cache_write": 0.0    },
+      { "match": "gemini-4", "label": "Gemini 4 Argon", "input": 2.00, "output": 10.00, "cache_read": 0.10, "cache_write": 0.0 },
       { "match": "gemini-3.8-flash", "label": "Gemini 3.8 Flash", "input": 0.75, "output": 3.75, "cache_read": 0.075, "cache_write": 0.0, "scheduled": [{ "from": "2027-01-01", "input": 1.50, "output": 7.50, "cache_read": 0.15 }] },
       { "match": "gemini-3.7-flash", "label": "Gemini 3.7 Flash", "input": 0.75, "output": 3.75, "cache_read": 0.075, "cache_write": 0.0, "scheduled": [{ "from": "2027-01-01", "input": 1.50, "output": 7.50, "cache_read": 0.15 }] },
       { "match": "gemini-3.6-flash", "label": "Gemini 3.6 Flash", "input": 0.75, "output": 3.75, "cache_read": 0.075, "cache_write": 0.0, "scheduled": [{ "from": "2027-01-01", "input": 1.50, "output": 7.50, "cache_read": 0.15 }] },
@@ -221,6 +222,7 @@
   "gemini": {
     "default": "gemini-2.5-pro",
     "models": [
+      { "match": "gemini-4", "label": "Gemini 4 Argon", "input": 2.00, "output": 10.00, "cache_read": 0.10, "cache_write": 0.0 },
       { "match": "gemini-3.8-flash", "label": "Gemini 3.8 Flash", "input": 0.75, "output": 3.75, "cache_read": 0.075, "cache_write": 0.0, "scheduled": [{ "from": "2027-01-01", "input": 1.50, "output": 7.50, "cache_read": 0.15 }] },
       { "match": "gemini-3.7-flash", "label": "Gemini 3.7 Flash", "input": 0.75, "output": 3.75, "cache_read": 0.075, "cache_write": 0.0, "scheduled": [{ "from": "2027-01-01", "input": 1.50, "output": 7.50, "cache_read": 0.15 }] },
       { "match": "gemini-3.6-flash", "label": "Gemini 3.6 Flash", "input": 0.75, "output": 3.75, "cache_read": 0.075, "cache_write": 0.0, "scheduled": [{ "from": "2027-01-01", "input": 1.50, "output": 7.50, "cache_read": 0.15 }] },
