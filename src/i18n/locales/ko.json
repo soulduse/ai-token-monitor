@@ -320,6 +320,7 @@
   "chat.translating": "번역 중...",
   "chat.translateReply": "답글 번역",
   "chat.translateError.cliOutdated": "Claude CLI 버전이 낮아 번역할 수 없습니다. `claude update`를 실행한 뒤 다시 시도하세요.",
+  "chat.translateError.claudeNotLoggedIn": "이 앱에서 Claude CLI 인증에 실패했습니다. 터미널에서 `claude`를 실행해 로그인한 뒤 다시 시도하세요. (셸에만 설정한 ANTHROPIC_* 키·프록시는 앱에 전달되지 않습니다)",
   "chat.translateError.codexOutdated": "Codex CLI 버전이 낮아 번역할 수 없습니다. 업데이트(`codex update` 또는 `npm i -g @openai/codex`)한 뒤 다시 시도하세요.",
   "chat.translateError.codexNotLoggedIn": "Codex CLI에 로그인되어 있지 않습니다. `codex login`을 실행한 뒤 다시 시도하세요.",
   "chat.translateError.codexModel": "Codex CLI에서 {{model}} 모델을 사용할 수 없습니다. AI_TOKEN_MONITOR_CODEX_MODEL에 계정에서 지원하는 모델을 지정하세요.",

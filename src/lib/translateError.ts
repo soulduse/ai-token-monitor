@@ -16,6 +16,7 @@ export function describeTranslateError(raw: string, t: Translate): string {
   if (raw.includes("Codex CLI") && raw.includes("translation discarded")) {
     return t("chat.translateError.codexToolUse");
   }
+  if (raw.includes("Claude CLI is not logged in")) return t("chat.translateError.claudeNotLoggedIn");
   if (raw.includes("too old for translation")) return t("chat.translateError.cliOutdated");
   if (raw.includes("No gemini or claude CLI found")) return t("chat.translateError.noCli");
   const notFound = raw.match(/^(\w+) CLI not found/);

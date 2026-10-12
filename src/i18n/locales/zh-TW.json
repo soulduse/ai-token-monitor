@@ -314,6 +314,7 @@
   "chat.translating": "翻譯中...",
   "chat.translateReply": "翻譯回覆",
   "chat.translateError.cliOutdated": "Claude CLI 版本過舊，無法翻譯。請執行 `claude update` 後再試一次。",
+  "chat.translateError.claudeNotLoggedIn": "本應用程式無法通過 Claude CLI 驗證。請在終端機執行 `claude` 並登入後再試一次（僅在 shell 中設定的 ANTHROPIC_* 金鑰或代理不會傳給本應用程式）。",
   "chat.translateError.codexOutdated": "Codex CLI 版本過舊，無法翻譯。請更新（`codex update` 或 `npm i -g @openai/codex`）後再試一次。",
   "chat.translateError.codexNotLoggedIn": "Codex CLI 尚未登入。請執行 `codex login` 後再試一次。",
   "chat.translateError.codexModel": "Codex CLI 無法使用模型 {{model}}。請將 AI_TOKEN_MONITOR_CODEX_MODEL 設為您的帳戶支援的模型。",
