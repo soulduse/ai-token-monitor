@@ -314,6 +314,7 @@
   "chat.translating": "Traduzione...",
   "chat.translateReply": "Traduci risposta",
   "chat.translateError.cliOutdated": "La CLI di Claude è troppo vecchia per tradurre. Esegui `claude update` e riprova.",
+  "chat.translateError.claudeNotLoggedIn": "La CLI di Claude non ha effettuato l'accesso per questa app. Esegui `claude` in un terminale e accedi (una chiave o un proxy ANTHROPIC_* impostato solo nella shell non è visibile all'app), poi riprova.",
   "chat.translateError.codexOutdated": "La CLI di Codex è troppo vecchia per tradurre. Aggiornala (`codex update` o `npm i -g @openai/codex`) e riprova.",
   "chat.translateError.codexNotLoggedIn": "La CLI di Codex non ha effettuato l'accesso. Esegui `codex login` e riprova.",
   "chat.translateError.codexModel": "La CLI di Codex non può usare il modello {{model}}. Imposta AI_TOKEN_MONITOR_CODEX_MODEL su un modello supportato dal tuo account.",

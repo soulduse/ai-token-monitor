@@ -314,6 +314,7 @@
   "chat.translating": "翻訳中...",
   "chat.translateReply": "返信を翻訳",
   "chat.translateError.cliOutdated": "Claude CLIのバージョンが古いため翻訳できません。`claude update` を実行してから再試行してください。",
+  "chat.translateError.claudeNotLoggedIn": "このアプリから Claude CLI の認証に失敗しました。ターミナルで `claude` を実行してログインしてから再試行してください（シェルだけで設定した ANTHROPIC_* キーやプロキシはアプリに渡りません）。",
   "chat.translateError.codexOutdated": "Codex CLIのバージョンが古いため翻訳できません。更新（`codex update` または `npm i -g @openai/codex`）してから再試行してください。",
   "chat.translateError.codexNotLoggedIn": "Codex CLIにログインしていません。`codex login` を実行してから再試行してください。",
   "chat.translateError.codexModel": "Codex CLIでモデル {{model}} を使用できません。AI_TOKEN_MONITOR_CODEX_MODEL にアカウントで利用できるモデルを指定してください。",

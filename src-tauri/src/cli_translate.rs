@@ -381,13 +381,31 @@ fn call_claude_cli(prompt: &str) -> Result<String, String> {
         .arg("--disable-slash-commands")
         .arg("--system-prompt")
         .arg(TRANSLATOR_SYSTEM_PROMPT);
-    run_with_timeout(cmd, prompt).map_err(|e| {
-        if e.contains("unknown option") {
-            "Claude CLI is too old for translation. Run `claude update` and try again.".to_string()
-        } else {
-            e
-        }
-    })
+    run_with_timeout(cmd, prompt).map_err(|e| claude_error(&e))
+}
+
+/// `--tools ""` leaves the user's `Read(...)`/`Edit(...)` deny rules pointing
+/// at no tool, and claude prints one warning per rule on stderr. Those lines
+/// say nothing about the failure and bury the real error in the error bar.
+fn claude_error(raw: &str) -> String {
+    let body = raw.strip_prefix("CLI failed: ").unwrap_or(raw);
+    let cleaned = body
+        .lines()
+        .filter(|line| !(line.starts_with("Permission deny rule") && line.contains("matches no known tool")))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if cleaned.contains("unknown option") {
+        "Claude CLI is too old for translation. Run `claude update` and try again.".to_string()
+    } else if cleaned.contains("Failed to authenticate")
+        || cleaned.contains("Not logged in")
+        || cleaned.contains("Invalid API key")
+    {
+        "Claude CLI is not logged in. Run `claude` and sign in, then try again.".to_string()
+    } else if body.len() == raw.len() {
+        cleaned
+    } else {
+        format!("CLI failed: {}", cleaned)
+    }
 }
 
 const TRANSLATOR_SYSTEM_PROMPT: &str = "You are a translation engine. \
@@ -421,13 +439,44 @@ const CODEX_DISABLED_FEATURES: [&str; 20] = [
     "sleep_tool",
 ];
 
-/// Resolve the Codex model: `AI_TOKEN_MONITOR_CODEX_MODEL`, else `gpt-6-luna`
-/// — a light model is plenty for translation.
+const DEFAULT_CODEX_MODEL: &str = "gpt-6-luna";
+
+/// Resolve the Codex model: `AI_TOKEN_MONITOR_CODEX_MODEL`, else the newest
+/// `*-luna` model the CLI's own model cache lists, else `gpt-6-luna` — a light
+/// model is plenty for translation. The backend gates models on the account
+/// and the CLI version (codex 0.153 is refused gpt-6-luna), and the cache it
+/// writes is exactly that per-install list.
 fn resolve_codex_model() -> String {
     std::env::var("AI_TOKEN_MONITOR_CODEX_MODEL")
         .ok()
         .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| "gpt-6-luna".to_string())
+        .or_else(|| codex_models_cache().as_ref().and_then(newest_luna_model))
+        .unwrap_or_else(|| DEFAULT_CODEX_MODEL.to_string())
+}
+
+/// `$CODEX_HOME/models_cache.json` (default `~/.codex`), as codex itself reads it.
+fn codex_models_cache() -> Option<Value> {
+    let home = std::env::var_os("CODEX_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|h| h.join(".codex")))?;
+    let text = std::fs::read_to_string(home.join("models_cache.json")).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+/// The highest-versioned `gpt-<version>-luna` slug in a models cache.
+fn newest_luna_model(cache: &Value) -> Option<String> {
+    cache["models"]
+        .as_array()?
+        .iter()
+        .filter_map(|m| m["slug"].as_str())
+        .filter_map(|slug| {
+            let version = slug.strip_prefix("gpt-")?.strip_suffix("-luna")?;
+            let parts: Vec<u32> = version.split('.').map(|p| p.parse().ok()).collect::<Option<_>>()?;
+            Some((parts, slug))
+        })
+        .max_by(|a, b| a.0.cmp(&b.0))
+        .map(|(_, slug)| slug.to_string())
 }
 
 /// Model metadata for the chosen model, replacing what codex fetches from the
@@ -970,13 +1019,40 @@ mod tests {
 
     #[test]
     fn resolve_codex_model_env_contract() {
-        unsafe { std::env::remove_var("AI_TOKEN_MONITOR_CODEX_MODEL") };
-        assert_eq!(resolve_codex_model(), "gpt-6-luna");
         unsafe { std::env::set_var("AI_TOKEN_MONITOR_CODEX_MODEL", "gpt-5.6-luna") };
         assert_eq!(resolve_codex_model(), "gpt-5.6-luna");
+        // A blank override falls through to the cache or the default.
         unsafe { std::env::set_var("AI_TOKEN_MONITOR_CODEX_MODEL", " ") };
-        assert_eq!(resolve_codex_model(), "gpt-6-luna");
+        assert!(resolve_codex_model().ends_with("-luna"));
         unsafe { std::env::remove_var("AI_TOKEN_MONITOR_CODEX_MODEL") };
+    }
+
+    #[test]
+    fn newest_luna_model_follows_the_cli_cache() {
+        // codex 0.153's list: no gpt-6-luna, so the older luna is chosen.
+        let old_cli = json!({ "models": [
+            { "slug": "gpt-6-astra" }, { "slug": "gpt-5.6-sol" },
+            { "slug": "gpt-5.6-luna" }, { "slug": "gpt-5.5" },
+        ]});
+        assert_eq!(newest_luna_model(&old_cli).as_deref(), Some("gpt-5.6-luna"));
+        // Order in the cache does not matter; versions compare numerically.
+        let new_cli = json!({ "models": [
+            { "slug": "gpt-5.6-luna" }, { "slug": "gpt-6-luna" }, { "slug": "gpt-5.10-luna" },
+        ]});
+        assert_eq!(newest_luna_model(&new_cli).as_deref(), Some("gpt-6-luna"));
+        assert_eq!(newest_luna_model(&json!({ "models": [{ "slug": "gpt-x-luna" }] })), None);
+        assert_eq!(newest_luna_model(&json!({})), None);
+    }
+
+    #[test]
+    fn claude_error_drops_deny_rule_warnings() {
+        let stderr = "CLI failed: Permission deny rule \"Edit ~/.bashrc\" matches no known tool — check for typos.\n\
+Permission deny rule \"Read ~/.netrc\" matches no known tool — check for typos.\n\
+Failed to authenticate: OAuth session expired and could not be refreshed";
+        assert_eq!(claude_error(stderr), "Claude CLI is not logged in. Run `claude` and sign in, then try again.");
+        let other = "CLI failed: Permission deny rule \"Edit ~/.zshrc\" matches no known tool — check for typos.\nboom";
+        assert_eq!(claude_error(other), "CLI failed: boom");
+        assert!(claude_error("error: unknown option '--safe-mode'").contains("too old"));
     }
 
     fn reply_of(stdout: &str) -> Result<String, String> {

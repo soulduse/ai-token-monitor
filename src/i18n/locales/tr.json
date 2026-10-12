@@ -314,6 +314,7 @@
   "chat.translating": "Çevriliyor...",
   "chat.translateReply": "Yanıtı çevir",
   "chat.translateError.cliOutdated": "Claude CLI çeviri için çok eski. `claude update` komutunu çalıştırıp tekrar deneyin.",
+  "chat.translateError.claudeNotLoggedIn": "Claude CLI bu uygulama için oturum açmamış. Bir terminalde `claude` çalıştırıp oturum açın (yalnızca kabukta ayarlanan ANTHROPIC_* anahtarı veya proxy uygulamaya görünmez), sonra tekrar deneyin.",
   "chat.translateError.codexOutdated": "Codex CLI çeviri için çok eski. Güncelleyip (`codex update` veya `npm i -g @openai/codex`) tekrar deneyin.",
   "chat.translateError.codexNotLoggedIn": "Codex CLI'de oturum açılmamış. `codex login` komutunu çalıştırıp tekrar deneyin.",
   "chat.translateError.codexModel": "Codex CLI {{model}} modelini kullanamıyor. AI_TOKEN_MONITOR_CODEX_MODEL değerini hesabınızın desteklediği bir modele ayarlayın.",
