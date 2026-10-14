@@ -71,6 +71,12 @@ struct HighContextTier {
     output: f64,
     #[serde(default)]
     cached_input: f64,
+    /// Long-context cache write rates. Only Anthropic raises these with the
+    /// tier (Haiku 5.5); 0 keeps the base cache write rate.
+    #[serde(default)]
+    cache_write: f64,
+    #[serde(default)]
+    cache_write_1h: f64,
 }
 
 /// A price override that takes effect on `from` (inclusive, UTC). Any price
@@ -175,6 +181,7 @@ pub struct OpenCodePricing {
     pub high_input: f64,
     pub high_output: f64,
     pub high_cache_read: f64,
+    pub high_cache_write: f64,
 }
 
 impl OpenCodePricing {
@@ -188,6 +195,7 @@ impl OpenCodePricing {
             high_input: input,
             high_output: output,
             high_cache_read: cache_read,
+            high_cache_write: cache_write,
         }
     }
 
@@ -196,7 +204,7 @@ impl OpenCodePricing {
     /// higher rates once its prompt exceeds the threshold.
     pub fn tier_for(&self, prompt_tokens: u64) -> (f64, f64, f64, f64) {
         if self.high_threshold_tokens > 0 && prompt_tokens > self.high_threshold_tokens {
-            (self.high_input, self.high_output, self.high_cache_read, self.cache_write)
+            (self.high_input, self.high_output, self.high_cache_read, self.high_cache_write)
         } else {
             (self.input, self.output, self.cache_read, self.cache_write)
         }
@@ -597,11 +605,12 @@ pub fn get_grok_pricing(model: &str) -> GrokPricing {
     }
 }
 
-/// Claude-log cost lookup that applies Grok's per-request high-context tier.
+/// Claude-log cost lookup that applies per-request long-context tiers (Grok's
+/// 200k doubling, Haiku 5.5's 100k tier).
 ///
-/// [`get_claude_pricing`] can only return one flat rate, so a Grok id found in
-/// a Claude-shaped log would otherwise skip the 200k doubling. Call this at
-/// cost time with the full prompt size (`input + cache_read`).
+/// [`get_claude_pricing`] can only return one flat rate, so these tiers would
+/// otherwise be skipped. Call this at cost time with the full prompt size
+/// (`input + cache_read + cache writes`).
 pub fn claude_pricing_for(model: &str, prompt_tokens: u64) -> ClaudePricing {
     let canonical = canonical_model(model);
     if foreign_table(&canonical) == Some("grok") {
@@ -614,7 +623,20 @@ pub fn claude_pricing_for(model: &str, prompt_tokens: u64) -> ClaudePricing {
             cache_write_1h: 0.0,
         };
     }
-    get_claude_pricing(model)
+    let mut p = get_claude_pricing(model);
+    // Haiku 5.5 bills the whole request at higher rates once its prompt is
+    // over 100k tokens (Anthropic counts cache reads and writes in the prompt).
+    if foreign_table(&canonical).is_none() {
+        let high = resolved_pricing(&config().claude, "claude", model).high_context;
+        if let Some(h) = high.filter(|h| prompt_tokens > h.threshold_tokens) {
+            p.input = h.input;
+            p.output = h.output;
+            p.cache_read = h.cached_input;
+            if h.cache_write > 0.0 { p.cache_write_5m = h.cache_write; }
+            if h.cache_write_1h > 0.0 { p.cache_write_1h = h.cache_write_1h; }
+        }
+    }
+    p
 }
 
 pub fn get_opencode_pricing(model: &str) -> OpenCodePricing {
@@ -629,6 +651,7 @@ pub fn get_opencode_pricing(model: &str) -> OpenCodePricing {
             high_input: high.map_or(p.input, |h| h.input),
             high_output: high.map_or(p.output, |h| h.output),
             high_cache_read: high.map_or(p.cache_read, |h| h.cached_input),
+            high_cache_write: high.filter(|h| h.cache_write > 0.0).map_or(p.cache_write, |h| h.cache_write),
             ..OpenCodePricing::flat(p.input, p.output, p.cache_read, p.cache_write)
         };
     }
@@ -1149,11 +1172,13 @@ mod tests {
             let p = get_claude_pricing(id);
             assert!((p.input - 2.0).abs() < 0.001, "{id} input must be $2/MTok, got ${}", p.input);
             assert!((p.output - 10.0).abs() < 0.001, "{id} output must be $10/MTok, got ${}", p.output);
-            assert!((p.cache_read - 0.20).abs() < 0.001);
+            // Cache hits are 0.05x base on Sonnet 5.5 (Sonnet 5 stays at 0.1x).
+            assert!((p.cache_read - 0.10).abs() < 0.001, "{id} cache read must be $0.10/MTok, got ${}", p.cache_read);
             assert!((p.cache_write_5m - 2.50).abs() < 0.001);
             assert!((p.cache_write_1h - 4.0).abs() < 0.001);
         }
         assert_eq!(find_pricing(&cfg.claude, "claude-sonnet-5").label, "Sonnet 5");
+        assert!((get_claude_pricing("claude-sonnet-5").cache_read - 0.20).abs() < 0.001);
     }
 
     #[test]
@@ -1164,7 +1189,48 @@ mod tests {
         let p = get_opencode_pricing("anthropic/claude-sonnet-5-5");
         assert!((p.input - 2.0).abs() < 0.001);
         assert!((p.output - 10.0).abs() < 0.001);
-        assert!((p.cache_read - 0.20).abs() < 0.001);
+        assert!((p.cache_read - 0.10).abs() < 0.001);
+    }
+
+    // Regression guard: "claude-haiku-5-5" (released 2026-10-07) contains
+    // "haiku". Without its own entry it falls through to Haiku 4.5 ($1/$5) and
+    // is over-billed 10x.
+    #[test]
+    fn claude_haiku_5_5_not_billed_as_haiku_45() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        for id in ["claude-haiku-5-5", "claude-haiku-5-5-20261007", "claude-haiku-5.5"] {
+            assert_eq!(find_pricing(&cfg.claude, id).label, "Haiku 5.5", "{id}");
+            let p = claude_pricing_for(id, 50_000);
+            assert!((p.input - 0.10).abs() < 0.001, "{id} input must be $0.10/MTok, got ${}", p.input);
+            assert!((p.output - 0.50).abs() < 0.001, "{id}");
+            assert!((p.cache_read - 0.01).abs() < 0.0001, "{id}");
+            assert!((p.cache_write_5m - 0.125).abs() < 0.0001, "{id}");
+            assert!((p.cache_write_1h - 0.20).abs() < 0.0001, "{id}");
+        }
+    }
+
+    // Haiku 5.5 bills a whole request at 5x once its prompt is over 100k
+    // tokens; exactly 100k stays on the base tier.
+    #[test]
+    fn claude_haiku_5_5_long_prompt_tier() {
+        let base = claude_pricing_for("claude-haiku-5-5", 100_000);
+        assert!((base.input - 0.10).abs() < 0.001);
+        let high = claude_pricing_for("claude-haiku-5-5", 100_001);
+        assert!((high.input - 0.50).abs() < 0.001, "input must be $0.50/MTok over 100k, got ${}", high.input);
+        assert!((high.output - 2.50).abs() < 0.001);
+        assert!((high.cache_read - 0.05).abs() < 0.0001);
+        assert!((high.cache_write_5m - 0.625).abs() < 0.0001);
+        assert!((high.cache_write_1h - 1.00).abs() < 0.0001);
+        // Models without a tier are unaffected by prompt size.
+        let opus = claude_pricing_for("claude-opus-5-5", 900_000);
+        assert!((opus.input - 4.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn opencode_haiku_5_5_long_prompt_tier() {
+        let p = get_opencode_pricing("anthropic/claude-haiku-5-5");
+        assert_eq!(p.tier_for(100_000), (0.10, 0.50, 0.01, 0.125));
+        assert_eq!(p.tier_for(100_001), (0.50, 2.50, 0.05, 0.625));
     }
 
     #[test]
@@ -1634,6 +1700,21 @@ mod tests {
         assert!((oc.cache_write - 15.625).abs() < 0.001);
     }
 
+    // GPT-Rosalind (life sciences, billed from 2026-10-05) matches no gpt-5/6
+    // pattern and would otherwise bill at the gpt-5.4 default ($2.50/$15).
+    #[test]
+    fn codex_gpt_rosalind_not_billed_as_default() {
+        for id in ["gpt-rosalind-research", "gpt-rosalind-discovery"] {
+            let p = get_codex_pricing(id);
+            assert!((p.input - 5.00).abs() < 0.001, "{id} input must be $5/MTok, got ${}", p.input);
+            assert!((p.output - 25.00).abs() < 0.001, "{id}");
+            assert!((p.cached_input - 0.50).abs() < 0.001, "{id}");
+            let oc = get_opencode_pricing(&format!("openai/{id}"));
+            assert!((oc.input - 5.00).abs() < 0.001, "opencode {id}");
+            assert_eq!(oc.cache_write, 0.0, "opencode {id}");
+        }
+    }
+
     #[test]
     fn opencode_gpt6_sol_luna_pricing() {
         let sol = get_opencode_pricing("openai/gpt-6-sol");
@@ -1864,18 +1945,26 @@ mod tests {
         assert!((after.input - 1.50).abs() < 0.001 && (after.output - 7.50).abs() < 0.001);
     }
 
-    // Gemini 4 Argon (announced 2026-09-30, no public API id yet) must not fall
-    // through to the bare "gemini" catch-all and bill at 2.5 Pro rates.
+    // Gemini 4 Argon (GA 2026-10-13 as `gemini-4-argon`) must not fall
+    // through to the bare "gemini" catch-all and bill at 2.5 Pro rates. Its
+    // intro price ($2/$10, cache $0.10) runs through 2026-11-30, then doubles.
     #[test]
     fn gemini_4_not_billed_as_25_pro() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let tables = [cfg.gemini.as_ref().expect("gemini table"), cfg.opencode.as_ref().expect("opencode table")];
         for model in ["gemini-4-argon", "gemini-4-argon-preview", "google/gemini-4"] {
             let id = normalize_model_id(model);
-            let g = get_gemini_pricing(&id);
-            let o = get_opencode_pricing(&id);
-            for (input, output, cache_read) in [(g.input, g.output, g.cache_read), (o.input, o.output, o.cache_read)] {
-                assert!((input - 2.00).abs() < 0.001, "{model} input must be $2/MTok, got ${input}");
-                assert!((output - 10.00).abs() < 0.001, "{model}");
-                assert!((cache_read - 0.10).abs() < 0.001, "{model}");
+            for table in tables {
+                let entry = find_pricing(table, &canonical_model(&id));
+                assert_eq!(entry.label, "Gemini 4 Argon", "{model}");
+                let intro = entry.resolve_for("2026-11-30");
+                assert!((intro.input - 2.00).abs() < 0.001, "{model} input must be $2/MTok, got ${}", intro.input);
+                assert!((intro.output - 10.00).abs() < 0.001, "{model}");
+                assert!((intro.cache_read - 0.10).abs() < 0.001, "{model}");
+                let standard = entry.resolve_for("2026-12-01");
+                assert!((standard.input - 4.00).abs() < 0.001, "{model} input must be $4/MTok from Dec 1, got ${}", standard.input);
+                assert!((standard.output - 20.00).abs() < 0.001, "{model}");
+                assert!((standard.cache_read - 0.20).abs() < 0.001, "{model}");
             }
         }
     }

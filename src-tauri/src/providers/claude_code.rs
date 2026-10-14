@@ -383,7 +383,7 @@ impl ClaudeCodeProvider {
                 first_date = Some(entry.date.clone());
             }
 
-            let prompt = entry.input_tokens + entry.cache_read_input_tokens;
+            let prompt = entry.prompt_tokens();
             let pricing = pricing::claude_pricing_for(&entry.model, prompt);
             let cost = calculate_cost(
                 &pricing, entry.input_tokens, entry.output_tokens,
@@ -505,6 +505,12 @@ struct SessionEntry {
 }
 
 impl SessionEntry {
+    /// Prompt size used to pick a long-context price tier. Anthropic counts
+    /// every input token, including cache reads and writes.
+    fn prompt_tokens(&self) -> u64 {
+        self.input_tokens + self.cache_read_input_tokens + self.cache_creation_input_tokens
+    }
+
     /// Whether this record should replace `other` under the same dedup key.
     /// Subagent sidechains can log one API call to several files with different
     /// usage (#184); the most complete record (largest output, then largest
@@ -719,7 +725,7 @@ fn build_analytics(entries: &HashMap<String, SessionEntry>) -> AnalyticsData {
         // Project usage — derive project name from cwd
         if !entry.cwd.is_empty() {
             let project_name = entry.cwd.rsplit('/').next().unwrap_or(&entry.cwd).to_string();
-            let prompt = entry.input_tokens + entry.cache_read_input_tokens;
+            let prompt = entry.prompt_tokens();
             let pricing = pricing::claude_pricing_for(&entry.model, prompt);
             let cost = calculate_cost(
                 &pricing, entry.input_tokens, entry.output_tokens,
@@ -761,7 +767,7 @@ fn build_analytics(entries: &HashMap<String, SessionEntry>) -> AnalyticsData {
 
         // Activity classification (tool-pattern based)
         let category = classify_activity(&entry.tool_names, &entry.bash_commands);
-        let prompt = entry.input_tokens + entry.cache_read_input_tokens;
+        let prompt = entry.prompt_tokens();
         let pricing = pricing::claude_pricing_for(&entry.model, prompt);
         let entry_cost = calculate_cost(
             &pricing, entry.input_tokens, entry.output_tokens,
@@ -877,7 +883,7 @@ fn aggregate_entries(
             first_date = Some(entry.date.clone());
         }
 
-        let prompt = entry.input_tokens + entry.cache_read_input_tokens;
+        let prompt = entry.prompt_tokens();
         let pricing = pricing::claude_pricing_for(&entry.model, prompt);
         let cost = calculate_cost(
             &pricing, entry.input_tokens, entry.output_tokens,
