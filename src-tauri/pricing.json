@@ -1,11 +1,14 @@
 {
-  "version": "1.19.0",
-  "last_updated": "2026-10-14",
+  "version": "1.20.0",
+  "last_updated": "2026-10-23",
   "sources": {
     "claude": "https://platform.claude.com/docs/en/about-claude/pricing",
     "codex": "https://developers.openai.com/api/docs/pricing",
     "grok": "https://docs.x.ai/docs/models",
-    "gemini": "https://ai.google.dev/gemini-api/docs/pricing"
+    "gemini": "https://ai.google.dev/gemini-api/docs/pricing",
+    "kimi": "https://platform.kimi.ai/docs/pricing/chat",
+    "glm": "https://docs.z.ai/guides/overview/pricing",
+    "deepseek": "https://api-docs.deepseek.com/quick_start/pricing"
   },
   "claude": {
     "default": "sonnet",
@@ -182,6 +185,9 @@
       { "match": "gemini-2.0-flash", "label": "Gemini 2.0 Flash", "input": 0.10, "output": 0.40, "cache_read": 0.025, "cache_write": 0.0 },
       { "match": "gemma", "label": "Gemma 4 (free tier only)", "input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_write": 0.0 },
       { "match": "gemini", "label": "Gemini 2.5 Pro", "input": 1.25, "output": 10.00, "cache_read": 0.125, "cache_write": 0.0, "high_context": { "threshold_tokens": 200000, "input": 2.50, "output": 15.00, "cached_input": 0.25 } },
+      { "match": "deepseek-v4-pro",   "label": "DeepSeek V4 Pro (off-peak)",   "input": 0.66,  "output": 1.98,   "cache_read": 0.022, "cache_write": 0.0    },
+      { "match": "deepseek-v4-flash", "label": "DeepSeek V4.1 Flash (off-peak)", "input": 0.15, "output": 0.60,  "cache_read": 0.003, "cache_write": 0.0    },
+      { "match": "deepseek-flash",    "label": "DeepSeek V4.1 Flash (off-peak)", "input": 0.15, "output": 0.60,  "cache_read": 0.003, "cache_write": 0.0    },
       { "match": "deepseek-chat",     "label": "DeepSeek V3",              "input": 0.27,  "output": 1.10,   "cache_read": 0.07,  "cache_write": 0.0    },
       { "match": "deepseek-reasoner", "label": "DeepSeek R1",              "input": 0.55,  "output": 2.19,   "cache_read": 0.14,  "cache_write": 0.0    },
       { "match": "deepseek",          "label": "DeepSeek V3",              "input": 0.27,  "output": 1.10,   "cache_read": 0.07,  "cache_write": 0.0    }
@@ -190,6 +196,10 @@
   "kimi": {
     "default": "kimi-k2",
     "models": [
+      { "match": "kimi-k3",                  "label": "Kimi K3",                  "input": 3.00, "output": 15.00, "cache_read": 0.30, "cache_write": 3.00, "cache_write_1h": 6.00 },
+      { "match": "kimi-k2.7-code-highspeed", "label": "Kimi K2.7 Code HighSpeed", "input": 1.90, "output": 8.00,  "cache_read": 0.38, "cache_write": 0.0 },
+      { "match": "kimi-k2.7-code",           "label": "Kimi K2.7 Code",           "input": 0.95, "output": 4.00,  "cache_read": 0.19, "cache_write": 0.0 },
+      { "match": "kimi-k2.6",                "label": "Kimi K2.6",                "input": 0.95, "output": 4.00,  "cache_read": 0.16, "cache_write": 0.0 },
       { "match": "kimi-k2-instruct", "label": "Kimi K2 Instruct", "input": 0.60, "output": 2.00, "cache_read": 0.0, "cache_write": 0.0 },
       { "match": "kimi-k2",          "label": "Kimi K2",          "input": 0.60, "output": 2.00, "cache_read": 0.0, "cache_write": 0.0 },
       { "match": "kimi-k1.5",        "label": "Kimi K1.5",        "input": 0.40, "output": 1.20, "cache_read": 0.0, "cache_write": 0.0 },
@@ -200,8 +210,22 @@
   "glm": {
     "default": "glm-4",
     "models": [
-      { "match": "glm-5-turbo", "label": "GLM-5 Turbo", "input": 0.50, "output": 1.00, "cache_read": 0.0, "cache_write": 0.0 },
-      { "match": "glm-5",      "label": "GLM-5",       "input": 1.00, "output": 2.00, "cache_read": 0.0, "cache_write": 0.0 },
+      { "match": "glm-5.3-flashx", "label": "GLM-5.3 FlashX",  "input": 0.37, "output": 1.25, "cache_read": 0.075, "cache_write": 0.0 },
+      { "match": "glm-5.3-flash",  "label": "GLM-5.3 Flash",   "input": 0.15, "output": 0.50, "cache_read": 0.03,  "cache_write": 0.0 },
+      { "match": "glm-5.3",        "label": "GLM-5.3/5.2/5.1", "input": 1.40, "output": 4.40, "cache_read": 0.26,  "cache_write": 0.0 },
+      { "match": "glm-5.2",        "label": "GLM-5.3/5.2/5.1", "input": 1.40, "output": 4.40, "cache_read": 0.26,  "cache_write": 0.0 },
+      { "match": "glm-5.1",        "label": "GLM-5.3/5.2/5.1", "input": 1.40, "output": 4.40, "cache_read": 0.26,  "cache_write": 0.0 },
+      { "match": "glm-5-turbo",    "label": "GLM-5 Turbo",     "input": 0.50, "output": 1.00, "cache_read": 0.0,   "cache_write": 0.0 },
+      { "match": "glm-5",          "label": "GLM-5",           "input": 1.00, "output": 3.20, "cache_read": 0.20,  "cache_write": 0.0 },
+      { "match": "glm-4.7-flashx", "label": "GLM-4.7 FlashX",  "input": 0.07, "output": 0.40, "cache_read": 0.01,  "cache_write": 0.0 },
+      { "match": "glm-4.7-flash",  "label": "GLM-4.7 Flash (free)", "input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_write": 0.0 },
+      { "match": "glm-4.7",        "label": "GLM-4.7/4.6/4.5", "input": 0.60, "output": 2.20, "cache_read": 0.11,  "cache_write": 0.0 },
+      { "match": "glm-4.6",        "label": "GLM-4.7/4.6/4.5", "input": 0.60, "output": 2.20, "cache_read": 0.11,  "cache_write": 0.0 },
+      { "match": "glm-4.5-airx",   "label": "GLM-4.5 AirX",    "input": 1.10, "output": 4.50, "cache_read": 0.22,  "cache_write": 0.0 },
+      { "match": "glm-4.5-air",    "label": "GLM-4.5 Air",     "input": 0.20, "output": 1.10, "cache_read": 0.03,  "cache_write": 0.0 },
+      { "match": "glm-4.5-x",      "label": "GLM-4.5 X",       "input": 2.20, "output": 8.90, "cache_read": 0.45,  "cache_write": 0.0 },
+      { "match": "glm-4.5-flash",  "label": "GLM-4.5 Flash (free)", "input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_write": 0.0 },
+      { "match": "glm-4.5",        "label": "GLM-4.7/4.6/4.5", "input": 0.60, "output": 2.20, "cache_read": 0.11,  "cache_write": 0.0 },
       { "match": "glm-4",      "label": "GLM-4",       "input": 0.50, "output": 1.00, "cache_read": 0.0, "cache_write": 0.0 },
       { "match": "glm",        "label": "GLM-4",       "input": 0.50, "output": 1.00, "cache_read": 0.0, "cache_write": 0.0 }
     ]
@@ -209,6 +233,10 @@
   "grok": {
     "default": "grok-4.6",
     "models": [
+      { "match": "grok-4.7-build-fast", "label": "Grok 4.7 Fast", "input": 4.00, "output": 12.00, "cached_input": 1.00,
+        "high_context": { "threshold_tokens": 200000, "input": 6.00, "output": 18.00, "cached_input": 1.50 } },
+      { "match": "grok-4.7-fast",  "label": "Grok 4.7 Fast",   "input": 4.00, "output": 12.00, "cached_input": 1.00,
+        "high_context": { "threshold_tokens": 200000, "input": 6.00, "output": 18.00, "cached_input": 1.50 } },
       { "match": "grok-4.7",       "label": "Grok 4.7",        "input": 2.00, "output": 6.00, "cached_input": 0.50,
         "high_context": { "threshold_tokens": 200000, "input": 4.00, "output": 12.00, "cached_input": 1.00 } },
       { "match": "grok-4.6",       "label": "Grok 4.6",        "input": 2.00, "output": 6.00, "cached_input": 0.50,
