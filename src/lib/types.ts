@@ -82,6 +82,22 @@ export interface AllStats {
 
 export type LeaderboardProvider = "claude" | "codex" | "opencode" | "kimi" | "glm" | "gjc" | "grok" | "kiro" | "omo" | "hermes";
 
+/**
+ * A leaderboard tab: a stored provider, or a virtual view the server RPCs
+ * expand into several providers. Kept separate from `LeaderboardProvider` so a
+ * view can never reach the uploader/backfill maps keyed by real providers.
+ */
+export type LeaderboardView = LeaderboardProvider | "combined";
+
+/** Providers summed by the `combined` view. Must match the SQL expansion in
+ *  20261023000000_leaderboard_combined_view.sql. */
+export const COMBINED_PROVIDERS: readonly LeaderboardProvider[] = ["claude", "codex"];
+
+/** Whether data uploaded for `provider` shows up in `view`. */
+export function viewIncludesProvider(view: LeaderboardView, provider: LeaderboardProvider): boolean {
+  return view === "combined" ? COMBINED_PROVIDERS.includes(provider) : view === provider;
+}
+
 /** SuperGrok / unified-billing snapshot from Grok CLI's rolling log. */
 export interface GrokCredits {
   subscription_tier: string | null;

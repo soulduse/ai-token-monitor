@@ -1,13 +1,13 @@
 import { forwardRef } from "react";
 import type { LeaderboardEntry } from "../../hooks/useLeaderboardSync";
-import type { LeaderboardProvider } from "../../lib/types";
+import type { LeaderboardView } from "../../lib/types";
 import { formatTokens, formatCost } from "../../lib/format";
 import { PROVIDER_LABELS, PERIOD_LABELS } from "../../lib/badgeSvgTemplate";
 
 interface Props {
   leaderboard: LeaderboardEntry[];
   userId: string;
-  provider: LeaderboardProvider;
+  provider: LeaderboardView;
   period: "today" | "week" | "month";
   theme: "light" | "dark";
 }

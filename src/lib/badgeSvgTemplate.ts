@@ -1,4 +1,4 @@
-import type { LeaderboardProvider } from "./types";
+import type { LeaderboardView } from "./types";
 import { formatTokens, formatCost } from "./format";
 
 export interface BadgeSvgData {
@@ -6,11 +6,11 @@ export interface BadgeSvgData {
   rank: number;
   totalTokens: number;
   costUsd: number;
-  provider: LeaderboardProvider;
+  provider: LeaderboardView;
   period: "today" | "week" | "month";
 }
 
-export const PROVIDER_COLORS: Record<LeaderboardProvider, string> = {
+export const PROVIDER_COLORS: Record<LeaderboardView, string> = {
   claude: "#7C5CFC",
   codex: "#0ea5e9",
   opencode: "#d97706",
@@ -21,9 +21,10 @@ export const PROVIDER_COLORS: Record<LeaderboardProvider, string> = {
   kiro: "#7c5cfc",
   omo: "#0ea5e9",
   hermes: "#0d9488",
+  combined: "#6366f1",
 };
 
-export const PROVIDER_LABELS: Record<LeaderboardProvider, string> = {
+export const PROVIDER_LABELS: Record<LeaderboardView, string> = {
   claude: "Claude",
   codex: "Codex",
   opencode: "OpenCode",
@@ -34,6 +35,7 @@ export const PROVIDER_LABELS: Record<LeaderboardProvider, string> = {
   kiro: "Kiro",
   omo: "OmO",
   hermes: "Hermes",
+  combined: "Claude + Codex",
 };
 
 export const PERIOD_LABELS: Record<string, string> = {

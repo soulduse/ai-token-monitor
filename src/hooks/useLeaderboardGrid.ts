@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
-import type { LeaderboardProvider } from "../lib/types";
+import type { LeaderboardView } from "../lib/types";
 import { toLocalDateStr } from "../lib/format";
 
 export interface GridCell {
@@ -17,7 +17,7 @@ export interface GridRow {
 }
 
 interface UseLeaderboardGridProps {
-  provider: LeaderboardProvider;
+  provider: LeaderboardView;
   enabled: boolean;
   days?: number;
   topN?: number;
@@ -46,7 +46,7 @@ export function useLeaderboardGrid({
   const cacheRef = useRef<{
     data: GridRow[];
     fetchedAt: number;
-    provider: LeaderboardProvider;
+    provider: LeaderboardView;
     days: number;
     topN: number;
   } | null>(null);

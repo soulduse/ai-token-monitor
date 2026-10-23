@@ -11,6 +11,7 @@
   "sources.title": "来源",
   "sources.claude": "Claude",
   "sources.codex": "Codex",
+  "sources.combined": "Claude + Codex",
   "sources.opencode": "OpenCode",
   "sources.gemini": "Gemini",
   "sources.kimi": "Kimi",
