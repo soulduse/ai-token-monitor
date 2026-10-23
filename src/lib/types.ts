@@ -176,6 +176,7 @@ export interface UserPreferences {
   include_kiro: boolean;
   include_omo: boolean;
   include_pi: boolean;
+  include_omp: boolean;
   include_hermes: boolean;
   include_teamai: boolean;
   teamai_redact: TeamAIRedactLevel;

@@ -149,6 +149,8 @@ pub struct UserPreferences {
     #[serde(default)]
     pub include_pi: bool,
     #[serde(default)]
+    pub include_omp: bool,
+    #[serde(default)]
     pub include_hermes: bool,
     /// Show TeamAI's per-account quota table in the usage card when TeamAI is
     /// installed. On by default: it only renders when TeamAI data is detected.
@@ -349,6 +351,7 @@ impl Default for UserPreferences {
             include_kiro: false,
             include_omo: false,
             include_pi: false,
+            include_omp: false,
             include_hermes: false,
             include_teamai: true,
             teamai_redact: default_teamai_redact(),
@@ -427,5 +430,6 @@ mod preferences_compat_tests {
         assert!(!prefs.show_tray_cost);
         assert!(prefs.leaderboard_opted_in);
         assert!(!prefs.include_hermes);
+        assert!(!prefs.include_omp);
     }
 }

@@ -19,6 +19,7 @@
   "sources.gjc": "GJC",
   "sources.omo": "OmO",
   "sources.pi": "Pi",
+  "sources.omp": "omp (oh-my-pi)",
   "sources.grok": "Grok",
   "sources.hermes": "Hermes",
   "sources.summary.count": "{{active}} of {{total}} active",
