@@ -873,6 +873,88 @@ mod tests {
         assert_eq!(variant.cached_input, base.cached_input);
     }
 
+    // Regression guard: Grok 4.7 Fast (Grok Build / Cursor only, id
+    // "grok-4.7-build-fast") bills at 2x Grok 4.7. Its id contains "grok-4-7"
+    // after canonicalization, so without its own entry it is under-billed by half.
+    #[test]
+    fn grok_47_fast_not_billed_as_47() {
+        for id in ["grok-4.7-build-fast", "grok-4.7-fast"] {
+            let p = get_grok_pricing(id);
+            assert_eq!(p.input, 4.00, "{id}");
+            assert_eq!(p.output, 12.00, "{id}");
+            assert_eq!(p.cached_input, 1.00, "{id}");
+            assert_eq!(p.high_input, 6.00, "{id}");
+            assert_eq!(p.high_output, 18.00, "{id}");
+            assert_eq!(p.high_cached_input, 1.50, "{id}");
+        }
+        // The plain agent variant stays on the standard 4.7 rate.
+        assert_eq!(get_grok_pricing("grok-4.7-build").input, 2.00);
+    }
+
+    // Regression guard: Kimi K3 ($3/$15) matches no kimi-k2 pattern and falls to
+    // the bare "kimi" row at K2 rates ($0.60/$2) — under-billed 5x. K2.6 and
+    // K2.7 Code canonicalize to "kimi-k2-6"/"kimi-k2-7-code", which contain
+    // "kimi-k2", so they need their own rows above it.
+    #[test]
+    fn kimi_k3_and_k2x_not_billed_as_k2() {
+        let k3 = get_kimi_pricing("kimi-k3");
+        assert_eq!(k3.input, 3.00);
+        assert_eq!(k3.output, 15.00);
+        assert_eq!(k3.cache_read, 0.30);
+        // Claude-shaped logs (Kimi via an Anthropic-compatible endpoint) carry
+        // cache writes, billed at K3's 5m/1h rates.
+        let via_claude = get_claude_pricing("kimi-k3");
+        assert!((via_claude.cache_write_5m - 3.00).abs() < 0.001);
+        assert!((via_claude.cache_write_1h - 6.00).abs() < 0.001);
+
+        let code = get_kimi_pricing("kimi-k2.7-code");
+        assert_eq!((code.input, code.output, code.cache_read), (0.95, 4.00, 0.19));
+        let fast = get_kimi_pricing("kimi-k2.7-code-highspeed");
+        assert_eq!((fast.input, fast.output, fast.cache_read), (1.90, 8.00, 0.38));
+        let k26 = get_kimi_pricing("kimi-k2.6");
+        assert_eq!((k26.input, k26.output, k26.cache_read), (0.95, 4.00, 0.16));
+    }
+
+    // Regression guard: GLM-5.x minors canonicalize to "glm-5-N", which contains
+    // "glm-5" — without their own rows GLM-5.3 ($1.40/$4.40) bills at GLM-5 and
+    // the Flash variants ($0.15-$0.37 input) are over-billed. FlashX must sit
+    // above Flash since "glm-5-3-flashx" contains "glm-5-3-flash".
+    #[test]
+    fn glm_5x_minors_not_billed_as_glm_5() {
+        let cases = [
+            ("glm-5.3", 1.40, 4.40, 0.26),
+            ("glm-5.1", 1.40, 4.40, 0.26),
+            ("glm-5.3-flash", 0.15, 0.50, 0.03),
+            ("glm-5.3-flashx", 0.37, 1.25, 0.075),
+            ("glm-5.3-flashx-legal", 0.37, 1.25, 0.075),
+            ("glm-5", 1.00, 3.20, 0.20),
+            ("glm-4.7", 0.60, 2.20, 0.11),
+            ("glm-4.5-air", 0.20, 1.10, 0.03),
+        ];
+        for (id, input, output, cache_read) in cases {
+            let p = get_glm_pricing(id);
+            assert_eq!((p.input, p.output, p.cache_read), (input, output, cache_read), "{id}");
+        }
+        assert_eq!(get_glm_pricing("glm-4.7-flash").input, 0.0, "GLM-4.7 Flash is free");
+        assert_eq!(get_glm_pricing("glm-4.7-flashx").input, 0.07);
+    }
+
+    // Regression guard: DeepSeek V4 ids all contain "deepseek" and fell to the V3
+    // row ($0.27/$1.10). Off-peak rates are used since peak/off-peak is decided
+    // by wall-clock time, which the logs don't price per request.
+    #[test]
+    fn opencode_deepseek_v4_not_billed_as_v3() {
+        for id in ["deepseek-flash", "deepseek/deepseek-flash", "deepseek-v4-flash"] {
+            let p = get_opencode_pricing(id);
+            assert!((p.input - 0.15).abs() < 0.001, "{id}");
+            assert!((p.output - 0.60).abs() < 0.001, "{id}");
+            assert!((p.cache_read - 0.003).abs() < 0.0001, "{id}");
+        }
+        let pro = get_opencode_pricing("deepseek-v4-pro");
+        assert!((pro.input - 0.66).abs() < 0.001);
+        assert!((pro.output - 1.98).abs() < 0.001);
+    }
+
     #[test]
     fn scheduled_override_moves_the_high_context_tier_too() {
         // Base and high rates live in one entry, so a scheduled price change has
