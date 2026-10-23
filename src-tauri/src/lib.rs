@@ -412,6 +412,13 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             (true, 0.0)
         };
 
+        let (agy_warm, agy_cost) = if prefs.include_agy {
+            let s = providers::agy::get_cached_stats();
+            (s.is_some(), today_cost_of(&s, &today))
+        } else {
+            (true, 0.0)
+        };
+
         let (hermes_warm, hermes_cost) = if prefs.include_hermes {
             let s = providers::hermes::get_cached_stats();
             (s.is_some(), today_cost_of(&s, &today))
@@ -436,6 +443,7 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             + kiro_cost
             + omo_cost
             + pi_cost
+            + agy_cost
             + omp_cost
             + hermes_cost
             + gemini_cost;
@@ -449,6 +457,7 @@ pub fn update_tray_title(app_handle: &tauri::AppHandle) {
             && kiro_warm
             && omo_warm
             && pi_warm
+            && agy_warm
             && omp_warm
             && hermes_warm
             && gemini_warm;
@@ -590,6 +599,12 @@ fn get_all_watch_dirs() -> Vec<PathBuf> {
     // gated on include_pi for the same reason as OmO.
     if prefs.include_pi {
         dirs.extend(providers::pi::watch_dirs());
+    }
+
+    // Antigravity CLI: one SQLite db (+ WAL) per conversation in a flat
+    // conversations dir; gated like Pi.
+    if prefs.include_agy {
+        dirs.extend(providers::agy::watch_dirs());
     }
 
     // omp (oh-my-pi): every sessions root (~/.omp default + profiles, XDG
@@ -742,6 +757,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                     providers::kiro::invalidate_stats_cache();
                     providers::omo::invalidate_stats_cache();
                     providers::pi::invalidate_stats_cache();
+                    providers::agy::invalidate_stats_cache();
                     providers::omp::invalidate_stats_cache();
                     providers::gemini::invalidate_stats_cache();
                     providers::hermes::invalidate_stats_cache();
@@ -781,6 +797,9 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                         if prefs.include_pi {
                             let _ = providers::pi::PiProvider::new().fetch_stats();
                         }
+                        if prefs.include_agy {
+                            let _ = providers::agy::AgyProvider::new().fetch_stats();
+                        }
                         if prefs.include_omp {
                             let _ = providers::omp::OmpProvider::new().fetch_stats();
                         }
@@ -818,6 +837,7 @@ fn start_file_watcher(app_handle: tauri::AppHandle) {
                         providers::kiro::invalidate_stats_cache();
                         providers::omo::invalidate_stats_cache();
                         providers::pi::invalidate_stats_cache();
+                        providers::agy::invalidate_stats_cache();
                         providers::omp::invalidate_stats_cache();
                         providers::gemini::invalidate_stats_cache();
                         providers::hermes::invalidate_stats_cache();
@@ -1268,6 +1288,8 @@ pub fn run() {
             commands::is_omo_available,
             commands::get_pi_stats,
             commands::is_pi_available,
+            commands::get_agy_stats,
+            commands::is_agy_available,
             commands::get_omp_stats,
             commands::is_omp_available,
             commands::get_hermes_stats,

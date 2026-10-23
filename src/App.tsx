@@ -84,6 +84,7 @@ function AppContent() {
     includeOmo: prefs.include_omo,
     includePi: prefs.include_pi,
     includeOmp: prefs.include_omp,
+    includeAgy: prefs.include_agy,
     includeHermes: prefs.include_hermes,
   });
   const t = useI18n();

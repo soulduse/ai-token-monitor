@@ -149,6 +149,8 @@ pub struct UserPreferences {
     #[serde(default)]
     pub include_pi: bool,
     #[serde(default)]
+    pub include_agy: bool,
+    #[serde(default)]
     pub include_omp: bool,
     #[serde(default)]
     pub include_hermes: bool,
@@ -351,6 +353,7 @@ impl Default for UserPreferences {
             include_kiro: false,
             include_omo: false,
             include_pi: false,
+            include_agy: false,
             include_omp: false,
             include_hermes: false,
             include_teamai: true,
@@ -430,6 +433,7 @@ mod preferences_compat_tests {
         assert!(!prefs.show_tray_cost);
         assert!(prefs.leaderboard_opted_in);
         assert!(!prefs.include_hermes);
+        assert!(!prefs.include_agy);
         assert!(!prefs.include_omp);
     }
 }
