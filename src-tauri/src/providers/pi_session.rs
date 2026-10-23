@@ -1,5 +1,5 @@
 //! Shared engine for pi-coding-agent session logs (`@mariozechner/pi-coding-agent`)
-//! and its derivatives (OmO native). Both write the same session JSONL format:
+//! and its derivatives (OmO native, oh-my-pi). All write the same session JSONL format:
 //! - line 1 = session header `{"type":"session","id",..,"cwd"}`
 //! - assistant lines carry `message.usage = {input, output, cacheRead,
 //!   cacheWrite, totalTokens, reasoning?, cost{total}}`, `message.model` and
@@ -10,7 +10,8 @@
 //! `<custom dir>/*.jsonl` when the agent is pointed at a flat session dir
 //! (see [`SessionDirs`]). What differs per agent is captured by
 //! [`SessionLayout`]: naming, the settings file format, and whether subagent
-//! child sessions are discovered through the header cwds.
+//! child sessions are discovered through the header cwds or nested inside a
+//! main session's artifact dir.
 
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
@@ -46,6 +47,11 @@ pub(super) trait SessionLayout: Clone + Default + Send + 'static {
     const SETTINGS_FILES: &'static [&'static str];
     /// Whether the settings file may carry comments and trailing commas.
     const SETTINGS_JSONC: bool;
+    /// How many levels of subagent child sessions live INSIDE a main
+    /// session's artifact dir (`<root>/<project>/<ts>_<id>/…/*.jsonl`, the
+    /// main file minus `.jsonl`). Such files are scanned as main files, so
+    /// they refresh on their own mtime. `0` disables it.
+    const NESTED_CHILD_DEPTH: usize = 0;
 }
 
 // --- Dir resolution ---
@@ -196,12 +202,24 @@ fn strip_jsonc(content: &str) -> Option<String> {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct SessionDirs {
     root: PathBuf,
+    /// Further per-project trees laid out like `root` (e.g. one per profile).
+    extra_roots: Vec<PathBuf>,
     custom: Option<PathBuf>,
 }
 
 impl SessionDirs {
     pub(super) fn new(root: PathBuf, custom: Option<PathBuf>) -> Self {
-        Self { root, custom }
+        Self { root, extra_roots: Vec::new(), custom }
+    }
+
+    /// Add per-project trees scanned exactly like the root.
+    pub(super) fn with_extra_roots(mut self, roots: Vec<PathBuf>) -> Self {
+        self.extra_roots = roots;
+        self
+    }
+
+    fn roots(&self) -> impl Iterator<Item = &PathBuf> {
+        std::iter::once(&self.root).chain(self.extra_roots.iter())
     }
 
     /// True when either dir exists.
@@ -211,7 +229,7 @@ impl SessionDirs {
 
     /// Existing dirs, root first, for the file watcher.
     pub(super) fn existing(&self) -> impl Iterator<Item = &PathBuf> {
-        std::iter::once(&self.root)
+        self.roots()
             .chain(self.custom.iter().filter(|custom| **custom != self.root))
             .filter(|dir| dir.exists())
     }
@@ -224,10 +242,18 @@ impl SessionDirs {
             .filter(|custom| **custom != self.root && custom.exists())
     }
 
-    /// Mtime/size of every main session file across both dirs. A path matched
-    /// by both globs (custom dir = one project dir of the root) appears once.
-    fn collect_main_meta(&self) -> HashMap<PathBuf, (SystemTime, u64)> {
-        let mut meta = collect_file_meta(&main_sessions_pattern(&self.root));
+    /// Mtime/size of every main session file across all dirs, plus nested
+    /// child sessions up to `nested_depth` levels (see
+    /// [`SessionLayout::NESTED_CHILD_DEPTH`]). A path matched by several globs
+    /// (custom dir = one project dir of the root) appears once.
+    fn collect_main_meta(&self, nested_depth: usize) -> HashMap<PathBuf, (SystemTime, u64)> {
+        let mut meta = HashMap::new();
+        for root in self.roots() {
+            let mains = collect_file_meta(&main_sessions_pattern(root));
+            let nested = collect_nested_child_meta(root, &mains, nested_depth);
+            meta.extend(mains);
+            meta.extend(nested);
+        }
         if let Some(custom) = &self.custom {
             meta.extend(collect_file_meta(&flat_sessions_pattern(custom)));
         }
@@ -345,6 +371,38 @@ struct SessionEntry {
 fn main_sessions_pattern(sessions_root: &Path) -> String {
     let escaped = glob::Pattern::escape(&sessions_root.to_string_lossy());
     format!("{escaped}/*/*.jsonl")
+}
+
+/// Child sessions nested in a main session's artifact dir:
+/// `<root>/<project>/<ts>_<id>/<child>.jsonl`, and up to `depth` levels below
+/// it. A file only counts when `<root>/<project>/<ts>_<id>.jsonl` is a main
+/// session in `mains`, so unrelated trees (e.g. `<project>/extensions/…`)
+/// stay excluded.
+fn collect_nested_child_meta(
+    root: &Path,
+    mains: &HashMap<PathBuf, (SystemTime, u64)>,
+    depth: usize,
+) -> HashMap<PathBuf, (SystemTime, u64)> {
+    let mut meta = HashMap::new();
+    let escaped = glob::Pattern::escape(&root.to_string_lossy());
+    for level in 1..=depth {
+        let pattern = format!("{escaped}/*/*/{}*.jsonl", "*/".repeat(level - 1));
+        for (path, file_meta) in collect_file_meta(&pattern) {
+            let Ok(rel) = path.strip_prefix(root) else {
+                continue;
+            };
+            let mut parts = rel.components();
+            let (Some(project), Some(session_dir)) = (parts.next(), parts.next()) else {
+                continue;
+            };
+            let mut main_file = root.join(project.as_os_str()).join(session_dir.as_os_str());
+            main_file.as_mut_os_string().push(".jsonl");
+            if mains.contains_key(&main_file) {
+                meta.insert(path, file_meta);
+            }
+        }
+    }
+    meta
 }
 
 /// A custom session dir is FLAT: `<dir>/<ts>_<id>.jsonl`, no project subdirs
@@ -519,7 +577,7 @@ impl<L: SessionLayout> ScanState<L> {
     /// files' cwds; with no main change the cached stats are returned without
     /// touching any child dir. Files of the custom flat dir are main files.
     pub(super) fn refresh_dirs(&mut self, dirs: &SessionDirs) -> AllStats {
-        let current_main = dirs.collect_main_meta();
+        let current_main = dirs.collect_main_meta(L::NESTED_CHILD_DEPTH);
 
         let mut changed: Vec<PathBuf> = Vec::new();
         let mut deleted: Vec<PathBuf> = Vec::new();

@@ -154,6 +154,7 @@ npm run tauri build   # 프로덕션 빌드
 | **Kiro** | `~/.kiro/sessions/cli/*.json` + `data.sqlite3` | **토큰이 아니라 크레딧** — Kiro는 턴 단위 "작업량"으로 계량하며 토큰 수를 어디에도 기록하지 않아, 비용은 크레딧(× $0.04, 초과 단가)에서 계산합니다. 대화형·비대화형 실행이 서로 다른 키 이름의 저장소 두 곳에 쓰므로 둘 다 읽습니다. Auto로 돌린 턴은 실제 모델이 기록되지 않습니다. |
 | **OmO Native** | `~/.omo/agent/sessions/*/*.jsonl` + `<project>/.omo/senpi-task/children/**`의 하위 에이전트 세션 | 메시지별 사용량과 사전 계산된 비용을 사용하고 API 응답 ID로 중복 제거합니다. `OMO_CODING_AGENT_DIR` 설정을 따르며, `OMO_CODING_AGENT_SESSION_DIR` 또는 에이전트 디렉터리 `settings.json(c)`의 `sessionDir`로 지정한 평면 세션 디렉터리도 기본 경로와 함께 읽습니다. |
 | **Pi** | `~/.pi/agent/sessions/*/*.jsonl` | 메시지별 사용량과 사전 계산된 비용을 사용하고 API 응답 ID로 중복 제거합니다(포크된 세션은 한 번만 집계). `PI_CODING_AGENT_DIR` 설정을 따르며(앞의 `~` 확장), `PI_CODING_AGENT_SESSION_DIR` 또는 에이전트 디렉터리 `settings.json`의 `sessionDir`로 지정한 평면 세션 디렉터리도 기본 경로와 함께 읽습니다(실행별 `--session-dir`은 감지할 수 없음). |
+| **omp** (oh-my-pi) | `~/.omp/agent/sessions/*/*.jsonl` | Pi와 같은 세션 포맷(사전 계산된 비용, API 응답 ID로 중복 제거). 프로필(`~/.omp/profiles/<이름>/agent/sessions`), XDG 경로(`$XDG_DATA_HOME/omp/sessions`, 존재할 때), 각 세션 폴더 안의 서브에이전트/어드바이저 기록도 읽습니다. `PI_CODING_AGENT_DIR`/`PI_CODING_AGENT_SESSION_DIR`은 이중 집계를 막기 위해 Pi 소스에서만 읽습니다. |
 
 **네트워크 요청**: 리더보드/채팅 opt-in 시 Supabase로 집계 데이터 전송, 웹훅 발화 시 외부 전송. 이 기능을 쓰지 않으면 앱은 완전히 오프라인으로 동작합니다. AI 번역 키를 설정한 경우에만 해당 프로바이더로 직접 요청이 전송됩니다.
 

@@ -18,6 +18,7 @@ use crate::providers::kimi::KimiProvider;
 use crate::providers::gemini::GeminiProvider;
 use crate::providers::opencode::OpenCodeProvider;
 use crate::providers::omo::OmoProvider;
+use crate::providers::omp::OmpProvider;
 use crate::providers::pi::PiProvider;
 use crate::providers::pricing;
 use crate::providers::traits::TokenProvider;
@@ -352,6 +353,33 @@ pub async fn get_pi_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
 #[tauri::command]
 pub fn is_pi_available() -> bool {
     PiProvider::new().is_available()
+}
+
+#[tauri::command]
+pub async fn get_omp_stats(app: tauri::AppHandle) -> Result<AllStats, String> {
+    let result = tauri::async_runtime::spawn_blocking(|| {
+        let provider = OmpProvider::new();
+        if !provider.is_available() {
+            return Err("omp stats not available".to_string());
+        }
+        provider.fetch_stats()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    match result {
+        Ok(mut stats) => {
+            crate::hydration::apply(&mut stats, "omp");
+            crate::update_tray_title(&app);
+            Ok(stats)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+#[tauri::command]
+pub fn is_omp_available() -> bool {
+    OmpProvider::new().is_available()
 }
 
 #[tauri::command]

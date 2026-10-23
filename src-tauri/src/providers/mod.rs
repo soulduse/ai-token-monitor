@@ -9,6 +9,7 @@ pub mod kiro;
 pub mod kimi;
 pub mod omo;
 pub mod opencode;
+pub mod omp;
 pub mod pi;
 mod pi_session;
 pub mod pricing;
