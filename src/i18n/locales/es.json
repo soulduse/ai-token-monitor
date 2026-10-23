@@ -20,6 +20,7 @@
   "sources.omo": "OmO",
   "sources.pi": "Pi",
   "sources.omp": "omp (oh-my-pi)",
+  "sources.agy": "Antigravity CLI",
   "sources.grok": "Grok",
   "sources.hermes": "Hermes",
   "sources.summary.count": "{{active}} de {{total}} activas",

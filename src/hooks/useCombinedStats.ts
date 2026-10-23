@@ -15,10 +15,11 @@ interface UseCombinedStatsProps {
   includeOmo: boolean;
   includePi: boolean;
   includeOmp: boolean;
+  includeAgy: boolean;
   includeHermes: boolean;
 }
 
-export function useCombinedStats({ includeClaude, includeCodex, includeOpencode, includeGemini, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeOmo, includePi, includeOmp, includeHermes }: UseCombinedStatsProps) {
+export function useCombinedStats({ includeClaude, includeCodex, includeOpencode, includeGemini, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeOmo, includePi, includeOmp, includeAgy, includeHermes }: UseCombinedStatsProps) {
   const claude = useTokenStats("claude");
   const codex = useTokenStats("codex");
   const opencode = useTokenStats("opencode");
@@ -31,6 +32,7 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
   const omo = useTokenStats("omo");
   const pi = useTokenStats("pi");
   const omp = useTokenStats("omp");
+  const agy = useTokenStats("agy");
   const hermes = useTokenStats("hermes");
 
   const stats = useMemo<AllStats | null>(() => {
@@ -47,6 +49,7 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
     if (includeOmo) sources.push(omo.stats);
     if (includePi) sources.push(pi.stats);
     if (includeOmp) sources.push(omp.stats);
+    if (includeAgy) sources.push(agy.stats);
     if (includeHermes) sources.push(hermes.stats);
 
     const validStats = sources.filter((s): s is AllStats => s !== null);
@@ -56,9 +59,9 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
     if (validStats.length === 1) return validStats[0];
 
     return mergeStats(validStats);
-  }, [claude.stats, codex.stats, opencode.stats, gemini.stats, kimi.stats, glm.stats, gjc.stats, grok.stats, kiro.stats, omo.stats, pi.stats, omp.stats, hermes.stats, includeClaude, includeCodex, includeOpencode, includeGemini, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeOmo, includePi, includeOmp, includeHermes]);
+  }, [claude.stats, codex.stats, opencode.stats, gemini.stats, kimi.stats, glm.stats, gjc.stats, grok.stats, kiro.stats, omo.stats, pi.stats, omp.stats, agy.stats, hermes.stats, includeClaude, includeCodex, includeOpencode, includeGemini, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeOmo, includePi, includeOmp, includeAgy, includeHermes]);
 
-  const loading = (includeClaude && claude.loading) || (includeCodex && codex.loading) || (includeOpencode && opencode.loading) || (includeGemini && gemini.loading) || (includeKimi && kimi.loading) || (includeGlm && glm.loading) || (includeGjc && gjc.loading) || (includeGrok && grok.loading) || (includeKiro && kiro.loading) || (includeOmo && omo.loading) || (includePi && pi.loading) || (includeOmp && omp.loading) || (includeHermes && hermes.loading);
+  const loading = (includeClaude && claude.loading) || (includeCodex && codex.loading) || (includeOpencode && opencode.loading) || (includeGemini && gemini.loading) || (includeKimi && kimi.loading) || (includeGlm && glm.loading) || (includeGjc && gjc.loading) || (includeGrok && grok.loading) || (includeKiro && kiro.loading) || (includeOmo && omo.loading) || (includePi && pi.loading) || (includeOmp && omp.loading) || (includeAgy && agy.loading) || (includeHermes && hermes.loading);
   const error = useMemo(() => {
     if (stats) return null;
 
@@ -74,10 +77,11 @@ export function useCombinedStats({ includeClaude, includeCodex, includeOpencode,
     if (includeOmo && omo.error) return omo.error;
     if (includePi && pi.error) return pi.error;
     if (includeOmp && omp.error) return omp.error;
+    if (includeAgy && agy.error) return agy.error;
     if (includeHermes && hermes.error) return hermes.error;
 
     return null;
-  }, [stats, includeClaude, includeCodex, includeOpencode, includeGemini, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeOmo, includePi, includeOmp, includeHermes, claude.error, codex.error, opencode.error, gemini.error, kimi.error, glm.error, gjc.error, grok.error, kiro.error, omo.error, pi.error, omp.error, hermes.error]);
+  }, [stats, includeClaude, includeCodex, includeOpencode, includeGemini, includeKimi, includeGlm, includeGjc, includeGrok, includeKiro, includeOmo, includePi, includeOmp, includeAgy, includeHermes, claude.error, codex.error, opencode.error, gemini.error, kimi.error, glm.error, gjc.error, grok.error, kiro.error, omo.error, pi.error, omp.error, agy.error, hermes.error]);
 
   return { stats, loading, error };
 }

@@ -155,6 +155,7 @@ npm run tauri build   # 生产构建
 | **OmO Native** | `~/.omo/agent/sessions/*/*.jsonl` + `<project>/.omo/senpi-task/children/**` 中的子代理会话 | 按消息记录用量并使用预计算成本；按 API 响应 ID 去重。遵循 `OMO_CODING_AGENT_DIR`；通过 `OMO_CODING_AGENT_SESSION_DIR` 或代理目录 `settings.json(c)` 中的 `sessionDir` 指定的扁平会话目录也会与默认目录一并读取。 |
 | **Pi** | `~/.pi/agent/sessions/*/*.jsonl` | 按消息记录用量并使用预计算成本；按 API 响应 ID 去重（分叉的会话只计一次）。遵循 `PI_CODING_AGENT_DIR`（展开开头的 `~`）；通过 `PI_CODING_AGENT_SESSION_DIR` 或代理目录 `settings.json` 中的 `sessionDir` 指定的扁平会话目录也会与默认目录一并读取（单次运行的 `--session-dir` 无法检测）。 |
 | **omp** (oh-my-pi) | `~/.omp/agent/sessions/*/*.jsonl` | 与 Pi 相同的会话格式（预计算成本，按 API 响应 ID 去重）。同时读取配置文件目录（`~/.omp/profiles/<名称>/agent/sessions`）、存在时的 XDG 目录（`$XDG_DATA_HOME/omp/sessions`），以及每个会话文件夹内的子代理/顾问记录。为避免重复计数，`PI_CODING_AGENT_DIR`/`PI_CODING_AGENT_SESSION_DIR` 仅由 Pi 来源读取。 |
+| **Antigravity CLI**（`agy`，实验性） | `~/.gemini/antigravity-cli/conversations/*.db` | 每个会话一个 SQLite 数据库；从未公开的 protobuf 元数据中解析每次调用的输入/输出 token（含思考），按 Gemini 价格计费，按响应 ID 去重。CLI 不记录缓存读取，按 0 计。Antigravity IDE 的会话文件已加密，不受支持。 |
 
 **网络请求**:仅在开启排行榜/聊天时(向 Supabase 发送汇总数据)或 Webhook 触发时才会发起网络请求。不使用这些功能时,应用完全离线运行。配置 AI 翻译密钥后,才会直接向相应提供商发送请求。
 

@@ -28,6 +28,7 @@ const defaultPrefs: UserPreferences = {
   include_kiro: false,
   include_omo: false,
   include_pi: false,
+  include_agy: false,
   include_omp: false,
   include_gemini: false,
   include_hermes: false,

@@ -155,6 +155,7 @@ npm run tauri build   # プロダクションビルド
 | **OmO Native** | `~/.omo/agent/sessions/*/*.jsonl` + `<project>/.omo/senpi-task/children/**` のサブエージェントセッション | メッセージ単位の使用量と事前計算済みコスト。APIレスポンスIDで重複排除します。`OMO_CODING_AGENT_DIR` に対応。`OMO_CODING_AGENT_SESSION_DIR` またはエージェントディレクトリの `settings.json(c)` の `sessionDir` で指定したフラットなセッションディレクトリも既定の場所と併せて読み取ります。 |
 | **Pi** | `~/.pi/agent/sessions/*/*.jsonl` | メッセージ単位の使用量と事前計算済みコスト。APIレスポンスIDで重複排除します（フォークしたセッションは1回だけ集計）。`PI_CODING_AGENT_DIR` に対応（先頭の `~` を展開）。`PI_CODING_AGENT_SESSION_DIR` またはエージェントディレクトリの `settings.json` の `sessionDir` で指定したフラットなセッションディレクトリも既定の場所と併せて読み取ります（実行ごとの `--session-dir` は検出できません）。 |
 | **omp** (oh-my-pi) | `~/.omp/agent/sessions/*/*.jsonl` | Pi と同じセッション形式（事前計算済みコスト、APIレスポンスIDで重複排除）。プロファイル（`~/.omp/profiles/<名前>/agent/sessions`）、存在する場合は XDG ディレクトリ（`$XDG_DATA_HOME/omp/sessions`）、各セッションフォルダ内のサブエージェント/アドバイザーの記録も読み取ります。二重集計を避けるため `PI_CODING_AGENT_DIR`/`PI_CODING_AGENT_SESSION_DIR` は Pi ソース側でのみ読み取ります。 |
+| **Antigravity CLI**（`agy`、実験的） | `~/.gemini/antigravity-cli/conversations/*.db` | 会話ごとの SQLite DB から、呼び出し単位の入力/出力トークン（思考を含む）を非公開の protobuf メタデータから読み取り、Gemini の単価で計算、レスポンスIDで重複排除します。キャッシュ読み取りは CLI が記録しないため 0 として集計します。Antigravity IDE の会話ファイルは暗号化されているため非対応です。 |
 
 **ネットワークリクエスト**：リーダーボード/チャットをオプトインした場合のみ Supabase に集計データを送信し、Webhook 発火時に外部へ送信します。これらの機能を使わなければ、アプリは完全にオフラインで動作します。AI 翻訳キーを設定した場合のみ、該当プロバイダーへ直接リクエストが送信されます。
 
