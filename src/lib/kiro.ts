@@ -12,7 +12,7 @@
  * RPC filters on `p_provider` and the UI is split into provider tabs — so a Kiro
  * row is never sorted against a token-based one.
  */
-import type { LeaderboardProvider } from "./types";
+import type { LeaderboardView } from "./types";
 
 /**
  * USD per credit. Mirrors `providers::kiro::CREDIT_RATE_USD` on the Rust side;
@@ -24,7 +24,7 @@ export const KIRO_CREDIT_RATE_USD = 0.04;
 /** Scale factor applied before writing credits into the integer column. */
 export const KIRO_CREDIT_SCALE = 1000;
 
-export function isCreditProvider(provider: LeaderboardProvider): boolean {
+export function isCreditProvider(provider: LeaderboardView): boolean {
   return provider === "kiro";
 }
 

@@ -1,5 +1,5 @@
 import type { LeaderboardEntry } from "../hooks/useLeaderboardSync";
-import type { LeaderboardProvider } from "../lib/types";
+import type { LeaderboardView } from "../lib/types";
 import { formatTokens, formatCost } from "../lib/format";
 import { formatCredits, isCreditProvider } from "../lib/kiro";
 import { useSettings } from "../contexts/SettingsContext";
@@ -11,7 +11,7 @@ interface Props {
   rank: number;
   isMe: boolean;
   /** Kiro ranks by credits, so its rows render a different unit. */
-  provider: LeaderboardProvider;
+  provider: LeaderboardView;
 }
 
 const MEDALS = ["", "\ud83e\udd47", "\ud83e\udd48", "\ud83e\udd49"];

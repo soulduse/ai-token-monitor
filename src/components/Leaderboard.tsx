@@ -5,7 +5,7 @@ import { useLeaderboardGrid } from "../hooks/useLeaderboardGrid";
 import { useBackfill } from "../hooks/useBackfill";
 import { useToday } from "../hooks/useToday";
 import { useDateNav } from "../hooks/useDateNav";
-import type { LeaderboardProvider } from "../lib/types";
+import type { LeaderboardView } from "../lib/types";
 import type { User } from "@supabase/supabase-js";
 import { useSettings } from "../contexts/SettingsContext";
 import { formatNavDate } from "../lib/format";
@@ -148,7 +148,7 @@ function LeaderboardCTA({
 function LeaderboardContent({ user, minDate, dailyTokens }: { user: User; minDate: string | null; dailyTokens: Record<string, number> }) {
   const t = useI18n();
   const { prefs } = useSettings();
-  const [provider, setProvider] = useState<LeaderboardProvider>("claude");
+  const [provider, setProvider] = useState<LeaderboardView>("claude");
   const backfill = useBackfill();
 
   // Auto-trigger backfill once per (user, provider) on first leaderboard visit.
@@ -160,9 +160,11 @@ function LeaderboardContent({ user, minDate, dailyTokens }: { user: User; minDat
   }, [backfill.hasRunners, backfill.ensureInitialBackfill]);
 
   // Determine available provider tabs
-  const availableProviders: LeaderboardProvider[] = [];
+  const availableProviders: LeaderboardView[] = [];
   if (prefs.include_claude) availableProviders.push("claude");
   if (prefs.include_codex) availableProviders.push("codex");
+  // Virtual Claude+Codex sum, offered only to users tracking both.
+  if (prefs.include_claude && prefs.include_codex) availableProviders.push("combined");
   if (prefs.include_opencode) availableProviders.push("opencode");
   if (prefs.include_kimi) availableProviders.push("kimi");
   if (prefs.include_glm) availableProviders.push("glm");
@@ -299,7 +301,7 @@ function ProviderLeaderboard({
   minDate,
   dailyTokens,
 }: {
-  provider: LeaderboardProvider;
+  provider: LeaderboardView;
   user: User;
   minDate: string | null;
   dailyTokens: Record<string, number>;

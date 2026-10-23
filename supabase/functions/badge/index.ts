@@ -11,6 +11,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   kiro: "#7c5cfc",
   omo: "#0ea5e9",
   hermes: "#0d9488",
+  combined: "#6366f1",
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -24,6 +25,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   kiro: "Kiro",
   omo: "OmO",
   hermes: "Hermes",
+  combined: "Claude + Codex",
 };
 
 const PERIOD_LABELS: Record<string, string> = {
@@ -32,7 +34,12 @@ const PERIOD_LABELS: Record<string, string> = {
   month: "This Month",
 };
 
-const VALID_PROVIDERS = new Set(["claude", "codex", "opencode", "kimi", "glm", "gjc", "grok", "kiro", "omo", "hermes"]);
+const VALID_PROVIDERS = new Set(["claude", "codex", "opencode", "kimi", "glm", "gjc", "grok", "kiro", "omo", "hermes", "combined"]);
+// Virtual views summing several stored providers. Must match the expansion in
+// get_badge_rank / get_leaderboard_entries (20261023000000_leaderboard_combined_view.sql).
+const VIEW_PROVIDERS: Record<string, string[]> = {
+  combined: ["claude", "codex"],
+};
 const VALID_PERIODS = new Set(["today", "week", "month"]);
 const VALID_STYLES = new Set(["flat", "flat-square", "card"]);
 
@@ -319,7 +326,7 @@ Deno.serve(async (req) => {
     .from("daily_snapshots")
     .select("total_tokens, cost_usd, messages")
     .eq("user_id", userId)
-    .eq("provider", provider)
+    .in("provider", VIEW_PROVIDERS[provider] ?? [provider])
     .gte("date", dateFrom)
     .lte("date", dateTo);
 

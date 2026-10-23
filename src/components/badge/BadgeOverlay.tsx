@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import type { LeaderboardEntry } from "../../hooks/useLeaderboardSync";
-import type { LeaderboardProvider } from "../../lib/types";
+import type { LeaderboardView } from "../../lib/types";
 import { useBadgeData } from "../../hooks/useBadgeData";
 import { useShareImage } from "../../hooks/useShareImage";
 import { useI18n } from "../../i18n/I18nContext";
@@ -15,7 +15,7 @@ interface Props {
   onClose: () => void;
   leaderboard: LeaderboardEntry[];
   userId: string;
-  provider: LeaderboardProvider;
+  provider: LeaderboardView;
   period: "today" | "week" | "month";
   dateRange: { from: string; to: string };
 }

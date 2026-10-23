@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { LeaderboardEntry } from "./useLeaderboardSync";
-import type { LeaderboardProvider } from "../lib/types";
+import type { LeaderboardView } from "../lib/types";
 
 export interface BadgeData {
   nickname: string;
@@ -10,7 +10,7 @@ export interface BadgeData {
   totalTokens: number;
   costUsd: number;
   messages: number;
-  provider: LeaderboardProvider;
+  provider: LeaderboardView;
   period: "today" | "week" | "month";
   dateRange: { from: string; to: string };
 }
@@ -18,7 +18,7 @@ export interface BadgeData {
 export function useBadgeData(
   leaderboard: LeaderboardEntry[],
   userId: string | undefined,
-  provider: LeaderboardProvider,
+  provider: LeaderboardView,
   period: "today" | "week" | "month",
   dateRange: { from: string; to: string },
 ): BadgeData | null {

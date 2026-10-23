@@ -19,6 +19,7 @@ const PROVIDER_GRADIENTS: Record<string, string> = {
   kiro: "linear-gradient(135deg, #7C5CFC, #5A3DE6)",
   omo: "linear-gradient(135deg, #0ea5e9, #0369a1)",
   hermes: "linear-gradient(135deg, #0d9488, #0f766e)",
+  combined: "linear-gradient(135deg, #7C5CFC, #0ea5e9)",
 };
 
 function getRankDisplay(rank: number): string {

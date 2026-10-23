@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
-import type { LeaderboardProvider } from "../lib/types";
+import { viewIncludesProvider, type LeaderboardView } from "../lib/types";
 import { toLocalDateStr } from "../lib/format";
 import { SNAPSHOT_UPLOADED_EVENT, type SnapshotUploadedDetail } from "./useSnapshotUploader";
 
@@ -15,7 +15,7 @@ export interface LeaderboardEntry {
 }
 
 interface UseLeaderboardSyncProps {
-  provider: LeaderboardProvider;
+  provider: LeaderboardView;
   period: LeaderboardPeriod;
   userId?: string;
   /** Anchor date (YYYY-MM-DD) for the `today` period — enables browsing past
@@ -35,7 +35,7 @@ export function useLeaderboardSync({ provider, period, userId, anchorDate }: Use
     data: LeaderboardEntry[];
     fetchedAt: number;
     period: LeaderboardPeriod;
-    provider: LeaderboardProvider;
+    provider: LeaderboardView;
     anchorDate?: string;
   } | null>(null);
   // Monotonic request counter — discards out-of-order RPC responses when the
@@ -129,7 +129,7 @@ export function useLeaderboardSync({ provider, period, userId, anchorDate }: Use
     if (!userId) return;
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<SnapshotUploadedDetail>).detail;
-      if (!detail || detail.provider !== provider) return;
+      if (!detail || !viewIncludesProvider(provider, detail.provider)) return;
       if (period === "grid") return;
       // For `today`, only refetch when the uploaded day is the one on screen;
       // week/month always contain today, so they refetch unconditionally.
