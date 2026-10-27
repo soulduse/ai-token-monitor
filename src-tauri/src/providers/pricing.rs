@@ -1766,6 +1766,34 @@ mod tests {
         assert!((p.cache_write - 2.50).abs() < 0.001);
     }
 
+    // Regression guard: GPT-6.1 Terra (listed 2026-10-27) contains "gpt-6-1"
+    // after canonicalization, so without its own entry it lands on the bare
+    // "gpt-6.1" Sol row and is over-billed 2x ($2/$10 vs $1/$5).
+    #[test]
+    fn codex_gpt6_1_terra_not_billed_as_sol() {
+        for id in ["gpt-6.1-terra", "openai/gpt-6.1-terra"] {
+            let p = get_codex_pricing(id);
+            assert!((p.input - 1.00).abs() < 0.001, "{id} input must be $1/MTok, got ${}", p.input);
+            assert!((p.output - 5.00).abs() < 0.001, "{id} output must be $5/MTok, got ${}", p.output);
+            assert!((p.cached_input - 0.05).abs() < 0.001, "{id} cached input must be $0.05/MTok, got ${}", p.cached_input);
+        }
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let hc = find_pricing(&cfg.codex, "gpt-6.1-terra").high_context.expect("gpt-6.1-terra long-context tier present");
+        assert_eq!(hc.threshold_tokens, 272000);
+        assert!((hc.input - 2.00).abs() < 0.001);
+        assert!((hc.output - 7.50).abs() < 0.001);
+        assert!((hc.cached_input - 0.10).abs() < 0.001);
+    }
+
+    #[test]
+    fn opencode_gpt6_1_terra_not_billed_as_sol() {
+        let p = get_opencode_pricing("openai/gpt-6.1-terra");
+        assert!((p.input - 1.00).abs() < 0.001, "opencode gpt-6.1-terra input must be $1/MTok, got ${}", p.input);
+        assert!((p.output - 5.00).abs() < 0.001);
+        assert!((p.cache_read - 0.05).abs() < 0.001);
+        assert!((p.cache_write - 1.25).abs() < 0.001);
+    }
+
     // Regression guard: the Daybreak cyber models contain "gpt-5-6" / "gpt-5-5"
     // after canonicalization, so without their own entries they land on the
     // base tier ($4/$20, $5/$30) — under-billed against $12.50/$75.

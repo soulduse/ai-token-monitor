@@ -1,6 +1,6 @@
 {
-  "version": "1.20.0",
-  "last_updated": "2026-10-23",
+  "version": "1.21.0",
+  "last_updated": "2026-10-27",
   "sources": {
     "claude": "https://platform.claude.com/docs/en/about-claude/pricing",
     "codex": "https://developers.openai.com/api/docs/pricing",
@@ -44,6 +44,8 @@
   "codex": {
     "default": "gpt-5.4",
     "models": [
+      { "match": "gpt-6.1-terra",      "label": "gpt-6.1-terra",      "input": 1.00, "output": 5.00,  "cached_input": 0.05,
+        "high_context": { "threshold_tokens": 272000, "input": 2.00,  "output": 7.50,  "cached_input": 0.10 } },
       { "match": "gpt-6.1-sol",        "label": "gpt-6.1-sol",        "input": 2.00, "output": 10.00, "cached_input": 0.10,
         "high_context": { "threshold_tokens": 272000, "input": 4.00,  "output": 15.00, "cached_input": 0.20 } },
       { "match": "gpt-6.1",            "label": "gpt-6.1-sol",        "input": 2.00, "output": 10.00, "cached_input": 0.10,
@@ -126,6 +128,7 @@
       { "match": "haiku-4-5",         "label": "Claude Haiku 4.5",         "input": 1.0,   "output": 5.0,    "cache_read": 0.10,  "cache_write": 1.25   },
       { "match": "haiku-3-5",         "label": "Claude Haiku 3.5",         "input": 0.80,  "output": 4.0,    "cache_read": 0.08,  "cache_write": 1.0    },
       { "match": "haiku",             "label": "Claude Haiku 4.5",         "input": 1.0,   "output": 5.0,    "cache_read": 0.10,  "cache_write": 1.25   },
+      { "match": "gpt-6.1-terra",     "label": "GPT-6.1 Terra",            "input": 1.00,  "output": 5.0,    "cache_read": 0.05,  "cache_write": 1.25   },
       { "match": "gpt-6.1-sol",       "label": "GPT-6.1 Sol",              "input": 2.00,  "output": 10.0,   "cache_read": 0.10,  "cache_write": 2.50   },
       { "match": "gpt-6.1",           "label": "GPT-6.1 Sol",              "input": 2.00,  "output": 10.0,   "cache_read": 0.10,  "cache_write": 2.50   },
       { "match": "gpt-6-astra",       "label": "GPT-6 Astra",              "input": 10.00, "output": 50.0,   "cache_read": 1.00,  "cache_write": 12.5   },
