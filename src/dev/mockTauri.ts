@@ -78,6 +78,7 @@ const mockPrefs: UserPreferences = {
   include_hermes: false,
   include_teamai: true,
   teamai_redact: "none",
+  reset_time_format: "relative",
   teamai_promo_dismissed: false,
   theme: "github",
   color_mode: "dark",

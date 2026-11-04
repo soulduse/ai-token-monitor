@@ -122,6 +122,7 @@ export interface TeamAIWindow {
 
 /** Account label masking, same levels as `teamai capture --redact`. */
 export type TeamAIRedactLevel = "none" | "partial" | "full";
+export type ResetTimeFormat = "relative" | "absolute";
 
 export type TeamAIAccountStatus = "active" | "cooldown" | "error" | "disabled" | "inactive";
 
@@ -181,6 +182,7 @@ export interface UserPreferences {
   include_hermes: boolean;
   include_teamai: boolean;
   teamai_redact: TeamAIRedactLevel;
+  reset_time_format: ResetTimeFormat;
   teamai_promo_dismissed: boolean;
   theme: "github" | "purple" | "ocean" | "sunset";
   color_mode: "system" | "light" | "dark";

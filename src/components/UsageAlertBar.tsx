@@ -12,6 +12,7 @@ import { useI18n } from "../i18n/I18nContext";
 import type {
   AllStats,
   RateLimitWindow,
+  ResetTimeFormat,
   TeamAIAccountStatus,
   TeamAIClaudeAccount,
   TeamAICodexAccount,
@@ -30,7 +31,12 @@ function getBarColor(percent: number): string {
   return "#22c55e";
 }
 
-function formatResetTime(resetsAt: string | null | undefined, t: (key: string, params?: Record<string, string>) => string): string {
+function formatResetTime(
+  resetsAt: string | null | undefined,
+  t: (key: string, params?: Record<string, string>) => string,
+  format: ResetTimeFormat = "relative",
+  locale?: string,
+): string {
   // The API omits resets_at (null) for windows with no scheduled reset. Bail
   // before the diff math so we render a clean blank instead of "NaNd NaNh".
   if (!resetsAt) return "";
@@ -39,6 +45,18 @@ function formatResetTime(resetsAt: string | null | undefined, t: (key: string, p
   const now = new Date();
   const diffMs = reset.getTime() - now.getTime();
   if (diffMs <= 0) return t("usageAlert.resetsNow");
+  if (format === "absolute") {
+    // Weekday only when the reset is more than a day away, where the date alone is easy to misread.
+    const time = new Intl.DateTimeFormat(locale, {
+      month: "short",
+      day: "numeric",
+      ...(diffMs > 86_400_000 ? { weekday: "short" as const } : {}),
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).format(reset);
+    return t("usageAlert.resetsAt", { time });
+  }
   const totalMin = Math.floor(diffMs / 60000);
   const d = Math.floor(totalMin / 1440);
   const h = Math.floor((totalMin % 1440) / 60);
@@ -50,8 +68,13 @@ function formatResetTime(resetsAt: string | null | undefined, t: (key: string, p
   return t("usageAlert.resetsIn", { time: parts.join(" ") });
 }
 
-function formatUnixResetTime(resetsAt: number, t: (key: string, params?: Record<string, string>) => string): string {
-  return formatResetTime(new Date(resetsAt * 1000).toISOString(), t);
+function formatUnixResetTime(
+  resetsAt: number,
+  t: (key: string, params?: Record<string, string>) => string,
+  format: ResetTimeFormat = "relative",
+  locale?: string,
+): string {
+  return formatResetTime(new Date(resetsAt * 1000).toISOString(), t, format, locale);
 }
 
 function formatCodexWindowLabel(
@@ -235,16 +258,53 @@ function RefreshButton({
   );
 }
 
+function ResetFormatButton() {
+  const t = useI18n();
+  const { prefs, updatePrefs } = useSettings();
+  const absolute = prefs.reset_time_format === "absolute";
+  const title = t(absolute ? "usageAlert.showResetRelative" : "usageAlert.showResetAbsolute");
+
+  return (
+    <button
+      onClick={() => updatePrefs({ reset_time_format: absolute ? "relative" : "absolute" })}
+      title={title}
+      aria-label={title}
+      aria-pressed={absolute}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 18,
+        height: 18,
+        padding: 0,
+        background: "transparent",
+        border: "none",
+        borderRadius: 3,
+        color: absolute ? "var(--accent-purple)" : "var(--text-muted)",
+        cursor: "pointer",
+        opacity: absolute ? 1 : 0.8,
+      }}
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="4" width="18" height="18" rx="2" />
+        <path d="M16 2v4M8 2v4M3 10h18" />
+      </svg>
+    </button>
+  );
+}
+
 function ProviderHeader({
   label,
   stale,
   rateLimitRemaining,
   refreshButton,
+  showResetFormatToggle,
 }: {
   label: string;
   stale?: boolean;
   rateLimitRemaining?: number | null;
   refreshButton?: ReactNode;
+  showResetFormatToggle?: boolean;
 }) {
   const t = useI18n();
   // When inside a 429 back-off window, refresh genuinely can't hit the API yet.
@@ -287,6 +347,7 @@ function ProviderHeader({
             {t("usageAlert.stale")}
           </span>
         )}
+        {showResetFormatToggle && <ResetFormatButton />}
         {refreshButton}
       </div>
     </div>
@@ -373,6 +434,7 @@ function CodexRateLimitRows({
   secondary?: RateLimitWindow | null;
 }) {
   const t = useI18n();
+  const { prefs } = useSettings();
 
   return (
     <>
@@ -380,14 +442,14 @@ function CodexRateLimitRows({
         <UsageRow
           label={formatCodexWindowLabel(primary, t("usageAlert.session"), t)}
           utilization={primary.used_percent}
-          subtitle={formatUnixResetTime(primary.resets_at, t)}
+          subtitle={formatUnixResetTime(primary.resets_at, t, prefs.reset_time_format, prefs.language)}
         />
       )}
       {secondary && (
         <UsageRow
           label={formatCodexWindowLabel(secondary, t("usageAlert.weekly"), t)}
           utilization={secondary.used_percent}
-          subtitle={formatUnixResetTime(secondary.resets_at, t)}
+          subtitle={formatUnixResetTime(secondary.resets_at, t, prefs.reset_time_format, prefs.language)}
         />
       )}
     </>
@@ -1227,6 +1289,7 @@ export function UsageAlertBar() {
         <div>
           <ProviderHeader
             label={t("usageAlert.claude")}
+            showResetFormatToggle
             stale={is_stale}
             rateLimitRemaining={rateLimitRemaining}
             refreshButton={(
@@ -1241,14 +1304,14 @@ export function UsageAlertBar() {
             <UsageRow
               label={t("usageAlert.session")}
               utilization={five_hour.utilization}
-              subtitle={formatResetTime(five_hour.resets_at, t)}
+              subtitle={formatResetTime(five_hour.resets_at, t, prefs.reset_time_format, prefs.language)}
             />
           )}
           {seven_day && (
             <UsageRow
               label={t("usageAlert.weekly")}
               utilization={seven_day.utilization}
-              subtitle={formatResetTime(seven_day.resets_at, t)}
+              subtitle={formatResetTime(seven_day.resets_at, t, prefs.reset_time_format, prefs.language)}
             />
           )}
           {modelWindows.map((m) => (
@@ -1256,7 +1319,7 @@ export function UsageAlertBar() {
               key={m.model}
               label={t("usageAlert.weeklyModel", { model: m.model })}
               utilization={m.utilization}
-              subtitle={formatResetTime(m.resets_at, t)}
+              subtitle={formatResetTime(m.resets_at, t, prefs.reset_time_format, prefs.language)}
             />
           ))}
           {extra_usage && extra_usage.is_enabled && (
@@ -1313,7 +1376,7 @@ export function UsageAlertBar() {
 
       {showCodexBlock && (
         <div>
-          <ProviderHeader label={t("usageAlert.codex")} />
+          <ProviderHeader label={t("usageAlert.codex")} showResetFormatToggle />
           {hasCodexRateLimits ? (
             <CodexRateLimitRows
               primary={codexRateLimits?.primary}
@@ -1340,12 +1403,12 @@ export function UsageAlertBar() {
 
       {hasGrokCredits && grokCredits && (
         <div>
-          <ProviderHeader label={t("usageAlert.grok")} />
+          <ProviderHeader label={t("usageAlert.grok")} showResetFormatToggle />
           {grokCredits.credit_usage_percent != null && (
             <UsageRow
               label={grokCredits.subscription_tier || t("usageAlert.weekly")}
               utilization={grokCredits.credit_usage_percent}
-              subtitle={formatResetTime(grokCredits.period_end, t)}
+              subtitle={formatResetTime(grokCredits.period_end, t, prefs.reset_time_format, prefs.language)}
             />
           )}
           {grokCredits.on_demand_cap > 0 && (

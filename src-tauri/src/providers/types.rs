@@ -161,6 +161,9 @@ pub struct UserPreferences {
     /// TeamAI account label masking: "none" | "partial" | "full".
     #[serde(default = "default_teamai_redact")]
     pub teamai_redact: String,
+    /// How usage-panel reset times are shown: "relative" (2h 3m left) | "absolute" (date/time).
+    #[serde(default = "default_reset_time_format")]
+    pub reset_time_format: String,
     /// The one-line TeamAI suggestion shown to users without TeamAI was closed.
     #[serde(default)]
     pub teamai_promo_dismissed: bool,
@@ -267,6 +270,10 @@ fn default_teamai_redact() -> String {
     "none".to_string()
 }
 
+fn default_reset_time_format() -> String {
+    "relative".to_string()
+}
+
 fn default_true() -> bool {
     true
 }
@@ -358,6 +365,7 @@ impl Default for UserPreferences {
             include_hermes: false,
             include_teamai: true,
             teamai_redact: default_teamai_redact(),
+            reset_time_format: default_reset_time_format(),
             teamai_promo_dismissed: false,
             gjc_dirs: default_gjc_dirs(),
             codex_dirs: default_codex_dirs(),
