@@ -583,7 +583,9 @@ fn get_all_watch_dirs() -> Vec<PathBuf> {
     }
 
     // OmO: watch only the main session dirs — the sessions root (honours
-    // OMO_CODING_AGENT_DIR) plus a custom flat session dir
+    // OMO_CODING_AGENT_DIR), the OmO Desktop sessions root
+    // (~/.omo/desktop/userdata/omo-sessions, recursive; picked up by the
+    // periodic re-read below once it appears) plus a custom flat session dir
     // (OMO_CODING_AGENT_SESSION_DIR / settings `sessionDir`) when set.
     // Subagent sessions under <project>/.omo/senpi-task/children are not
     // watched: the provider re-stats a project's children whenever that
