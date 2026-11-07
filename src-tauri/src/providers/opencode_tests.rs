@@ -300,6 +300,7 @@ fn sqlite_execution_errors_are_not_skipped_as_bad_rows() {
         .provider
         .parse_data_table(db.conn(), "message", &mut BTreeMap::new())
         .unwrap_err();
+    assert!(error.starts_with("Failed to read message row:"), "{error}");
     assert!(error.contains("malformed JSON"), "{error}");
 }
 
