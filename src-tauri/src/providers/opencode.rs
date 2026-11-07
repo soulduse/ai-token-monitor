@@ -17,8 +17,8 @@ use super::types::{AllStats, DailyUsage, ModelUsage};
 struct StatsCache {
     stats: AllStats,
     computed_at: Instant,
-    /// DB mtime for change detection
-    db_mtime: Option<SystemTime>,
+    /// (path, mtime, size) of the DB and its `-wal` sidecar for change detection
+    db_meta: Vec<(PathBuf, SystemTime, u64)>,
     /// JSON file metadata for change detection (fallback mode)
     json_meta: HashMap<PathBuf, (SystemTime, u64)>,
 }
@@ -128,11 +128,17 @@ impl OpenCodeProvider {
         self.json_storage_dir().is_dir()
     }
 
-    /// Get DB file mtime for cache invalidation.
-    fn db_mtime(&self) -> Option<SystemTime> {
-        fs::metadata(self.db_path())
-            .ok()
-            .and_then(|m| m.modified().ok())
+    /// Include the WAL because SQLite writes there between checkpoints.
+    fn collect_db_meta(&self) -> Vec<(PathBuf, SystemTime, u64)> {
+        let db_path = self.db_path();
+        let mut meta = Vec::new();
+        for path in [db_path, self.data_dir.join("opencode.db-wal")] {
+            if let Ok(m) = fs::metadata(&path) {
+                let mtime = m.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+                meta.push((path, mtime, m.len()));
+            }
+        }
+        meta
     }
 
     // --- SQLite parsing ---
@@ -417,13 +423,13 @@ impl OpenCodeProvider {
     fn do_fetch_stats(&self) -> Result<AllStats, String> {
         let start = Instant::now();
 
-        let (entries, db_mtime, json_meta) = if self.has_sqlite_db() {
-            // Check if DB has changed since last parse
-            let current_mtime = self.db_mtime();
+        let (entries, db_meta, json_meta) = if self.has_sqlite_db() {
+            // Check if DB (or its WAL sidecar) has changed since last parse
+            let current_meta = self.collect_db_meta();
             {
                 let cache = lock_unpoisoned(&STATS_CACHE);
                 if let Some(ref cached) = *cache {
-                    if cached.db_mtime == current_mtime {
+                    if cached.db_meta == current_meta {
                         drop(cache);
                         {
                             let mut cache = lock_unpoisoned(&STATS_CACHE);
@@ -452,7 +458,7 @@ impl OpenCodeProvider {
                 entries.len(),
                 start.elapsed()
             );
-            (entries, current_mtime, HashMap::new())
+            (entries, current_meta, HashMap::new())
         } else if self.has_json_storage() {
             // JSON fallback — check file metadata
             let current_meta = self.collect_json_meta();
@@ -488,7 +494,7 @@ impl OpenCodeProvider {
                 entries.len(),
                 start.elapsed()
             );
-            (entries, None, current_meta)
+            (entries, Vec::new(), current_meta)
         } else {
             return Err("No OpenCode data found".to_string());
         };
@@ -500,7 +506,7 @@ impl OpenCodeProvider {
             *cache = Some(StatsCache {
                 stats: stats.clone(),
                 computed_at: Instant::now(),
-                db_mtime,
+                db_meta,
                 json_meta,
             });
         }
@@ -936,6 +942,68 @@ mod tests {
         let d = date.unwrap();
         assert_eq!(d.len(), 10);
         assert!(d.starts_with("2026-04-0"));
+    }
+
+    #[test]
+    fn test_collect_db_meta_includes_wal_and_detects_appends() {
+        let base = std::env::temp_dir().join(format!(
+            "ai-token-monitor-opencode-wal-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+
+        let provider = OpenCodeProvider {
+            data_dir: base.clone(),
+        };
+        let db_path = provider.db_path();
+
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        let mode: String = conn
+            .query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(mode.to_lowercase(), "wal");
+        // Keep committed frames in the WAL so the sidecar changes between reads.
+        let _: i64 = conn
+            .query_row("PRAGMA wal_autocheckpoint=0", [], |row| row.get(0))
+            .unwrap();
+        conn.execute_batch("CREATE TABLE messages (id TEXT PRIMARY KEY, data TEXT NOT NULL);")
+            .unwrap();
+        conn.execute(
+            "INSERT INTO messages (id, data) VALUES (?1, ?2)",
+            rusqlite::params!["msg-1", "{\"role\":\"assistant\"}"],
+        )
+        .unwrap();
+
+        let first = provider.collect_db_meta();
+        assert!(
+            first.iter().any(|(path, _, _)| *path == db_path),
+            "main DB must be part of the cache key"
+        );
+        let wal_path = PathBuf::from(format!("{}-wal", db_path.display()));
+        assert!(
+            first.iter().any(|(path, _, _)| *path == wal_path),
+            "WAL sidecar must be part of the cache key"
+        );
+
+        // Second insert appends to the WAL without checkpointing the main DB.
+        conn.execute(
+            "INSERT INTO messages (id, data) VALUES (?1, ?2)",
+            rusqlite::params!["msg-2", "{\"role\":\"assistant\"}"],
+        )
+        .unwrap();
+
+        let second = provider.collect_db_meta();
+        assert_ne!(first, second, "WAL append must change the DB cache key");
+        assert_eq!(first[0], second[0], "the main DB has not been checkpointed");
+
+        drop(conn);
+        assert_eq!(provider.collect_db_meta().len(), 1, "closing the writer removes the WAL");
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]
