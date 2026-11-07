@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -12,13 +12,17 @@ use super::resilience::{lock_unpoisoned, ParsingGuard};
 use super::traits::TokenProvider;
 use super::types::{AllStats, DailyUsage, ModelUsage};
 
+#[cfg(test)]
+#[path = "opencode_tests.rs"]
+mod storage_tests;
+
 // --- Cache infrastructure ---
 
 struct StatsCache {
     stats: AllStats,
     computed_at: Instant,
-    /// DB mtime for change detection
-    db_mtime: Option<SystemTime>,
+    /// (path, mtime, size) of the DB and its `-wal` sidecar for change detection
+    db_meta: Vec<(PathBuf, SystemTime, u64)>,
     /// JSON file metadata for change detection (fallback mode)
     json_meta: HashMap<PathBuf, (SystemTime, u64)>,
 }
@@ -128,117 +132,134 @@ impl OpenCodeProvider {
         self.json_storage_dir().is_dir()
     }
 
-    /// Get DB file mtime for cache invalidation.
-    fn db_mtime(&self) -> Option<SystemTime> {
-        fs::metadata(self.db_path())
-            .ok()
-            .and_then(|m| m.modified().ok())
+    /// Include the WAL because SQLite writes there between checkpoints.
+    fn collect_db_meta(&self) -> Vec<(PathBuf, SystemTime, u64)> {
+        let db_path = self.db_path();
+        let mut meta = Vec::new();
+        for path in [db_path, self.data_dir.join("opencode.db-wal")] {
+            if let Ok(m) = fs::metadata(&path) {
+                let mtime = m.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+                meta.push((path, mtime, m.len()));
+            }
+        }
+        meta
     }
 
     // --- SQLite parsing ---
 
     fn parse_sqlite(&self) -> Result<Vec<OpenCodeEntry>, String> {
-        let db_path = self.db_path();
-        let conn = rusqlite::Connection::open_with_flags(
-            &db_path,
+        let mut conn = rusqlite::Connection::open_with_flags(
+            self.db_path(),
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(|e| format!("Failed to open opencode.db: {}", e))?;
-
-        // Read messages table — the `data` column stores the full message JSON.
-        // We query only assistant messages that have token data.
-        let mut entries = Vec::new();
-
-        // First, check which tables exist to handle schema variations
-        let has_messages = conn
-            .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1")
-            .and_then(|mut stmt| stmt.exists(["messages"]))
-            .unwrap_or(false);
-
-        if has_messages {
-            self.parse_messages_table(&conn, &mut entries)?;
-        } else {
-            // Try alternative table names (e.g., message, message_v2)
-            for table in &["message", "message_v2"] {
-                let exists = conn
-                    .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1")
-                    .and_then(|mut stmt| stmt.exists([*table]))
-                    .unwrap_or(false);
-                if exists {
-                    self.parse_generic_data_table(&conn, table, &mut entries)?;
-                    break;
-                }
+        // Read both schemas from one snapshot while OpenCode may be migrating.
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("Failed to read OpenCode snapshot: {}", e))?;
+        let mut entries = BTreeMap::new();
+        let mut found = false;
+        // Migration retains v1 rows and assistant IDs; a usable v2 copy wins.
+        // Keep v1-only summary usage, which migration omits from v2 compactions.
+        for table in ["messages", "message", "message_v2", "session_message"] {
+            let exists: bool = tx
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
+                    [table],
+                    |row| row.get(0),
+                )
+                .map_err(|e| format!("Failed to inspect OpenCode schema: {}", e))?;
+            if exists {
+                found = true;
+                self.parse_data_table(&tx, table, &mut entries)?;
             }
         }
-
-        Ok(entries)
-    }
-
-    /// Parse the `messages` table using the `data` JSON column.
-    fn parse_messages_table(
-        &self,
-        conn: &rusqlite::Connection,
-        entries: &mut Vec<OpenCodeEntry>,
-    ) -> Result<(), String> {
-        // Try to read data column which contains the full message JSON
-        let mut stmt = conn
-            .prepare("SELECT id, data FROM messages")
-            .map_err(|e| format!("Failed to prepare messages query: {}", e))?;
-
-        let rows = stmt
-            .query_map([], |row| {
-                let id: String = row.get(0)?;
-                let data: String = row.get(1)?;
-                Ok((id, data))
-            })
-            .map_err(|e| format!("Failed to query messages: {}", e))?;
-
-        for row in rows.flatten() {
-            let (id, data_str) = row;
-            if let Ok(data) = serde_json::from_str::<Value>(&data_str) {
-                if let Some(entry) = parse_message_json(&id, &data) {
-                    entries.push(entry);
-                }
-            }
+        if !found {
+            return Err("Unsupported OpenCode database schema: no message table found".to_string());
         }
-
-        Ok(())
+        // Stable order also keeps floating-point cost totals repeatable.
+        Ok(entries.into_values().collect())
     }
 
-    /// Parse a table with a `data` JSON column (generic fallback).
-    fn parse_generic_data_table(
+    fn parse_data_table(
         &self,
         conn: &rusqlite::Connection,
         table: &str,
-        entries: &mut Vec<OpenCodeEntry>,
+        entries: &mut BTreeMap<String, OpenCodeEntry>,
     ) -> Result<(), String> {
-        // Validate table name to prevent SQL injection
-        if !table.chars().all(|c| c.is_alphanumeric() || c == '_') {
-            return Err("Invalid table name".to_string());
+        if !["messages", "message", "message_v2", "session_message"].contains(&table) {
+            return Err("Invalid OpenCode table name".to_string());
         }
-
-        let query = format!("SELECT id, data FROM \"{}\"", table);
+        let v2 = table == "session_message";
+        let has_session_id: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM pragma_table_info(?1) WHERE name = 'session_id')",
+                [table],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("Failed to inspect {} columns: {}", table, e))?;
+        let session = if v2 || has_session_id {
+            "session_id"
+        } else {
+            "NULL"
+        };
+        let timestamp = if v2 { "time_created" } else { "NULL" };
+        // Native v2 compactions carry their own model/token usage.
+        let filter = if v2 {
+            "WHERE type IN ('assistant', 'compaction')"
+        } else {
+            ""
+        };
+        let query = format!("SELECT id, data, {session}, {timestamp} FROM \"{table}\" {filter}");
         let mut stmt = conn
             .prepare(&query)
             .map_err(|e| format!("Failed to prepare {} query: {}", table, e))?;
-
         let rows = stmt
             .query_map([], |row| {
-                let id: String = row.get(0)?;
-                let data: String = row.get(1)?;
-                Ok((id, data))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                ))
             })
             .map_err(|e| format!("Failed to query {}: {}", table, e))?;
 
-        for row in rows.flatten() {
-            let (id, data_str) = row;
-            if let Ok(data) = serde_json::from_str::<Value>(&data_str) {
-                if let Some(entry) = parse_message_json(&id, &data) {
-                    entries.push(entry);
+        for row in rows {
+            let (id, data_str, session_id, created) = match row {
+                Ok(row) => row,
+                Err(
+                    error @ (rusqlite::Error::InvalidColumnType(..)
+                    | rusqlite::Error::FromSqlConversionFailure(..)
+                    | rusqlite::Error::IntegralValueOutOfRange(..)
+                    | rusqlite::Error::Utf8Error(..)),
+                ) => {
+                    // Bad field values must not hide usage from the remaining rows.
+                    eprintln!("[OpenCode] Skipping malformed {table} row: {error}");
+                    continue;
                 }
+                Err(error) => return Err(format!("Failed to read {table} row: {error}")),
+            };
+            let Ok(data) = serde_json::from_str::<Value>(&data_str) else {
+                continue;
+            };
+            let entry = if v2 {
+                session_id
+                    .as_deref()
+                    .zip(created)
+                    .and_then(|(session, created)| parse_v2_message(&data, session, created))
+            } else {
+                parse_message_json(&id, &data).map(|mut entry| {
+                    if let Some(session) = session_id {
+                        entry.session_id = session;
+                    }
+                    entry
+                })
+            };
+            if let Some(entry) = entry {
+                entries.insert(id, entry);
             }
         }
-
         Ok(())
     }
 
@@ -417,13 +438,13 @@ impl OpenCodeProvider {
     fn do_fetch_stats(&self) -> Result<AllStats, String> {
         let start = Instant::now();
 
-        let (entries, db_mtime, json_meta) = if self.has_sqlite_db() {
-            // Check if DB has changed since last parse
-            let current_mtime = self.db_mtime();
+        let (entries, db_meta, json_meta) = if self.has_sqlite_db() {
+            // Check if DB (or its WAL sidecar) has changed since last parse
+            let current_meta = self.collect_db_meta();
             {
                 let cache = lock_unpoisoned(&STATS_CACHE);
                 if let Some(ref cached) = *cache {
-                    if cached.db_mtime == current_mtime {
+                    if cached.db_meta == current_meta {
                         drop(cache);
                         {
                             let mut cache = lock_unpoisoned(&STATS_CACHE);
@@ -452,7 +473,7 @@ impl OpenCodeProvider {
                 entries.len(),
                 start.elapsed()
             );
-            (entries, current_mtime, HashMap::new())
+            (entries, current_meta, HashMap::new())
         } else if self.has_json_storage() {
             // JSON fallback — check file metadata
             let current_meta = self.collect_json_meta();
@@ -488,7 +509,7 @@ impl OpenCodeProvider {
                 entries.len(),
                 start.elapsed()
             );
-            (entries, None, current_meta)
+            (entries, Vec::new(), current_meta)
         } else {
             return Err("No OpenCode data found".to_string());
         };
@@ -500,7 +521,7 @@ impl OpenCodeProvider {
             *cache = Some(StatsCache {
                 stats: stats.clone(),
                 computed_at: Instant::now(),
-                db_mtime,
+                db_meta,
                 json_meta,
             });
         }
@@ -564,6 +585,42 @@ fn parse_message_json(id: &str, data: &Value) -> Option<OpenCodeEntry> {
         return None;
     }
 
+    // Extract model and provider
+    let model_id = data
+        .get("modelID")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+
+    // Extract date from timestamp
+    let date = extract_date_from_message(data)?;
+
+    // Extract session ID from the message or use the provided id
+    let session_id = data
+        .get("sessionID")
+        .and_then(|v| v.as_str())
+        .unwrap_or(id);
+
+    parse_usage(data, model_id, session_id, date)
+}
+
+fn parse_v2_message(data: &Value, session_id: &str, created: i64) -> Option<OpenCodeEntry> {
+    let model_id = data
+        .pointer("/model/id")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let date = chrono::DateTime::from_timestamp_millis(created)?
+        .with_timezone(&chrono::Local)
+        .format("%Y-%m-%d")
+        .to_string();
+    parse_usage(data, model_id, session_id, date)
+}
+
+fn parse_usage(
+    data: &Value,
+    model_id: &str,
+    session_id: &str,
+    date: String,
+) -> Option<OpenCodeEntry> {
     // Extract tokens — OpenCode stores as: tokens.input, tokens.output,
     // tokens.reasoning, tokens.cache.read, tokens.cache.write
     let tokens = data.get("tokens")?;
@@ -584,30 +641,9 @@ fn parse_message_json(id: &str, data: &Value) -> Option<OpenCodeEntry> {
 
     // Skip only when every non-overlapping token bucket is zero, so that
     // reasoning-only and cache-only assistant messages are retained.
-    if input == 0
-        && output == 0
-        && reasoning == 0
-        && cache_read == 0
-        && cache_write == 0
-    {
+    if input == 0 && output == 0 && reasoning == 0 && cache_read == 0 && cache_write == 0 {
         return None;
     }
-
-    // Extract model and provider
-    let model_id = data
-        .get("modelID")
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown");
-
-    // Extract date from timestamp
-    let date = extract_date_from_message(data)?;
-
-    // Extract session ID from the message or use the provided id
-    let session_id = data
-        .get("sessionID")
-        .and_then(|v| v.as_str())
-        .unwrap_or(id)
-        .to_string();
 
     Some(OpenCodeEntry {
         date,
@@ -616,7 +652,7 @@ fn parse_message_json(id: &str, data: &Value) -> Option<OpenCodeEntry> {
         // prefix (`anthropic/claude-opus-5`), which is exactly what gets dropped;
         // its pricing patterns are bare families, so matching is unaffected.
         model: pricing::normalize_model_id(model_id),
-        session_id,
+        session_id: session_id.to_string(),
         input_tokens: input,
         output_tokens: output,
         reasoning_tokens: reasoning,
@@ -936,6 +972,68 @@ mod tests {
         let d = date.unwrap();
         assert_eq!(d.len(), 10);
         assert!(d.starts_with("2026-04-0"));
+    }
+
+    #[test]
+    fn test_collect_db_meta_includes_wal_and_detects_appends() {
+        let base = std::env::temp_dir().join(format!(
+            "ai-token-monitor-opencode-wal-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+
+        let provider = OpenCodeProvider {
+            data_dir: base.clone(),
+        };
+        let db_path = provider.db_path();
+
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        let mode: String = conn
+            .query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(mode.to_lowercase(), "wal");
+        // Keep committed frames in the WAL so the sidecar changes between reads.
+        let _: i64 = conn
+            .query_row("PRAGMA wal_autocheckpoint=0", [], |row| row.get(0))
+            .unwrap();
+        conn.execute_batch("CREATE TABLE messages (id TEXT PRIMARY KEY, data TEXT NOT NULL);")
+            .unwrap();
+        conn.execute(
+            "INSERT INTO messages (id, data) VALUES (?1, ?2)",
+            rusqlite::params!["msg-1", "{\"role\":\"assistant\"}"],
+        )
+        .unwrap();
+
+        let first = provider.collect_db_meta();
+        assert!(
+            first.iter().any(|(path, _, _)| *path == db_path),
+            "main DB must be part of the cache key"
+        );
+        let wal_path = PathBuf::from(format!("{}-wal", db_path.display()));
+        assert!(
+            first.iter().any(|(path, _, _)| *path == wal_path),
+            "WAL sidecar must be part of the cache key"
+        );
+
+        // Second insert appends to the WAL without checkpointing the main DB.
+        conn.execute(
+            "INSERT INTO messages (id, data) VALUES (?1, ?2)",
+            rusqlite::params!["msg-2", "{\"role\":\"assistant\"}"],
+        )
+        .unwrap();
+
+        let second = provider.collect_db_meta();
+        assert_ne!(first, second, "WAL append must change the DB cache key");
+        assert_eq!(first[0], second[0], "the main DB has not been checkpointed");
+
+        drop(conn);
+        assert_eq!(provider.collect_db_meta().len(), 1, "closing the writer removes the WAL");
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]
