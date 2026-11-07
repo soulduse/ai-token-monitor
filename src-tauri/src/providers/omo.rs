@@ -13,6 +13,11 @@
 //!   `sessionDir` in `<agent dir>/settings.jsonc` (else `settings.json`); the
 //!   senpi engine then writes FLAT `<dir>/<ts>_<id>.jsonl`. Env and settings
 //!   are scanned next to the default root; `--session-dir` cannot be discovered.
+//! - OmO Desktop (verified on macOS) writes main sessions to
+//!   `~/.omo/desktop/userdata/omo-sessions/<omo-id>/*.jsonl` - the same fixed
+//!   depth as the agent sessions root, so it is scanned as an extra root. It
+//!   hangs off home, not the agent dir, so `OMO_CODING_AGENT_DIR` does not move
+//!   it.
 //! - subagent child sessions live OUTSIDE the agent dir at
 //!   `<cwd>/.omo/senpi-task/children/st_*/sessions/st_*/*.jsonl`, where `<cwd>`
 //!   comes from main session headers (line 1)
@@ -62,8 +67,16 @@ fn default_sessions_root() -> PathBuf {
     resolve_agent_dir(std::env::var("OMO_CODING_AGENT_DIR").ok().as_deref()).join("sessions")
 }
 
-/// Session dirs the watcher follows: the default root and the custom flat dir,
-/// whichever exist.
+/// OmO Desktop's sessions root (`<omo-id>/*.jsonl` below it).
+fn desktop_sessions_root(home: &Path) -> PathBuf {
+    home.join(".omo")
+        .join("desktop")
+        .join("userdata")
+        .join("omo-sessions")
+}
+
+/// Session dirs the watcher follows: the default root, the Desktop root and
+/// the custom flat dir, whichever exist.
 pub fn watch_dirs() -> Vec<PathBuf> {
     OmoProvider::new().session_dirs().existing().cloned().collect()
 }
@@ -123,6 +136,7 @@ impl OmoProvider {
         let custom =
             pi_session::resolve_custom_session_dir::<Omo>(session_env, &self.agent_dir, home);
         SessionDirs::new(self.sessions_root(), custom)
+            .with_extra_roots(vec![desktop_sessions_root(home)])
     }
 }
 
@@ -861,6 +875,72 @@ mod tests {
         let watched: Vec<PathBuf> =
             provider.session_dirs_with(Some(&custom_str), &root).existing().cloned().collect();
         assert_eq!(watched, vec![sessions, custom]);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // (20) OmO Desktop alone (no CLI sessions root): the provider is available,
+    // the Desktop root is watched, its mains lead to children through their
+    // header cwd, and files deeper than `<omo-id>/*.jsonl` are not sessions.
+    #[test]
+    fn desktop_only_root_is_available_scanned_and_watched() {
+        let root = temp_root("desktop-only");
+        let home = root.join("home");
+        let desktop = desktop_sessions_root(&home);
+        let cwd = root.join("proj");
+        write_file(
+            &desktop.join("omo-aaa").join("thread-1.jsonl"),
+            &[session_header(&cwd, "d"), usage_line("d1", 5)].join("\n"),
+        );
+        write_file(
+            &desktop.join("omo-aaa").join("extensions/goal/x.history.jsonl"),
+            &usage_line("deep", 500),
+        );
+        write_file(&child_path(&cwd, "st_1"), &[session_header(&cwd, "c"), usage_line("c1", 50)].join("\n"));
+
+        let dirs = OmoProvider::with_agent_dir(root.join("agent")).session_dirs_with(None, &home);
+        assert!(dirs.any_exists());
+        assert_eq!(dirs.existing().cloned().collect::<Vec<_>>(), vec![desktop]);
+
+        let stats = ScanState::default().refresh_dirs(&dirs);
+        assert_eq!((totals(&stats).0, stats.total_messages), (55, 2));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // (21) CLI and several Desktop omo-id dirs add up; a response copied into
+    // both counts once; an append to a Desktop session refreshes incrementally
+    // to exactly what a fresh scan computes.
+    #[test]
+    fn cli_and_desktop_ids_sum_dedup_and_refresh_incrementally() {
+        let root = temp_root("desktop-cli");
+        let home = root.join("home");
+        let desktop = desktop_sessions_root(&home);
+        let cwd = root.join("proj");
+        let thread_b = desktop.join("omo-b").join("thread-b.jsonl");
+        write_file(
+            &root.join("agent/sessions/p/main.jsonl"),
+            &[session_header(&cwd, "s"), usage_line("shared", 1), usage_line("cli", 10)].join("\n"),
+        );
+        write_file(
+            &desktop.join("omo-a").join("thread-a.jsonl"),
+            &[session_header(&cwd, "a"), usage_line("shared", 1), usage_line("da", 100)].join("\n"),
+        );
+        write_file(&thread_b, &[session_header(&cwd, "b"), usage_line("db", 1000)].join("\n"));
+
+        let dirs = OmoProvider::with_agent_dir(root.join("agent")).session_dirs_with(None, &home);
+        let mut state = ScanState::default();
+        let first = state.refresh_dirs(&dirs);
+        assert_eq!((totals(&first).0, first.total_messages), (1111, 4));
+
+        append_line(&thread_b, &usage_line("db2", 10000));
+        let incremental = state.refresh_dirs(&dirs);
+        let fresh = ScanState::default().refresh_dirs(&dirs);
+        assert_eq!((totals(&fresh).0, fresh.total_messages), (11111, 5));
+        assert_eq!(
+            (totals(&incremental), incremental.total_messages),
+            (totals(&fresh), fresh.total_messages)
+        );
 
         let _ = fs::remove_dir_all(&root);
     }
