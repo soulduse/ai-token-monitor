@@ -908,6 +908,25 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
+    // (20b) A custom session dir set to the Desktop root is that root: it is
+    // watched once and recursively (not as a flat dir), so appends to
+    // `<omo-id>/*.jsonl` still reach the watcher.
+    #[test]
+    fn custom_dir_equal_to_desktop_root_stays_a_recursive_root() {
+        let root = temp_root("desktop-custom");
+        let home = root.join("home");
+        let desktop = desktop_sessions_root(&home);
+        fs::create_dir_all(&desktop).expect("create desktop root");
+        let desktop_str = desktop.to_string_lossy().into_owned();
+
+        let dirs = OmoProvider::with_agent_dir(root.join("agent"))
+            .session_dirs_with(Some(&desktop_str), &home);
+        assert_eq!(dirs.flat_dir(), None);
+        assert_eq!(dirs.existing().cloned().collect::<Vec<_>>(), vec![desktop]);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
     // (21) CLI and several Desktop omo-id dirs add up; a response copied into
     // both counts once; an append to a Desktop session refreshes incrementally
     // to exactly what a fresh scan computes.
