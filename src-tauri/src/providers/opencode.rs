@@ -226,8 +226,20 @@ impl OpenCodeProvider {
             .map_err(|e| format!("Failed to query {}: {}", table, e))?;
 
         for row in rows {
-            let (id, data_str, session_id, created) =
-                row.map_err(|e| format!("Failed to read {} row: {}", table, e))?;
+            let (id, data_str, session_id, created) = match row {
+                Ok(row) => row,
+                Err(
+                    error @ (rusqlite::Error::InvalidColumnType(..)
+                    | rusqlite::Error::FromSqlConversionFailure(..)
+                    | rusqlite::Error::IntegralValueOutOfRange(..)
+                    | rusqlite::Error::Utf8Error(..)),
+                ) => {
+                    // Bad field values must not hide usage from the remaining rows.
+                    eprintln!("[OpenCode] Skipping malformed {table} row: {error}");
+                    continue;
+                }
+                Err(error) => return Err(format!("Failed to read {table} row: {error}")),
+            };
             let Ok(data) = serde_json::from_str::<Value>(&data_str) else {
                 continue;
             };
