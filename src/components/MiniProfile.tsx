@@ -16,7 +16,7 @@ interface Props {
 export function MiniProfile({ localDaily, currentUserId }: Props) {
   const { target, close } = useMiniProfile();
   const isMe = target?.user_id === currentUserId;
-  const { daily: remoteDaily, loading: remoteLoading, error } = useUserActivity(isMe ? null : target?.user_id ?? null);
+  const { daily: remoteDaily, streak: remoteStreak, loading: remoteLoading, error } = useUserActivity(isMe ? null : target?.user_id ?? null);
   const { links, fetching, addLink, removeLink, canAdd } = useProfileLinks(target?.user_id ?? null, isMe);
   const t = useI18n();
   const [streakTooltip, setStreakTooltip] = useState(false);
@@ -28,10 +28,14 @@ export function MiniProfile({ localDaily, currentUserId }: Props) {
   const daily = isMe && localDaily ? localDaily : remoteDaily;
   const loading = isMe ? false : remoteLoading;
 
-  const streak = useMemo(() => {
-    if (daily.length === 0) return null;
-    return computeStreaks(daily);
-  }, [daily]);
+  // Own profile: local stats cover the full history. Others: the server streak
+  // covers the full history; `daily` is only 8 weeks, so computing from it is
+  // just a fallback for when the streak RPC is unavailable.
+  const currentStreak = useMemo(() => {
+    if (!isMe && remoteStreak != null) return remoteStreak;
+    if (daily.length === 0) return 0;
+    return computeStreaks(daily).currentStreak;
+  }, [isMe, remoteStreak, daily]);
 
   // ESC to close (capture phase to prevent App's hide_window)
   useEffect(() => {
@@ -158,7 +162,7 @@ export function MiniProfile({ localDaily, currentUserId }: Props) {
           </div>
 
           {/* Streak badge with tooltip */}
-          {!loading && streak && streak.currentStreak > 0 && (
+          {!loading && currentStreak > 0 && (
             <div
               style={{ position: "relative" }}
               onMouseEnter={() => setStreakTooltip(true)}
@@ -181,7 +185,7 @@ export function MiniProfile({ localDaily, currentUserId }: Props) {
                   fontWeight: 700,
                   color: "var(--accent-purple)",
                 }}>
-                  {streak.currentStreak} {t("activity.days")}
+                  {currentStreak} {t("activity.days")}
                 </span>
               </div>
               {streakTooltip && (
