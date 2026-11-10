@@ -1,6 +1,6 @@
 {
-  "version": "1.21.0",
-  "last_updated": "2026-10-27",
+  "version": "1.22.0",
+  "last_updated": "2026-11-10",
   "sources": {
     "claude": "https://platform.claude.com/docs/en/about-claude/pricing",
     "codex": "https://developers.openai.com/api/docs/pricing",
@@ -13,9 +13,13 @@
   "claude": {
     "default": "sonnet",
     "models": [
+      { "match": "fable-5-202","label": "Fable 5",              "input": 10.0, "output": 50.0,  "cache_read": 1.00, "cache_write": 12.5,  "cache_write_1h": 20.0  },
+      { "match": "fable-5-2", "label": "Fable 5.2",            "input": 8.0,  "output": 40.0,  "cache_read": 0.20, "cache_write": 10.0,  "cache_write_1h": 16.0  },
       { "match": "fable-5-1", "label": "Fable 5.1",            "input": 10.0, "output": 50.0,  "cache_read": 0.25, "cache_write": 12.5,  "cache_write_1h": 20.0  },
       { "match": "fable-5",   "label": "Fable 5",              "input": 10.0, "output": 50.0,  "cache_read": 1.00, "cache_write": 12.5,  "cache_write_1h": 20.0  },
       { "match": "fable",     "label": "Fable 5",              "input": 10.0, "output": 50.0,  "cache_read": 1.00, "cache_write": 12.5,  "cache_write_1h": 20.0  },
+      { "match": "mythos-5-202","label": "Mythos 5",            "input": 10.0, "output": 50.0,  "cache_read": 1.00, "cache_write": 12.5,  "cache_write_1h": 20.0  },
+      { "match": "mythos-5-2","label": "Mythos 5.2",           "input": 8.0,  "output": 40.0,  "cache_read": 0.20, "cache_write": 10.0,  "cache_write_1h": 16.0  },
       { "match": "mythos-5-1","label": "Mythos 5.1",           "input": 10.0, "output": 50.0,  "cache_read": 0.25, "cache_write": 12.5,  "cache_write_1h": 20.0  },
       { "match": "mythos-5",  "label": "Mythos 5",             "input": 10.0, "output": 50.0,  "cache_read": 1.00, "cache_write": 12.5,  "cache_write_1h": 20.0  },
       { "match": "mythos",    "label": "Mythos 5",             "input": 10.0, "output": 50.0,  "cache_read": 1.00, "cache_write": 12.5,  "cache_write_1h": 20.0  },
@@ -102,9 +106,13 @@
   "opencode": {
     "default": "sonnet",
     "models": [
+      { "match": "fable-5-202",       "label": "Claude Fable 5",               "input": 10.0,  "output": 50.0,   "cache_read": 1.00,  "cache_write": 12.5   },
+      { "match": "fable-5-2",         "label": "Claude Fable 5.2",             "input": 8.0,   "output": 40.0,   "cache_read": 0.20,  "cache_write": 10.0   },
       { "match": "fable-5-1",         "label": "Claude Fable 5.1",             "input": 10.0,  "output": 50.0,   "cache_read": 0.25,  "cache_write": 12.5   },
       { "match": "fable-5",           "label": "Claude Fable 5",               "input": 10.0,  "output": 50.0,   "cache_read": 1.00,  "cache_write": 12.5   },
       { "match": "fable",             "label": "Claude Fable 5",               "input": 10.0,  "output": 50.0,   "cache_read": 1.00,  "cache_write": 12.5   },
+      { "match": "mythos-5-202",      "label": "Claude Mythos 5",              "input": 10.0,  "output": 50.0,   "cache_read": 1.00,  "cache_write": 12.5   },
+      { "match": "mythos-5-2",        "label": "Claude Mythos 5.2",            "input": 8.0,   "output": 40.0,   "cache_read": 0.20,  "cache_write": 10.0   },
       { "match": "mythos-5-1",        "label": "Claude Mythos 5.1",            "input": 10.0,  "output": 50.0,   "cache_read": 0.25,  "cache_write": 12.5   },
       { "match": "mythos-5",          "label": "Claude Mythos 5",              "input": 10.0,  "output": 50.0,   "cache_read": 1.00,  "cache_write": 12.5   },
       { "match": "mythos",            "label": "Claude Mythos 5",              "input": 10.0,  "output": 50.0,   "cache_read": 1.00,  "cache_write": 12.5   },
