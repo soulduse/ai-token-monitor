@@ -1097,6 +1097,75 @@ mod tests {
         assert!((p.cache_read - 0.25).abs() < 0.001, "Mythos 5.1 cache read must be $0.25/MTok, got ${}", p.cache_read);
     }
 
+    // Regression guard: Fable 5.2 / Mythos 5.2 (2026-11) cut prices to $8/$40,
+    // cache read $0.20 (0.025x), cache write $10 (5m) / $16 (1h). Without their own
+    // entries "claude-fable-5-2" canonicalizes past "fable-5-1" and lands on
+    // "fable-5" — billed at $10/$50 with $1.00 cache reads (1.25x input/output,
+    // 5x cache read over-billing). The 5-2 entries must sit above 5-1 / 5.
+    #[test]
+    fn claude_fable_52_not_billed_as_fable_5() {
+        for id in ["claude-fable-5-2", "claude-fable-5-2[1m]", "claude-fable-5.2"] {
+            let p = get_claude_pricing(id);
+            assert!((p.input - 8.0).abs() < 0.001, "{id} input must be $8/MTok, got ${}", p.input);
+            assert!((p.output - 40.0).abs() < 0.001, "{id} output must be $40/MTok, got ${}", p.output);
+            assert!((p.cache_read - 0.20).abs() < 0.001, "{id} cache read must be $0.20/MTok, got ${}", p.cache_read);
+            assert!((p.cache_write_5m - 10.0).abs() < 0.001, "{id} 5m cache write must be $10/MTok");
+            assert!((p.cache_write_1h - 16.0).abs() < 0.001, "{id} 1h cache write must be $16/MTok");
+        }
+    }
+
+    #[test]
+    fn opencode_fable_52_not_billed_as_fable_5() {
+        let p = get_opencode_pricing("anthropic/claude-fable-5-2");
+        assert!((p.input - 8.0).abs() < 0.001, "Opencode Fable 5.2 input must be $8/MTok, got ${}", p.input);
+        assert!((p.output - 40.0).abs() < 0.001, "Opencode Fable 5.2 output must be $40/MTok, got ${}", p.output);
+        assert!((p.cache_read - 0.20).abs() < 0.001, "Opencode Fable 5.2 cache read must be $0.20/MTok, got ${}", p.cache_read);
+    }
+
+    #[test]
+    fn claude_mythos_52_not_billed_as_mythos_5() {
+        let p = get_claude_pricing("claude-mythos-5-2");
+        assert!((p.input - 8.0).abs() < 0.001, "Mythos 5.2 input must be $8/MTok, got ${}", p.input);
+        assert!((p.output - 40.0).abs() < 0.001, "Mythos 5.2 output must be $40/MTok, got ${}", p.output);
+        assert!((p.cache_read - 0.20).abs() < 0.001, "Mythos 5.2 cache read must be $0.20/MTok, got ${}", p.cache_read);
+        let o = get_opencode_pricing("anthropic/claude-mythos-5-2");
+        assert!((o.input - 8.0).abs() < 0.001, "Opencode Mythos 5.2 input must be $8/MTok, got ${}", o.input);
+        assert!((o.cache_read - 0.20).abs() < 0.001, "Opencode Mythos 5.2 cache read must be $0.20/MTok");
+    }
+
+    #[test]
+    fn claude_mythos_52_variants_resolve() {
+        for id in ["claude-mythos-5-2[1m]", "claude-mythos-5.2"] {
+            let p = get_claude_pricing(id);
+            assert!((p.input - 8.0).abs() < 0.001, "{id} input must be $8/MTok, got ${}", p.input);
+            assert!((p.cache_write_1h - 16.0).abs() < 0.001, "{id} 1h cache write must be $16/MTok");
+        }
+    }
+
+    // Substring matching has no boundary check: a dated Fable/Mythos 5 snapshot
+    // ("claude-fable-5-20261105") contains "fable-5-2" and would be under-billed at
+    // 5.2 prices. The "fable-5-202" / "mythos-5-202" guard rows sit above 5-2 and
+    // keep those IDs on Fable/Mythos 5, while a dated 5.2 ID ("…-5-2-20261201")
+    // still reaches 5.2 (it contains "5-2-2", not "5-202").
+    #[test]
+    fn dated_fable_5_snapshot_not_billed_as_fable_52() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        assert_eq!(find_pricing(&cfg.claude, "claude-fable-5-20261105").label, "Fable 5");
+        assert_eq!(find_pricing(&cfg.claude, "claude-mythos-5-20261105").label, "Mythos 5");
+        assert_eq!(find_pricing(&cfg.claude, "claude-fable-5-2-20261201").label, "Fable 5.2");
+        assert_eq!(find_pricing(&cfg.claude, "claude-mythos-5-2-20261201").label, "Mythos 5.2");
+        assert!((get_opencode_pricing("anthropic/claude-fable-5-20261105").cache_read - 1.00).abs() < 0.001);
+    }
+
+    #[test]
+    fn claude_fable_52_ordering_keeps_51_entries() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        assert_eq!(find_pricing(&cfg.claude, "claude-fable-5-1").label, "Fable 5.1");
+        assert_eq!(find_pricing(&cfg.claude, "claude-mythos-5-1").label, "Mythos 5.1");
+        assert_eq!(find_pricing(&cfg.claude, "claude-fable-5-2").label, "Fable 5.2");
+        assert_eq!(find_pricing(&cfg.claude, "claude-mythos-5-2").label, "Mythos 5.2");
+    }
+
     // Plain "claude-fable-5" (and 1M-context "claude-fable-5-1[1m]") must keep
     // landing on their own entries after the 5-1 entry was added above them.
     #[test]
