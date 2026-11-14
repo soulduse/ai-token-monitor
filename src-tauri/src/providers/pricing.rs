@@ -2287,9 +2287,6 @@ mod tests {
         }
     }
 
-    // Gemini 4 Carbon (11-10) shares Argon's price and Dec 1 increase; Hydrogen
-    // (11-12) is cheaper. Both contain "gemini-4", so without their own rows
-    // they show as "Gemini 4 Argon" and Hydrogen is over-billed 1.33x.
     // OpenCode/agy bill GPT models from the opencode table, which had no
     // long-context tiers — >272K requests were billed at short rates. Long
     // cache writes follow OpenAI's 1.25x-of-input rule.
@@ -2312,6 +2309,9 @@ mod tests {
         assert_eq!((standard.input, standard.output, standard.cached_input, standard.cache_write), (10.0, 45.0, 1.0, 12.5));
     }
 
+    // Gemini 4 Carbon (11-10) shares Argon's price and Dec 1 increase; Hydrogen
+    // (11-12) is cheaper. Both contain "gemini-4", so without their own rows
+    // they show as "Gemini 4 Argon" and Hydrogen is over-billed 1.33x.
     #[test]
     fn gemini_4_carbon_hydrogen_have_own_rows() {
         let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
