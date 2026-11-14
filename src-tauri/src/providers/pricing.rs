@@ -953,6 +953,19 @@ mod tests {
         assert_eq!((code.input, code.output, code.cache_read), (0.95, 4.00, 0.19));
         let fast = get_kimi_pricing("kimi-k2.7-code-highspeed");
         assert_eq!((fast.input, fast.output, fast.cache_read), (1.90, 8.00, 0.38));
+        // K3.1 Pro (10-24) canonicalizes to "kimi-k3-1-pro", which contains
+        // "kimi-k3" — without its own rows it bills at K3 ($3/$15), 1.5x over.
+        let k31 = get_kimi_pricing("kimi-k3.1-pro");
+        assert_eq!((k31.input, k31.output, k31.cache_read), (2.00, 10.00, 0.20));
+        let k31_fast = get_kimi_pricing("kimi-k3.1-pro-highspeed");
+        assert_eq!((k31_fast.input, k31_fast.output, k31_fast.cache_read), (4.00, 20.00, 0.20));
+        let k31_claude = get_claude_pricing("kimi-k3.1-pro");
+        assert!((k31_claude.cache_write_5m - 2.00).abs() < 0.001);
+        assert!((k31_claude.cache_write_1h - 4.00).abs() < 0.001);
+        let k31_fast_claude = get_claude_pricing("kimi-k3.1-pro-highspeed");
+        assert!((k31_fast_claude.cache_write_5m - 4.00).abs() < 0.001);
+        assert!((k31_fast_claude.cache_write_1h - 8.00).abs() < 0.001);
+
         let k26 = get_kimi_pricing("kimi-k2.6");
         assert_eq!((k26.input, k26.output, k26.cache_read), (0.95, 4.00, 0.16));
     }
@@ -1800,7 +1813,31 @@ mod tests {
                 let twin = twin.unwrap_or_else(|| panic!("opencode is missing {name} row {:?}", e.match_pattern));
                 assert!((twin.input - e.input).abs() < 1e-9, "{name} {:?} input differs", e.match_pattern);
                 assert!((twin.output - e.output).abs() < 1e-9, "{name} {:?} output differs", e.match_pattern);
+                // Long-context tiers and dated price changes must follow the
+                // row into opencode, or OpenCode/agy usage of the same model
+                // is billed at the short or pre-change rate.
+                assert_same_tier(name, &e.match_pattern, e.high_context, twin.high_context);
+                assert_eq!(twin.scheduled.len(), e.scheduled.len(), "{name} {:?} schedule differs", e.match_pattern);
+                for (s, t) in e.scheduled.iter().zip(&twin.scheduled) {
+                    assert_eq!(s.from, t.from, "{name} {:?} schedule date differs", e.match_pattern);
+                    assert!((s.input - t.input).abs() < 1e-9, "{name} {:?} scheduled input differs", e.match_pattern);
+                    assert!((s.output - t.output).abs() < 1e-9, "{name} {:?} scheduled output differs", e.match_pattern);
+                    assert_same_tier(name, &e.match_pattern, s.high_context, t.high_context);
+                }
             }
+        }
+    }
+
+    fn assert_same_tier(name: &str, pattern: &str, a: Option<HighContextTier>, b: Option<HighContextTier>) {
+        match (a, b) {
+            (None, None) => {}
+            (Some(a), Some(b)) => {
+                assert_eq!(a.threshold_tokens, b.threshold_tokens, "{name} {pattern:?} long threshold differs");
+                assert!((a.input - b.input).abs() < 1e-9, "{name} {pattern:?} long input differs");
+                assert!((a.output - b.output).abs() < 1e-9, "{name} {pattern:?} long output differs");
+                assert!((a.cached_input - b.cached_input).abs() < 1e-9, "{name} {pattern:?} long cached input differs");
+            }
+            _ => panic!("{name} {pattern:?} long-context tier present on only one side"),
         }
     }
 
@@ -2215,12 +2252,85 @@ mod tests {
         assert!((p.output - 30.00).abs() < 0.001);
     }
 
+    // gemini-2.5-pro is shut down on 2026-12-01 and its requests are routed to
+    // Gemini 3.8 Flash and "billed at Gemini 3.8 Flash rates" (AI Studio
+    // deprecations page), which double on 2027-01-01. 3.8 Flash has no >200K
+    // tier, so the old long-context surcharge must disappear with the switch.
+    // Pinned to dates so the test doesn't flip on Dec 1.
     #[test]
     fn gemini_25_pro_pricing() {
-        let p = get_gemini_pricing("gemini-2.5-pro-preview");
-        assert!((p.input - 1.25).abs() < 0.001);
-        assert!((p.output - 10.0).abs() < 0.001);
-        assert!((p.cache_read - 0.125).abs() < 0.001);
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let tables = [cfg.gemini.as_ref().expect("gemini table"), cfg.opencode.as_ref().expect("opencode table")];
+        for model in ["gemini-2.5-pro", "gemini-2.5-pro-preview"] {
+            for table in tables {
+                let entry = find_pricing(table, &canonical_model(model));
+                assert_eq!(entry.label, "Gemini 2.5 Pro", "{model}");
+                let before = entry.resolve_for("2026-11-30");
+                assert!((before.input - 1.25).abs() < 0.001, "{model}");
+                assert!((before.output - 10.0).abs() < 0.001, "{model}");
+                assert!((before.cache_read - 0.125).abs() < 0.001, "{model}");
+                assert!((before.high_context.expect("2.5 Pro long tier").input - 2.50).abs() < 0.001, "{model}");
+
+                let routed = entry.resolve_for("2026-12-01");
+                assert!((routed.input - 0.75).abs() < 0.001, "{model} must bill at 3.8 Flash $0.75 from Dec 1, got ${}", routed.input);
+                assert!((routed.output - 3.75).abs() < 0.001, "{model}");
+                assert!((routed.cache_read - 0.075).abs() < 0.001, "{model}");
+                let hc = routed.high_context.expect("neutralized long tier");
+                assert!((hc.input - routed.input).abs() < 0.001 && (hc.output - routed.output).abs() < 0.001,
+                    "{model} must have no long-context surcharge after routing");
+
+                let standard = entry.resolve_for("2027-01-01");
+                assert!((standard.input - 1.50).abs() < 0.001, "{model} must follow 3.8 Flash to $1.50 on 2027-01-01, got ${}", standard.input);
+                assert!((standard.output - 7.50).abs() < 0.001, "{model}");
+                assert!((standard.cache_read - 0.15).abs() < 0.001, "{model}");
+            }
+        }
+    }
+
+    // Gemini 4 Carbon (11-10) shares Argon's price and Dec 1 increase; Hydrogen
+    // (11-12) is cheaper. Both contain "gemini-4", so without their own rows
+    // they show as "Gemini 4 Argon" and Hydrogen is over-billed 1.33x.
+    // OpenCode/agy bill GPT models from the opencode table, which had no
+    // long-context tiers — >272K requests were billed at short rates. Long
+    // cache writes follow OpenAI's 1.25x-of-input rule.
+    #[test]
+    fn opencode_gpt_long_context_tier() {
+        let p = get_opencode_pricing("openai/gpt-6-astra");
+        assert_eq!(p.tier_for(272_000), (10.00, 50.0, 1.00, 12.5));
+        assert_eq!(p.tier_for(272_001), (20.0, 75.0, 2.0, 25.0));
+        let p = get_opencode_pricing("openai/gpt-5.4");
+        assert_eq!(p.tier_for(300_000), (5.0, 22.5, 0.5, 0.0));
+        // Cyber's long cache write is unlisted, so it keeps the base write rate.
+        let p = get_opencode_pricing("openai/gpt-6-cyber");
+        assert_eq!(p.tier_for(300_000), (40.0, 150.0, 4.0, 25.0));
+
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let sol = find_pricing(cfg.opencode.as_ref().expect("opencode table"), "gpt-5.6-sol");
+        let promo = sol.resolve_for("2026-11-30").high_context.expect("promo long tier");
+        assert_eq!((promo.input, promo.output, promo.cache_write), (8.0, 30.0, 10.0));
+        let standard = sol.resolve_for("2026-12-01").high_context.expect("standard long tier");
+        assert_eq!((standard.input, standard.output, standard.cached_input, standard.cache_write), (10.0, 45.0, 1.0, 12.5));
+    }
+
+    #[test]
+    fn gemini_4_carbon_hydrogen_have_own_rows() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let tables = [cfg.gemini.as_ref().expect("gemini table"), cfg.opencode.as_ref().expect("opencode table")];
+        for table in tables {
+            let carbon = find_pricing(table, &canonical_model("gemini-4-carbon"));
+            assert_eq!(carbon.label, "Gemini 4 Carbon");
+            assert!((carbon.resolve_for("2026-11-30").input - 2.00).abs() < 0.001);
+            let carbon_dec = carbon.resolve_for("2026-12-01");
+            assert!((carbon_dec.input - 4.00).abs() < 0.001 && (carbon_dec.output - 20.00).abs() < 0.001);
+            assert!((carbon_dec.cache_read - 0.20).abs() < 0.001);
+
+            let hydrogen = find_pricing(table, &canonical_model("google/gemini-4-hydrogen"));
+            assert_eq!(hydrogen.label, "Gemini 4 Hydrogen");
+            let h = hydrogen.resolve_for("2026-12-01");
+            assert!((h.input - 1.50).abs() < 0.001, "hydrogen input must be $1.50/MTok, got ${}", h.input);
+            assert!((h.output - 7.50).abs() < 0.001);
+            assert!((h.cache_read - 0.075).abs() < 0.001);
+        }
     }
 
     #[test]
@@ -2255,7 +2365,8 @@ mod tests {
             ("gemini-3.5-flash", 1.50, 9.00, 0.15),
             ("gemini-3.1-pro-preview", 2.00, 12.00, 0.20),
             ("gemini-2.5-flash", 0.30, 2.50, 0.03),
-            ("gemini-2.5-pro", 1.25, 10.00, 0.125),
+            // gemini-2.5-pro changes price on 2026-12-01; its opencode row is
+            // checked date-pinned in gemini_25_pro_pricing.
         ] {
             let p = get_opencode_pricing(&normalize_model_id(model));
             assert!((p.input - input).abs() < 1e-9, "{model} input: {}", p.input);
@@ -2277,11 +2388,11 @@ mod tests {
     // Pro models bill the whole request at long-context rates above 200k.
     #[test]
     fn gemini_pro_long_context_tier() {
-        let p = get_gemini_pricing(&normalize_model_id("gemini-2.5-pro"));
-        assert_eq!(p.tier_for(200_000), (1.25, 10.0, 0.125));
-        assert_eq!(p.tier_for(200_001), (2.50, 15.0, 0.25));
+        // (gemini-2.5-pro's tier is checked date-pinned in gemini_25_pro_pricing,
+        // since it is routed to 3.8 Flash and loses the tier on 2026-12-01.)
         let p = get_gemini_pricing(&normalize_model_id("gemini-3.1-pro-preview"));
-        assert_eq!(p.tier_for(300_000), (4.0, 18.0, 0.4));
+        assert_eq!(p.tier_for(200_000), (2.0, 12.0, 0.2));
+        assert_eq!(p.tier_for(200_001), (4.0, 18.0, 0.4));
         // Flash has no long-context tier.
         let p = get_gemini_pricing(&normalize_model_id("gemini-3.5-flash"));
         assert_eq!(p.tier_for(900_000), (1.5, 9.0, 0.15));
