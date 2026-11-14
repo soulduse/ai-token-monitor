@@ -384,14 +384,16 @@ fn local_date(secs: i64) -> Option<String> {
 
 /// Per-request (input, output) rates in USD per million tokens. Antigravity
 /// defaults to Gemini, so anything not recognizably Claude/GPT (including the
-/// `agy` fallback) is priced from the Gemini table.
+/// `agy` fallback) is priced from the Gemini table. Every path applies the
+/// model's long-context tier (Gemini Pro >200K, GPT >272K, Haiku 5.5 >100K);
+/// agy records no separate cache counts, so `input_tokens` is the prompt size.
 fn rates(model: &str, input_tokens: u64) -> (f64, f64) {
     let other_vendor = ["claude", "sonnet", "opus", "haiku", "gpt"]
         .iter()
         .any(|family| model.contains(family));
     if other_vendor {
-        let p = pricing::get_opencode_pricing(model);
-        (p.input, p.output)
+        let (input, output, _, _) = pricing::get_opencode_pricing(model).tier_for(input_tokens);
+        (input, output)
     } else {
         let (input, output, _) = pricing::get_gemini_pricing(model).tier_for(input_tokens);
         (input, output)
@@ -750,6 +752,16 @@ mod tests {
             flash.input > lite.input,
             "flash and flash-lite resolve to different rows"
         );
+    }
+
+    /// GPT and Claude requests go through the opencode table, so a long prompt
+    /// must get that model's long-context rate like the Gemini path does.
+    #[test]
+    fn other_vendor_requests_use_long_context_tier() {
+        assert_eq!(rates("gpt-5-4", 272_000), (2.50, 15.0));
+        assert_eq!(rates("gpt-5-4", 300_000), (5.0, 22.5));
+        assert_eq!(rates("claude-haiku-5-5", 100_000), (0.10, 0.50));
+        assert_eq!(rates("claude-haiku-5-5", 150_000), (0.50, 2.50));
     }
 
     /// Fixture dbs built with the real schema: two conversations, a response
