@@ -1740,12 +1740,45 @@ mod tests {
     // each match their own entry instead of falling through the substring chain
     // to bare "gpt-5" ($1.25/$10) — Sol would be under-billed 4x, Luna
     // over-billed on input.
+    //
+    // Sol's $4/$20 is a promotion that ends 2026-11-30 (official model page:
+    // "a 20% reduction in input pricing and a 33% reduction in output
+    // pricing"), so from 2026-12-01 it returns to $5/$30 (cached $0.50,
+    // >272K $10/$45/$1). Pinned to dates so the test doesn't flip on Dec 1.
     #[test]
     fn codex_gpt56_sol_pricing() {
-        let p = get_codex_pricing("gpt-5.6-sol");
-        assert!((p.input - 4.00).abs() < 0.001, "gpt-5.6-sol input must be $4/MTok, got ${}", p.input);
-        assert!((p.output - 20.00).abs() < 0.001, "gpt-5.6-sol output must be $20/MTok, got ${}", p.output);
-        assert!((p.cached_input - 0.40).abs() < 0.001);
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        for id in ["gpt-5.6-sol", "gpt-5.6"] {
+            let entry = find_pricing(&cfg.codex, id);
+            let promo = entry.resolve_for("2026-11-30");
+            assert!((promo.input - 4.00).abs() < 0.001, "{id} promo input must be $4/MTok, got ${}", promo.input);
+            assert!((promo.output - 20.00).abs() < 0.001, "{id} promo output must be $20/MTok, got ${}", promo.output);
+            assert!((promo.cached_input - 0.40).abs() < 0.001, "{id}");
+            let promo_hc = promo.high_context.expect("promo long-context tier");
+            assert!((promo_hc.input - 8.00).abs() < 0.001, "{id}");
+            assert!((promo_hc.output - 30.00).abs() < 0.001, "{id}");
+
+            let standard = entry.resolve_for("2026-12-01");
+            assert!((standard.input - 5.00).abs() < 0.001, "{id} input must be $5/MTok from Dec 1, got ${}", standard.input);
+            assert!((standard.output - 30.00).abs() < 0.001, "{id} output must be $30/MTok from Dec 1, got ${}", standard.output);
+            assert!((standard.cached_input - 0.50).abs() < 0.001, "{id}");
+            let hc = standard.high_context.expect("standard long-context tier");
+            assert_eq!(hc.threshold_tokens, 272000);
+            assert!((hc.input - 10.00).abs() < 0.001, "{id} long input must be $10/MTok from Dec 1, got ${}", hc.input);
+            assert!((hc.output - 45.00).abs() < 0.001, "{id}");
+            assert!((hc.cached_input - 1.00).abs() < 0.001, "{id}");
+        }
+        for id in ["gpt-5.6-sol", "gpt-5.6"] {
+            let entry = find_pricing(cfg.opencode.as_ref().expect("opencode table"), id);
+            let promo = entry.resolve_for("2026-11-30");
+            assert!((promo.input - 4.00).abs() < 0.001, "opencode {id}");
+            assert!((promo.cache_write - 5.00).abs() < 0.001, "opencode {id}");
+            let standard = entry.resolve_for("2026-12-01");
+            assert!((standard.input - 5.00).abs() < 0.001, "opencode {id} input must be $5/MTok from Dec 1, got ${}", standard.input);
+            assert!((standard.output - 30.00).abs() < 0.001, "opencode {id}");
+            assert!((standard.cache_read - 0.50).abs() < 0.001, "opencode {id}");
+            assert!((standard.cache_write - 6.25).abs() < 0.001, "opencode {id}");
+        }
     }
 
     #[test]
@@ -1768,9 +1801,10 @@ mod tests {
     // must not fall through to the bare "gpt-5" entry.
     #[test]
     fn codex_gpt56_bare_not_billed_as_gpt5() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        assert_eq!(find_pricing(&cfg.codex, "gpt-5.6").label, "gpt-5.6");
         let p = get_codex_pricing("gpt-5.6");
-        assert!((p.input - 4.00).abs() < 0.001, "gpt-5.6 input must be $4/MTok, got ${}", p.input);
-        assert!((p.output - 20.00).abs() < 0.001);
+        assert!(p.input >= 4.00, "gpt-5.6 must not fall to gpt-5 ($1.25/MTok), got ${}", p.input);
     }
 
     // Regression guard: "gpt-6-astra" (flagship, released 2026-09-03) must match
@@ -1791,8 +1825,9 @@ mod tests {
     fn codex_gpt6_ordering_is_safe() {
         let bare = get_codex_pricing("gpt-6");
         assert!((bare.input - 10.00).abs() < 0.001, "bare gpt-6 input must be $10/MTok, got ${}", bare.input);
-        let sol = get_codex_pricing("gpt-5.6-sol");
-        assert!((sol.input - 4.00).abs() < 0.001, "gpt-5.6-sol must keep its own $4 rate, got ${}", sol.input);
+        // Compare labels, not prices: Sol's promo rate changes on 2026-12-01.
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        assert_eq!(find_pricing(&cfg.codex, "gpt-5.6-sol").label, "gpt-5.6-sol", "gpt-5.6-sol must keep its own row");
     }
 
     // Regression guard: GPT-6 Sol/Luna (released 2026-09-22) must match their
@@ -1881,6 +1916,71 @@ mod tests {
 
     // GPT-Rosalind (life sciences, billed from 2026-10-05) matches no gpt-5/6
     // pattern and would otherwise bill at the gpt-5.4 default ($2.50/$15).
+    // Regression guard: GPT-6 Cyber (2026-11-05) and GPT-6 Rosalind (2026-10-30)
+    // canonicalize to "gpt-6-cyber" / "gpt-6-rosalind", which contain the bare
+    // "gpt-6" Astra pattern ($10/$50). Without their own rows Cyber is
+    // under-billed 2x and Rosalind 1.5x. ("gpt-rosalind" does not match them.)
+    #[test]
+    fn codex_gpt6_cyber_rosalind_not_billed_as_astra() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        for (id, input, output, cached, hc_in, hc_out, hc_cached) in [
+            ("gpt-6-cyber", 20.00, 100.00, 2.00, 40.00, 150.00, 4.00),
+            ("gpt-6-rosalind", 15.00, 75.00, 1.50, 30.00, 112.50, 3.00),
+        ] {
+            for model in [id.to_string(), format!("openai/{id}")] {
+                let p = get_codex_pricing(&model);
+                assert!((p.input - input).abs() < 0.001, "{model} input must be ${input}/MTok, got ${}", p.input);
+                assert!((p.output - output).abs() < 0.001, "{model}");
+                assert!((p.cached_input - cached).abs() < 0.001, "{model}");
+            }
+            let hc = find_pricing(&cfg.codex, id).high_context.expect("long-context tier present");
+            assert_eq!(hc.threshold_tokens, 272000);
+            assert!((hc.input - hc_in).abs() < 0.001, "{id}");
+            assert!((hc.output - hc_out).abs() < 0.001, "{id}");
+            assert!((hc.cached_input - hc_cached).abs() < 0.001, "{id}");
+        }
+        let oc = get_opencode_pricing("openai/gpt-6-cyber");
+        assert!((oc.input - 20.00).abs() < 0.001);
+        assert!((oc.cache_write - 25.00).abs() < 0.001);
+        let oc = get_opencode_pricing("openai/gpt-6-rosalind");
+        assert!((oc.input - 15.00).abs() < 0.001);
+        assert!((oc.cache_write - 18.75).abs() < 0.001);
+    }
+
+    // GPT-5.5 / 5.4 (and their -pro variants) bill >272K-input requests at 2x
+    // input and 1.5x output; without a high_context tier long prompts were
+    // under-billed.
+    #[test]
+    fn codex_gpt55_gpt54_long_context_tiers() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        for (id, hc_in, hc_out, hc_cached) in [
+            ("gpt-5.5", 10.00, 45.00, 1.00),
+            ("gpt-5.5-pro", 60.00, 270.00, 0.0),
+            ("gpt-5.4", 5.00, 22.50, 0.50),
+            ("gpt-5.4-pro", 60.00, 270.00, 0.0),
+        ] {
+            let hc = find_pricing(&cfg.codex, id).high_context.expect("long-context tier present");
+            assert_eq!(hc.threshold_tokens, 272000, "{id}");
+            assert!((hc.input - hc_in).abs() < 0.001, "{id} long input must be ${hc_in}/MTok, got ${}", hc.input);
+            assert!((hc.output - hc_out).abs() < 0.001, "{id}");
+            assert!((hc.cached_input - hc_cached).abs() < 0.001, "{id}");
+        }
+    }
+
+    // gpt-4o / gpt-4o-mini had opencode rows but no codex rows, so Codex logs
+    // fell back to the gpt-5.4 default ($2.50/$15) — mini over-billed ~17x.
+    #[test]
+    fn codex_gpt4o_not_billed_as_default() {
+        let p = get_codex_pricing("gpt-4o-mini");
+        assert!((p.input - 0.15).abs() < 0.001, "gpt-4o-mini input must be $0.15/MTok, got ${}", p.input);
+        assert!((p.output - 0.60).abs() < 0.001);
+        assert!((p.cached_input - 0.075).abs() < 0.001);
+        let p = get_codex_pricing("gpt-4o-2024-08-06");
+        assert!((p.input - 2.50).abs() < 0.001, "gpt-4o input must be $2.50/MTok, got ${}", p.input);
+        assert!((p.output - 10.00).abs() < 0.001);
+        assert!((p.cached_input - 1.25).abs() < 0.001);
+    }
+
     #[test]
     fn codex_gpt_rosalind_not_billed_as_default() {
         for id in ["gpt-rosalind-research", "gpt-rosalind-discovery"] {
