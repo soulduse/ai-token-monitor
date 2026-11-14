@@ -230,16 +230,21 @@ impl SessionDirs {
     /// Existing dirs, root first, for the file watcher.
     pub(super) fn existing(&self) -> impl Iterator<Item = &PathBuf> {
         self.roots()
-            .chain(self.custom.iter().filter(|custom| **custom != self.root))
+            .chain(self.custom.iter().filter(|custom| !self.is_root(custom)))
             .filter(|dir| dir.exists())
     }
 
-    /// The existing custom dir, when it is separate from the root. Its layout
-    /// is flat (`<dir>/*.jsonl`), so the watcher needs only that level.
+    /// The existing custom dir, when it is separate from every root. Its
+    /// layout is flat (`<dir>/*.jsonl`), so the watcher needs only that level;
+    /// a custom dir equal to a root stays a recursively watched root.
     pub(super) fn flat_dir(&self) -> Option<&PathBuf> {
         self.custom
             .as_ref()
-            .filter(|custom| **custom != self.root && custom.exists())
+            .filter(|custom| !self.is_root(custom) && custom.exists())
+    }
+
+    fn is_root(&self, dir: &Path) -> bool {
+        self.roots().any(|root| root == dir)
     }
 
     /// Mtime/size of every main session file across all dirs, plus nested
