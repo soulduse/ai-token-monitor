@@ -131,6 +131,24 @@ struct CodexEntry {
     /// replay-dedup discriminator in `build_stats`, never summed. `None` when the
     /// event carries no `total_token_usage`.
     cumulative: Option<CumulativeUsage>,
+    /// True when the usage came from `last_token_usage`, i.e. one request.
+    /// The `total_token_usage` fallback is a running session total, so its
+    /// input size says nothing about a single prompt's context length.
+    per_request: bool,
+}
+
+impl CodexEntry {
+    /// Cost of this entry. Long-context rates apply only to a single request
+    /// whose input (cached included) crosses the model's threshold.
+    fn cost(&self) -> f64 {
+        let pricing = pricing::get_codex_pricing(&self.model);
+        let pricing = if self.per_request {
+            pricing.tier_for(self.input_tokens)
+        } else {
+            pricing
+        };
+        calculate_cost(&pricing, self.input_tokens, self.output_tokens, self.cached_tokens)
+    }
 }
 
 /// Cumulative session usage at a turn (`total_token_usage`). Two turns with the same
@@ -422,6 +440,7 @@ impl CodexProvider {
                                     };
 
                                     let cumulative = extract_cumulative_usage(info);
+                                    let per_request = info.get("last_token_usage").is_some();
 
                                     // Key by source file (+ line) rather than session_id so a
                                     // session_id appearing in multiple files never lets one file's
@@ -439,6 +458,7 @@ impl CodexProvider {
                                             cached_tokens: cached,
                                             total_tokens: total,
                                             cumulative,
+                                            per_request,
                                         },
                                     );
                                 }
@@ -600,13 +620,7 @@ impl CodexProvider {
                 first_date = Some(entry.date.clone());
             }
 
-            let pricing = pricing::get_codex_pricing(&entry.model);
-            let cost = calculate_cost(
-                &pricing,
-                entry.input_tokens,
-                entry.output_tokens,
-                entry.cached_tokens,
-            );
+            let cost = entry.cost();
 
             let daily = daily_map
                 .entry(entry.date.clone())
@@ -1597,17 +1611,57 @@ mod tests {
 
     #[test]
     fn test_calculate_cost() {
-        let pricing = pricing::CodexPricing {
-            input: 1.0,
-            output: 5.0,
-            cached_input: 0.5,
-        };
+        let pricing = pricing::CodexPricing::flat(1.0, 5.0, 0.5);
         // input=1M (includes 200K cached), output=500K, cached=200K
         // uncached_input = 1M - 200K = 800K
         // cost = (800K/1M)*1.0 + (500K/1M)*5.0 + (200K/1M)*0.5 = 0.8 + 2.5 + 0.1 = 3.4
         let cost = calculate_cost(&pricing, 1_000_000, 500_000, 200_000);
         let expected = 0.8 + 2.5 + 0.1;
         assert!((cost - expected).abs() < 0.0001);
+    }
+
+    fn long_context_entry(input: u64, per_request: bool) -> CodexEntry {
+        CodexEntry {
+            date: "2026-11-14".to_string(),
+            model: "gpt-5.4".to_string(),
+            session_id: "sess".to_string(),
+            input_tokens: input,
+            output_tokens: 1_000,
+            cached_tokens: 0,
+            total_tokens: input + 1_000,
+            cumulative: None,
+            per_request,
+        }
+    }
+
+    // OpenAI bills a whole request at the long-context rate once its input is
+    // over 272K (gpt-5.4: $2.50/$15 → $5/$22.50). Before this, every Codex
+    // request was billed at the short rate regardless of size.
+    #[test]
+    fn long_request_uses_long_context_rate() {
+        let at_threshold = long_context_entry(272_000, true).cost();
+        assert!((at_threshold - (0.272 * 2.50 + 0.001 * 15.0)).abs() < 1e-9, "272K is still short context, got {at_threshold}");
+
+        let long = long_context_entry(300_000, true).cost();
+        assert!((long - (0.300 * 5.00 + 0.001 * 22.50)).abs() < 1e-9, "300K must use $5/$22.50, got {long}");
+    }
+
+    // The `total_token_usage` fallback is a session running total, not one
+    // prompt, so it must never trigger the long-context rate.
+    #[test]
+    fn cumulative_fallback_never_uses_long_context_rate() {
+        let cost = long_context_entry(300_000, false).cost();
+        assert!((cost - (0.300 * 2.50 + 0.001 * 15.0)).abs() < 1e-9, "cumulative usage must stay on the short rate, got {cost}");
+    }
+
+    #[test]
+    fn build_stats_applies_long_context_rate_per_request() {
+        let mut entries = HashMap::new();
+        entries.insert("a:1".to_string(), long_context_entry(100_000, true));
+        entries.insert("a:2".to_string(), long_context_entry(300_000, true));
+        let stats = CodexProvider::build_stats(&entries);
+        let expected = (0.100 * 2.50 + 0.001 * 15.0) + (0.300 * 5.00 + 0.001 * 22.50);
+        assert!((stats.daily[0].cost_usd - expected).abs() < 1e-9, "got {}", stats.daily[0].cost_usd);
     }
 
     #[test]
@@ -1624,6 +1678,7 @@ mod tests {
                 cached_tokens: 25,
                 total_tokens: 150,
                 cumulative: None,
+                per_request: true,
             },
         );
         entries.insert(
@@ -1637,6 +1692,7 @@ mod tests {
                 cached_tokens: 10,
                 total_tokens: 225,
                 cumulative: None,
+                per_request: true,
             },
         );
 
@@ -1845,6 +1901,7 @@ mod tests {
             cached_tokens: cached,
             total_tokens: total,
             cumulative: Some(cum),
+            per_request: true,
         }
     }
 

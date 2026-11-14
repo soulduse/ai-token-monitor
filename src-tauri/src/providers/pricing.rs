@@ -169,6 +169,36 @@ pub struct CodexPricing {
     pub input: f64,
     pub output: f64,
     pub cached_input: f64,
+    /// 0 means a single flat tier (no threshold).
+    pub high_threshold_tokens: u64,
+    pub high_input: f64,
+    pub high_output: f64,
+    pub high_cached_input: f64,
+}
+
+impl CodexPricing {
+    pub(crate) fn flat(input: f64, output: f64, cached_input: f64) -> Self {
+        Self {
+            input,
+            output,
+            cached_input,
+            high_threshold_tokens: 0,
+            high_input: input,
+            high_output: output,
+            high_cached_input: cached_input,
+        }
+    }
+
+    /// Rates for one request. OpenAI bills the whole request at the
+    /// long-context rate once its input (cached tokens included) is over the
+    /// threshold ("Long context: >272K input tokens").
+    pub fn tier_for(&self, prompt_tokens: u64) -> CodexPricing {
+        if self.high_threshold_tokens > 0 && prompt_tokens > self.high_threshold_tokens {
+            CodexPricing::flat(self.high_input, self.high_output, self.high_cached_input)
+        } else {
+            CodexPricing::flat(self.input, self.output, self.cached_input)
+        }
+    }
 }
 
 pub struct OpenCodePricing {
@@ -542,10 +572,15 @@ pub fn get_claude_pricing(model: &str) -> ClaudePricing {
 
 pub fn get_codex_pricing(model: &str) -> CodexPricing {
     let p = resolved_pricing(&config().codex, "codex", model);
+    let high = p.high_context;
     CodexPricing {
         input: p.input,
         output: p.output,
         cached_input: p.cached_input,
+        high_threshold_tokens: high.map_or(0, |h| h.threshold_tokens),
+        high_input: high.map_or(p.input, |h| h.input),
+        high_output: high.map_or(p.output, |h| h.output),
+        high_cached_input: high.map_or(p.cached_input, |h| h.cached_input),
     }
 }
 
@@ -606,7 +641,7 @@ pub fn get_grok_pricing(model: &str) -> GrokPricing {
 }
 
 /// Claude-log cost lookup that applies per-request long-context tiers (Grok's
-/// 200k doubling, Haiku 5.5's 100k tier).
+/// 200k doubling, OpenAI's 272k tier, Haiku 5.5's 100k tier).
 ///
 /// [`get_claude_pricing`] can only return one flat rate, so these tiers would
 /// otherwise be skipped. Call this at cost time with the full prompt size
@@ -624,6 +659,13 @@ pub fn claude_pricing_for(model: &str, prompt_tokens: u64) -> ClaudePricing {
         };
     }
     let mut p = get_claude_pricing(model);
+    if foreign_table(&canonical) == Some("codex") {
+        let tier = get_codex_pricing(model).tier_for(prompt_tokens);
+        p.input = tier.input;
+        p.output = tier.output;
+        p.cache_read = tier.cached_input;
+        return p;
+    }
     // Haiku 5.5 bills the whole request at higher rates once its prompt is
     // over 100k tokens (Anthropic counts cache reads and writes in the prompt).
     if foreign_table(&canonical).is_none() {
@@ -1602,6 +1644,38 @@ mod tests {
     // them as `anthropic-gpt-5.6-sol` — an OpenAI model wearing an Anthropic
     // prefix. Billing it from the claude table meant no pattern matched and it
     // fell to the Sonnet default ($3/$15) instead of GPT-5.6 Sol's $5/$30.
+    // OpenAI's long-context rate applies to the whole request only when input
+    // is strictly over 272K; models without a long tier stay flat.
+    #[test]
+    fn codex_tier_for_switches_above_threshold() {
+        let p = get_codex_pricing("gpt-6.1-sol");
+        assert_eq!(p.high_threshold_tokens, 272_000);
+        let short = p.tier_for(272_000);
+        assert!((short.input - 2.00).abs() < 0.001 && (short.output - 10.00).abs() < 0.001);
+        let long = p.tier_for(272_001);
+        assert!((long.input - 4.00).abs() < 0.001, "long input must be $4/MTok, got ${}", long.input);
+        assert!((long.output - 15.00).abs() < 0.001);
+        assert!((long.cached_input - 0.20).abs() < 0.001);
+
+        let flat = get_codex_pricing("gpt-4o");
+        assert_eq!(flat.high_threshold_tokens, 0);
+        assert!((flat.tier_for(1_000_000).input - 2.50).abs() < 0.001, "gpt-4o has no long tier");
+    }
+
+    // GPT models routed through a Claude-shaped log get the same long tier.
+    #[test]
+    fn claude_log_gpt_model_uses_codex_long_context_tier() {
+        for id in ["gpt-5.4", "anthropic-gpt-5.4"] {
+            let short = claude_pricing_for(id, 100_000);
+            assert!((short.input - 2.50).abs() < 0.001, "{id} short input must be $2.50/MTok, got ${}", short.input);
+            let long = claude_pricing_for(id, 300_000);
+            assert!((long.input - 5.00).abs() < 0.001, "{id} long input must be $5/MTok, got ${}", long.input);
+            assert!((long.output - 22.50).abs() < 0.001, "{id}");
+            assert!((long.cache_read - 0.50).abs() < 0.001, "{id}");
+            assert!(long.cache_write_5m.abs() < 0.001, "{id} must have no cache-write rate");
+        }
+    }
+
     #[test]
     fn claude_log_gpt56_sol_billed_from_codex_table() {
         let codex = get_codex_pricing("gpt-5.6-sol");
