@@ -2036,7 +2036,7 @@ mod tests {
         let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
         for (id, input, output, cached, hc_in, hc_out, hc_cached) in [
             ("gpt-6-cyber", 20.00, 100.00, 2.00, 40.00, 150.00, 4.00),
-            ("gpt-6-rosalind", 15.00, 75.00, 1.50, 30.00, 112.50, 3.00),
+            ("gpt-6-rosalind", 10.00, 50.00, 1.00, 20.00, 75.00, 2.00),
         ] {
             for model in [id.to_string(), format!("openai/{id}")] {
                 let p = get_codex_pricing(&model);
@@ -2054,8 +2054,47 @@ mod tests {
         assert!((oc.input - 20.00).abs() < 0.001);
         assert!((oc.cache_write - 25.00).abs() < 0.001);
         let oc = get_opencode_pricing("openai/gpt-6-rosalind");
-        assert!((oc.input - 15.00).abs() < 0.001);
-        assert!((oc.cache_write - 18.75).abs() < 0.001);
+        assert!((oc.input - 10.00).abs() < 0.001);
+        assert!((oc.cache_write - 12.50).abs() < 0.001);
+    }
+
+    // Regression guard: GPT-6.2 Astra/Sol (2026-11-17) canonicalize to
+    // "gpt-6-2-astra" / "gpt-6-2-sol", which miss the "gpt-6-astra"/"gpt-6-sol"
+    // rows and fall to the bare "gpt-6" Astra row ($10/$50) — Astra over-billed
+    // 1.25x and Sol 5x. Bare/unknown "gpt-6.2-*" ids bill as 6.2 Astra.
+    #[test]
+    fn codex_gpt6_2_not_billed_as_gpt6_astra() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        for (id, label, input, output, cached, hc_in, hc_out, hc_cached) in [
+            ("gpt-6.2-astra", "gpt-6.2-astra", 8.00, 40.00, 0.40, 16.00, 60.00, 0.80),
+            ("gpt-6.2-sol", "gpt-6.2-sol", 2.00, 10.00, 0.10, 4.00, 15.00, 0.20),
+            ("gpt-6.2-astra-law", "gpt-6.2-astra", 8.00, 40.00, 0.40, 16.00, 60.00, 0.80),
+            ("gpt-6.2", "gpt-6.2-astra", 8.00, 40.00, 0.40, 16.00, 60.00, 0.80),
+        ] {
+            for model in [id.to_string(), format!("openai/{id}")] {
+                let p = get_codex_pricing(&model);
+                assert!((p.input - input).abs() < 0.001, "{model} input must be ${input}/MTok, got ${}", p.input);
+                assert!((p.output - output).abs() < 0.001, "{model}");
+                assert!((p.cached_input - cached).abs() < 0.001, "{model}");
+            }
+            let entry = find_pricing(&cfg.codex, &canonical_model(id));
+            assert_eq!(entry.label, label, "{id}");
+            let hc = entry.high_context.as_ref().expect("long-context tier present");
+            assert_eq!(hc.threshold_tokens, 272000);
+            assert!((hc.input - hc_in).abs() < 0.001, "{id}");
+            assert!((hc.output - hc_out).abs() < 0.001, "{id}");
+            assert!((hc.cached_input - hc_cached).abs() < 0.001, "{id}");
+        }
+    }
+
+    #[test]
+    fn opencode_gpt6_2_not_billed_as_gpt6_astra() {
+        let p = get_opencode_pricing("openai/gpt-6.2-astra");
+        assert_eq!(p.tier_for(272_000), (8.0, 40.0, 0.4, 10.0));
+        assert_eq!(p.tier_for(300_000), (16.0, 60.0, 0.8, 20.0));
+        let p = get_opencode_pricing("openai/gpt-6.2-sol");
+        assert_eq!(p.tier_for(272_000), (2.0, 10.0, 0.1, 2.5));
+        assert_eq!(p.tier_for(300_000), (4.0, 15.0, 0.2, 5.0));
     }
 
     // GPT-5.5 / 5.4 (and their -pro variants) bill >272K-input requests at 2x
@@ -2333,6 +2372,47 @@ mod tests {
         }
     }
 
+    // Gemini 4 Neon (2026-11-18, $3/$15, flat, no promo) contains "gemini-4";
+    // without its own row it bills as Argon — 1.5x under now, 1.33x over from
+    // Argon's 2026-12-01 increase.
+    #[test]
+    fn gemini_4_neon_not_billed_as_argon() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let tables = [cfg.gemini.as_ref().expect("gemini table"), cfg.opencode.as_ref().expect("opencode table")];
+        for table in tables {
+            for id in ["gemini-4-neon", "google/gemini-4-neon"] {
+                let neon = find_pricing(table, &canonical_model(id));
+                assert_eq!(neon.label, "Gemini 4 Neon");
+                for day in ["2026-11-20", "2026-12-01", "2027-01-01"] {
+                    let n = neon.resolve_for(day);
+                    assert!((n.input - 3.00).abs() < 0.001, "{id} {day} input: {}", n.input);
+                    assert!((n.output - 15.00).abs() < 0.001, "{id} {day}");
+                    assert!((n.cache_read - 0.15).abs() < 0.001, "{id} {day}");
+                }
+            }
+        }
+    }
+
+    // gemini-3.5-flash has routed to gemini-3.6-flash since 2026-10-08 and is
+    // billed at 3.6 Flash rates (incl. its 2027-01-01 increase); the old
+    // $1.50/$9 row over-billed it 2x.
+    #[test]
+    fn gemini_35_flash_billed_as_36_flash() {
+        let cfg: PricingConfig = serde_json::from_str(EMBEDDED_PRICING).unwrap();
+        let tables = [cfg.gemini.as_ref().expect("gemini table"), cfg.opencode.as_ref().expect("opencode table")];
+        for table in tables {
+            let old = find_pricing(table, &canonical_model("gemini-3.5-flash"));
+            let new = find_pricing(table, &canonical_model("gemini-3.6-flash"));
+            assert_eq!(old.label, "Gemini 3.5 Flash");
+            for day in ["2026-11-20", "2026-12-31", "2027-01-01"] {
+                let (o, n) = (old.resolve_for(day), new.resolve_for(day));
+                assert_eq!((o.input, o.output, o.cache_read), (n.input, n.output, n.cache_read), "{day}");
+            }
+            assert!((old.resolve_for("2026-12-31").input - 0.75).abs() < 0.001);
+            assert!((old.resolve_for("2027-01-01").input - 1.50).abs() < 0.001);
+        }
+    }
+
     #[test]
     fn gemini_25_flash_pricing() {
         let p = get_gemini_pricing("gemini-2.5-flash");
@@ -2346,7 +2426,6 @@ mod tests {
     fn gemini_3x_models_resolve_to_own_rows() {
         let cases = [
             ("gemini-3.5-flash-lite", 0.30, 2.50),
-            ("gemini-3.5-flash", 1.50, 9.00),
             ("gemini-3.1-flash-lite-preview", 0.25, 1.50),
             ("gemini-3.1-pro-preview", 2.00, 12.00),
         ];
@@ -2362,7 +2441,7 @@ mod tests {
     #[test]
     fn opencode_gemini_rows_match_the_gemini_table() {
         for (model, input, output, cache) in [
-            ("gemini-3.5-flash", 1.50, 9.00, 0.15),
+            ("gemini-3.5-flash-lite", 0.30, 2.50, 0.03),
             ("gemini-3.1-pro-preview", 2.00, 12.00, 0.20),
             ("gemini-2.5-flash", 0.30, 2.50, 0.03),
             // gemini-2.5-pro changes price on 2026-12-01; its opencode row is
@@ -2381,8 +2460,8 @@ mod tests {
         let p = get_opencode_pricing(&normalize_model_id("google/gemini-3.1-pro-preview"));
         assert_eq!(p.tier_for(200_000), (2.00, 12.00, 0.2, 0.0));
         assert_eq!(p.tier_for(300_000), (4.00, 18.00, 0.4, 0.0));
-        let flash = get_opencode_pricing(&normalize_model_id("gemini-3.5-flash"));
-        assert_eq!(flash.tier_for(900_000), (1.50, 9.00, 0.15, 0.0));
+        let flash = get_opencode_pricing(&normalize_model_id("gemini-3.5-flash-lite"));
+        assert_eq!(flash.tier_for(900_000), (0.30, 2.50, 0.03, 0.0));
     }
 
     // Pro models bill the whole request at long-context rates above 200k.
@@ -2394,8 +2473,8 @@ mod tests {
         assert_eq!(p.tier_for(200_000), (2.0, 12.0, 0.2));
         assert_eq!(p.tier_for(200_001), (4.0, 18.0, 0.4));
         // Flash has no long-context tier.
-        let p = get_gemini_pricing(&normalize_model_id("gemini-3.5-flash"));
-        assert_eq!(p.tier_for(900_000), (1.5, 9.0, 0.15));
+        let p = get_gemini_pricing(&normalize_model_id("gemini-3.5-flash-lite"));
+        assert_eq!(p.tier_for(900_000), (0.30, 2.50, 0.03));
     }
 
     // 3.6–3.8 Flash promo pricing ends 2026-12-31; the scheduled row doubles it.
