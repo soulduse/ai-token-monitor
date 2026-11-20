@@ -734,6 +734,20 @@ mod tests {
     }
 
     #[test]
+    fn gpt6_2_sol_cache_writes_count_toward_long_context() {
+        for (cache_write, expected) in [(2_000, 0.555), (3_000, 1.11)] {
+            let message = serde_json::json!({
+                "model": { "id": "openai/gpt-6.2-sol" },
+                "tokens": { "input": 270_000, "output": 1_000, "cache": { "write": cache_write } }
+            });
+            let entry = parse_v2_message(&message, "session", 0).unwrap();
+            let stats = OpenCodeProvider::build_stats(&[entry]);
+            let cost = stats.daily[0].cost_usd;
+            assert!((cost - expected).abs() < 1e-9, "{cache_write} cache writes: expected {expected}, got {cost}");
+        }
+    }
+
+    #[test]
     fn test_parse_message_json_assistant() {
         let data: Value = serde_json::json!({
             "role": "assistant",

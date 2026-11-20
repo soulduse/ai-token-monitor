@@ -1634,6 +1634,17 @@ mod tests {
         }
     }
 
+    #[test]
+    fn gpt6_2_sol_counts_cached_input_once_at_long_context_boundary() {
+        for (cached, expected) in [(2_000, 0.5502), (3_000, 1.0956)] {
+            let mut entry = long_context_entry(270_000 + cached, true);
+            entry.model = "gpt-6.2-sol".to_owned();
+            entry.cached_tokens = cached;
+            let cost = entry.cost();
+            assert!((cost - expected).abs() < 1e-9, "{cached} cached tokens: expected {expected}, got {cost}");
+        }
+    }
+
     fn long_context_entry(input: u64, per_request: bool) -> CodexEntry {
         CodexEntry {
             date: "2026-11-14".to_string(),
