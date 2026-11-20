@@ -1620,6 +1620,20 @@ mod tests {
         assert!((cost - expected).abs() < 0.0001);
     }
 
+    #[test]
+    fn gpt6_2_request_cost() {
+        for (model, standard, with_cache) in [
+            ("gpt-6.2-astra", 0.12, 0.1048),
+            ("gpt-6.2-sol", 0.03, 0.0262),
+        ] {
+            let mut entry = long_context_entry(10_000, true);
+            entry.model = model.to_owned();
+            assert!((entry.cost() - standard).abs() < 1e-9, "{model}");
+            entry.cached_tokens = 2_000;
+            assert!((entry.cost() - with_cache).abs() < 1e-9, "{model} with cache");
+        }
+    }
+
     fn long_context_entry(input: u64, per_request: bool) -> CodexEntry {
         CodexEntry {
             date: "2026-11-14".to_string(),

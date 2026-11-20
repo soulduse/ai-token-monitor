@@ -1981,6 +1981,27 @@ mod tests {
         assert!((p.cache_write - 2.50).abs() < 0.001);
     }
 
+    #[test]
+    fn gpt6_2_standard_rates_by_model_and_context() {
+        for (model, short, long) in [
+            ("gpt-6.2-astra", (8.0, 40.0, 0.40, 10.0), (16.0, 60.0, 0.80, 20.0)),
+            ("gpt-6.2-sol", (2.0, 10.0, 0.10, 2.5), (4.0, 15.0, 0.20, 5.0)),
+        ] {
+            for id in [model.to_owned(), format!("openai/{model}")] {
+                for (tokens, expected) in [(272_000, short), (272_001, long)] {
+                    let codex = get_codex_pricing(&id).tier_for(tokens);
+                    assert_eq!(
+                        (codex.input, codex.output, codex.cached_input),
+                        (expected.0, expected.1, expected.2),
+                        "Codex {id} at {tokens} tokens"
+                    );
+                    assert_eq!(get_opencode_pricing(&id).tier_for(tokens), expected,
+                        "OpenCode {id} at {tokens} tokens");
+                }
+            }
+        }
+    }
+
     // Regression guard: GPT-6.1 Terra (listed 2026-10-27) contains "gpt-6-1"
     // after canonicalization, so without its own entry it lands on the bare
     // "gpt-6.1" Sol row and is over-billed 2x ($2/$10 vs $1/$5).

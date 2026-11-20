@@ -721,6 +721,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn gpt6_2_request_cost() {
+        for (model, standard, with_cache) in [
+            ("openai/gpt-6.2-astra", 0.12, 0.1048),
+            ("openai/gpt-6.2-sol", 0.03, 0.0262),
+        ] {
+            let cost = calculate_opencode_cost(model, 10_000, 1_000, 0, 0);
+            assert!((cost - standard).abs() < 1e-9, "{model}");
+            let cached_cost = calculate_opencode_cost(model, 8_000, 1_000, 2_000, 0);
+            assert!((cached_cost - with_cache).abs() < 1e-9, "{model} with cache");
+        }
+    }
+
+    #[test]
     fn test_parse_message_json_assistant() {
         let data: Value = serde_json::json!({
             "role": "assistant",
