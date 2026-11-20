@@ -1,6 +1,6 @@
 {
-  "version": "1.24.0",
-  "last_updated": "2026-11-14",
+  "version": "1.25.0",
+  "last_updated": "2026-11-20",
   "sources": {
     "claude": "https://platform.claude.com/docs/en/about-claude/pricing",
     "codex": "https://developers.openai.com/api/docs/pricing",
