@@ -88,6 +88,9 @@ static CACHE_INVALIDATED: AtomicBool = AtomicBool::new(false);
 static CONFIG_DIRS_HASH: Mutex<u64> = Mutex::new(0);
 static STRINGS: Interner<str> = Interner::new();
 static TOOL_USES: Interner<ToolUse> = Interner::new();
+/// Set once the incremental path has fallen back to a full parse for lack of a
+/// disk cache, so an unwritable cache cannot turn every refresh into one.
+static REBUILT_WITHOUT_CACHE: AtomicBool = AtomicBool::new(false);
 const CACHE_TTL: Duration = Duration::from_secs(120);
 
 /// Invalidate the stats cache so the next fetch re-checks file metadata.
@@ -166,16 +169,16 @@ impl DiskCache {
     /// Record past-month entries leaving memory. A month the cache already holds
     /// is authoritative — it was aggregated from every log of that month, while
     /// `past` may only be the lines of files still being parsed — so only
-    /// missing months are added. Returns true when the cache changed.
-    fn archive(&mut self, past: HashMap<String, Vec<SessionEntry>>) -> bool {
-        let mut changed = false;
+    /// missing months are added. Returns the months that were added.
+    fn archive(&mut self, past: &HashMap<String, Vec<(DedupKey, SessionEntry)>>) -> Vec<String> {
+        let mut added = Vec::new();
         for (month, entries) in past {
-            if let Entry::Vacant(slot) = self.months.entry(month) {
-                slot.insert(MonthData::from_entries(&entries));
-                changed = true;
+            if let Entry::Vacant(slot) = self.months.entry(month.clone()) {
+                slot.insert(MonthData::from_entries(entries));
+                added.push(month.clone());
             }
         }
-        changed
+        added
     }
 }
 
@@ -187,8 +190,8 @@ struct MonthData {
 }
 
 impl MonthData {
-    fn from_entries(entries: &[SessionEntry]) -> Self {
-        let refs: Vec<&SessionEntry> = entries.iter().collect();
+    fn from_entries(entries: &[(DedupKey, SessionEntry)]) -> Self {
+        let refs: Vec<&SessionEntry> = entries.iter().map(|(_, entry)| entry).collect();
         let (daily_map, model_usage, total_messages, _) = aggregate_entries(&refs);
         Self { daily: daily_map.into_values().collect(), model_usage, total_messages }
     }
@@ -230,13 +233,17 @@ fn disk_cache_path(claude_dir: &PathBuf) -> PathBuf {
 
 /// Load the disk cache, or None when there is none to read. A cache written by
 /// an older version is upgraded in place with all of its months kept. A file
-/// that cannot be read as a cache is moved aside rather than overwritten, so
-/// the history in it stays recoverable.
+/// that cannot be read as a cache is moved aside (under a timestamped name, so
+/// an earlier one is never replaced) rather than overwritten, so the history in
+/// it stays recoverable.
 fn load_disk_cache(claude_dir: &PathBuf) -> Option<DiskCache> {
     let path = disk_cache_path(claude_dir);
     let content = fs::read_to_string(&path).ok()?;
     let Ok(cache) = serde_json::from_str::<DiskCache>(&content) else {
-        let aside = claude_dir.join("ai-token-monitor-cache.unreadable.json");
+        let stamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_secs());
+        let aside = claude_dir.join(format!("ai-token-monitor-cache.unreadable-{stamp}.json"));
         eprintln!("[CACHE] Unreadable history cache moved to {}", aside.display());
         let _ = fs::rename(&path, &aside);
         return None;
@@ -249,11 +256,20 @@ fn load_disk_cache(claude_dir: &PathBuf) -> Option<DiskCache> {
     Some(cache)
 }
 
-fn save_disk_cache(claude_dir: &PathBuf, cache: &DiskCache) {
-    let path = disk_cache_path(claude_dir);
-    if let Ok(content) = serde_json::to_string(cache) {
-        let _ = fs::write(&path, content);
+/// Write the disk cache, returning whether it is now on disk. The content goes
+/// to a temporary file that then replaces the cache in one rename, so an app
+/// exit mid-write cannot leave a truncated file behind.
+fn save_disk_cache(claude_dir: &PathBuf, cache: &DiskCache) -> bool {
+    let Ok(content) = serde_json::to_string(cache) else {
+        return false;
+    };
+    let temporary = claude_dir.join("ai-token-monitor-cache.json.tmp");
+    let saved = fs::write(&temporary, content).is_ok()
+        && fs::rename(&temporary, disk_cache_path(claude_dir)).is_ok();
+    if !saved {
+        eprintln!("[CACHE] Could not save the history cache in {}", claude_dir.display());
     }
+    saved
 }
 
 /// Remove every entry dated before `current_month` from `entries`, grouped by
@@ -261,16 +277,16 @@ fn save_disk_cache(claude_dir: &PathBuf, cache: &DiskCache) {
 fn take_past_months(
     entries: &mut HashMap<DedupKey, SessionEntry>,
     current_month: &str,
-) -> HashMap<String, Vec<SessionEntry>> {
+) -> HashMap<String, Vec<(DedupKey, SessionEntry)>> {
     let past_keys: Vec<DedupKey> = entries
         .iter()
         .filter(|(_, entry)| entry.is_before_month(current_month))
         .map(|(key, _)| *key)
         .collect();
-    let mut past: HashMap<String, Vec<SessionEntry>> = HashMap::new();
+    let mut past: HashMap<String, Vec<(DedupKey, SessionEntry)>> = HashMap::new();
     for key in past_keys {
         if let Some(entry) = entries.remove(&key) {
-            past.entry(entry.month().to_string()).or_default().push(entry);
+            past.entry(entry.month().to_string()).or_default().push((key, entry));
         }
     }
     past
@@ -282,18 +298,25 @@ fn take_past_months(
 /// boundary, the next start does not have to re-parse the finished month, and
 /// a past-month line can no longer be counted both from memory and from the
 /// cache.
+///
+/// A month that could not be written to disk stays in memory instead: dropping
+/// it would lose it from the stats now, and for good once its logs are gone.
 fn archive_past_months(
     claude_dir: &PathBuf,
     entries: &mut HashMap<DedupKey, SessionEntry>,
     disk_cache: &mut DiskCache,
     current_month: &str,
 ) {
-    let past = take_past_months(entries, current_month);
+    let mut past = take_past_months(entries, current_month);
     if past.is_empty() {
         return;
     }
-    if disk_cache.archive(past) {
-        save_disk_cache(claude_dir, disk_cache);
+    let added = disk_cache.archive(&past);
+    if !added.is_empty() && !save_disk_cache(claude_dir, disk_cache) {
+        for month in &added {
+            disk_cache.months.remove(month);
+            entries.extend(past.remove(month).unwrap_or_default());
+        }
     }
     entries.shrink_to_fit();
     STRINGS.release_unused();
@@ -1289,8 +1312,12 @@ impl ClaudeCodeProvider {
             }
             // No cache to extend (first month of use, or the file went away):
             // a full parse rebuilds every month the logs still cover, rather
-            // than starting a cache that holds the finished month alone.
-            None => self.parse_from_scratch(current_meta),
+            // than starting a cache that holds the finished month alone. Only
+            // once — if the cache cannot be written, the entries stay in memory.
+            None if !REBUILT_WITHOUT_CACHE.swap(true, Ordering::Relaxed) => {
+                self.parse_from_scratch(current_meta)
+            }
+            None => parse,
         }
     }
 
@@ -1893,8 +1920,14 @@ mod tests {
         assert!(load_disk_cache(&dir).is_none());
 
         assert!(!disk_cache_path(&dir).exists());
-        let aside = dir.join("ai-token-monitor-cache.unreadable.json");
-        assert_eq!(fs::read_to_string(aside).expect("kept aside"), "{ not a cache");
+        let aside: Vec<PathBuf> = fs::read_dir(&dir)
+            .expect("list")
+            .flatten()
+            .map(|file| file.path())
+            .filter(|path| path.to_string_lossy().contains("unreadable-"))
+            .collect();
+        assert_eq!(aside.len(), 1);
+        assert_eq!(fs::read_to_string(&aside[0]).expect("kept aside"), "{ not a cache");
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -1937,6 +1970,33 @@ mod tests {
         assert_eq!(disk_cache.months["2026-10"].model_usage["claude-opus-4-8"].input_tokens, 999);
         assert!(!disk_cache_path(&dir).exists(), "nothing changed, so nothing is written");
 
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // The cache cannot be written (here: its directory does not exist). The
+    // finished month must then stay in memory, where it is still counted.
+    #[test]
+    fn archive_past_months_keeps_a_month_it_could_not_save() {
+        let dir = std::env::temp_dir().join(format!("atm-cache-test-{}-missing-dir", std::process::id()));
+        let mut entries = entries_on(&["2026-10-05", "2026-11-03"]);
+        let mut disk_cache = DiskCache::empty();
+
+        archive_past_months(&dir, &mut entries, &mut disk_cache, "2026-11");
+
+        assert_eq!(entries.len(), 2, "the unsaved October entry must not be dropped");
+        assert!(disk_cache.months.is_empty());
+    }
+
+    #[test]
+    fn save_disk_cache_leaves_no_temporary_file() {
+        let dir = temp_claude_dir("atomic-save");
+        assert!(save_disk_cache(&dir, &DiskCache::empty()));
+        let names: Vec<String> = fs::read_dir(&dir)
+            .expect("list")
+            .flatten()
+            .map(|file| file.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["ai-token-monitor-cache.json"]);
         let _ = fs::remove_dir_all(&dir);
     }
 
