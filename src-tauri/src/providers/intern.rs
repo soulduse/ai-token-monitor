@@ -40,6 +40,18 @@ impl<T: ?Sized + Eq + Hash> Interner<T> {
     }
 }
 
+impl<T: ?Sized + Eq + Hash> Interner<T> {
+    /// Forget values no record refers to any more (the set holds the only
+    /// reference). Without this, session ids and paths of records that left
+    /// memory would accumulate for as long as the app runs.
+    pub(crate) fn release_unused(&self) {
+        if let Some(values) = lock_unpoisoned(&self.values).as_mut() {
+            values.retain(|value| Arc::strong_count(value) > 1);
+            values.shrink_to_fit();
+        }
+    }
+}
+
 impl Interner<str> {
     /// The shared copy of `value`, allocated on first sight.
     pub(crate) fn intern(&self, value: &str) -> Arc<str> {
@@ -72,6 +84,21 @@ mod tests {
         let second = interner.intern(&String::from("claude-opus-4-8"));
         assert!(Arc::ptr_eq(&first, &second));
         assert!(!Arc::ptr_eq(&first, &interner.intern("claude-sonnet-5")));
+    }
+
+    #[test]
+    fn release_unused_keeps_only_referenced_values() {
+        let interner: Interner<str> = Interner::new();
+        let held = interner.intern("held");
+        let dropped = interner.intern("dropped");
+        drop(dropped);
+        let _filler = interner.intern("filler");
+
+        interner.release_unused();
+
+        assert!(Arc::ptr_eq(&held, &interner.intern("held")));
+        let len = lock_unpoisoned(&interner.values).as_ref().map_or(0, HashSet::len);
+        assert_eq!(len, 2, "the unreferenced value must be gone");
     }
 
     #[test]
