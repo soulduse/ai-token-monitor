@@ -537,7 +537,7 @@ impl SessionEntry {
     }
 
     #[allow(clippy::type_complexity)]
-    fn rank(&self) -> (u64, u64, u64, u64, u64, u32, &str, &str, &str, &ToolUse) {
+    fn rank(&self) -> (u64, u64, u64, u64, u64, u32, &str, &str, &str, &str, &ToolUse) {
         let input_side = self.input_tokens + self.cache_read_input_tokens + self.cache_creation_input_tokens;
         (
             self.output_tokens,
@@ -549,6 +549,7 @@ impl SessionEntry {
             self.cache_read_input_tokens,
             self.cache_creation_1h_tokens,
             self.web_search_requests,
+            &self.date,
             &self.session_id,
             &self.model,
             &self.cwd,
@@ -640,7 +641,7 @@ fn heredoc_delimiter(line: &str) -> Option<&str> {
             .trim_start()
             .trim_start_matches(['\'', '"', '\\']);
         let end = word
-            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .find(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.')))
             .unwrap_or(word.len());
         if end > 0 {
             return Some(&word[..end]);
@@ -652,14 +653,22 @@ fn heredoc_delimiter(line: &str) -> Option<&str> {
 
 /// Drop heredoc bodies from a shell command: they are input data (usually a
 /// whole script), not commands.
+///
+/// A body is only dropped once its closing delimiter line is found. `<<` also
+/// appears as a bit shift (`$((1<<3))`) or inside a quoted string, and treating
+/// those as an opener would otherwise swallow every command after them.
 fn strip_heredoc_bodies(command: &str) -> String {
     let mut kept: Vec<&str> = Vec::new();
+    let mut body: Vec<&str> = Vec::new();
     let mut delimiter: Option<&str> = None;
     for line in command.split('\n') {
         match delimiter {
             Some(word) => {
                 if line.trim() == word {
+                    body.clear();
                     delimiter = None;
+                } else {
+                    body.push(line);
                 }
             }
             None => {
@@ -668,6 +677,8 @@ fn strip_heredoc_bodies(command: &str) -> String {
             }
         }
     }
+    // Never closed, so it was not a heredoc: those lines are commands after all.
+    kept.append(&mut body);
     kept.join("\n")
 }
 
@@ -1475,6 +1486,22 @@ mod tests {
         assert_eq!(cmds, vec!["python3"]);
         let cmds = extract_bash_commands("cat <<-EOF > a.txt; ls\nfoo; bar\n\tEOF");
         assert_eq!(cmds, vec!["cat", "ls"]);
+    }
+
+    // `<<` that is not a heredoc (bit shift, quoted text) has no closing
+    // delimiter line; the commands after it must still be counted.
+    #[test]
+    fn extract_bash_commands_ignores_unterminated_heredoc_lookalikes() {
+        let cmds = extract_bash_commands("x=$((1<<3)); echo $x\nnpm test; git status");
+        assert_eq!(cmds, vec!["echo", "git"]);
+        let cmds = extract_bash_commands("echo \"a << b\"\ntrue; ls | wc -l");
+        assert_eq!(cmds, vec!["echo", "ls", "wc"]);
+    }
+
+    #[test]
+    fn extract_bash_commands_handles_punctuated_heredoc_delimiters() {
+        let cmds = extract_bash_commands("cat <<'END-OF.FILE'\nfoo; bar\nEND-OF.FILE\nls");
+        assert_eq!(cmds, vec!["cat"]);
     }
 
     #[test]
