@@ -576,6 +576,7 @@ fn merge_entries(into: &mut HashMap<DedupKey, SessionEntry>, from: HashMap<Dedup
 /// Extract individual command names from a shell command string.
 /// Splits on `&&`, `||`, `;`, `|` and takes the basename of the first token of each segment.
 fn extract_bash_commands(command: &str) -> Vec<String> {
+    let command = strip_heredoc_bodies(command);
     let mut commands = Vec::new();
     // First split on ; then handle && || | within each part.
     // We split on ';' first, then on '&&', '||', and '|' in that order
@@ -596,8 +597,8 @@ fn extract_bash_commands(command: &str) -> Vec<String> {
                     if first_token.is_empty() { continue; }
                     // Extract basename (after last '/')
                     let basename = first_token.rsplit('/').next().unwrap_or(first_token);
-                    // Skip cd and empty tokens
-                    if !basename.is_empty() && basename != "cd" {
+                    // Skip cd and anything that is not shaped like a command name
+                    if is_command_name(basename) && basename != "cd" {
                         commands.push(basename.to_string());
                     }
                 }
@@ -605,6 +606,69 @@ fn extract_bash_commands(command: &str) -> Vec<String> {
         }
     }
     commands
+}
+
+/// Longest token still treated as a command name.
+const MAX_COMMAND_NAME_LEN: usize = 32;
+/// Rows kept in the shell-command breakdown; the UI lists far fewer.
+const MAX_SHELL_COMMAND_ROWS: usize = 200;
+
+/// Whether `token` looks like a program name (`git`, `python3`, `docker-compose`)
+/// rather than a fragment of quoted script text (`}`, `s=open(p).read()`).
+/// Splitting on `;` and `|` cannot tell the two apart, and the fragments are
+/// nearly all distinct — unfiltered they made up most of the breakdown's rows
+/// and most of the memory held per parsed message.
+fn is_command_name(token: &str) -> bool {
+    !token.is_empty()
+        && token.len() <= MAX_COMMAND_NAME_LEN
+        && token.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+        && token.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '+' | '-'))
+}
+
+/// The delimiter word of a heredoc opened on `line` (`cat <<'EOF'`, `<<-END`),
+/// if any. `<<<` is a here-string and opens nothing.
+fn heredoc_delimiter(line: &str) -> Option<&str> {
+    let mut rest = line;
+    while let Some(pos) = rest.find("<<") {
+        let after = &rest[pos + 2..];
+        if let Some(here_string) = after.strip_prefix('<') {
+            rest = here_string;
+            continue;
+        }
+        let word = after
+            .trim_start_matches('-')
+            .trim_start()
+            .trim_start_matches(['\'', '"', '\\']);
+        let end = word
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .unwrap_or(word.len());
+        if end > 0 {
+            return Some(&word[..end]);
+        }
+        rest = after;
+    }
+    None
+}
+
+/// Drop heredoc bodies from a shell command: they are input data (usually a
+/// whole script), not commands.
+fn strip_heredoc_bodies(command: &str) -> String {
+    let mut kept: Vec<&str> = Vec::new();
+    let mut delimiter: Option<&str> = None;
+    for line in command.split('\n') {
+        match delimiter {
+            Some(word) => {
+                if line.trim() == word {
+                    delimiter = None;
+                }
+            }
+            None => {
+                delimiter = heredoc_delimiter(line);
+                kept.push(line);
+            }
+        }
+    }
+    kept.join("\n")
 }
 
 fn parse_session_line(line: &str) -> Option<(DedupKey, SessionEntry)> {
@@ -817,7 +881,9 @@ fn build_analytics(entries: &HashMap<DedupKey, SessionEntry>) -> AnalyticsData {
     let mut shell_commands: Vec<ToolCount> = shell_map.into_iter()
         .map(|(name, count)| ToolCount { name, count })
         .collect();
-    shell_commands.sort_by(|a, b| b.count.cmp(&a.count));
+    // Name breaks ties so the cut below does not depend on map iteration order.
+    shell_commands.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.name.cmp(&b.name)));
+    shell_commands.truncate(MAX_SHELL_COMMAND_ROWS);
 
     let mut mcp_usage: Vec<McpServerUsage> = mcp_map.into_iter()
         .map(|(server, calls)| McpServerUsage { server, calls })
@@ -1401,6 +1467,26 @@ mod tests {
         // URL query params should not be split as commands
         let cmds = extract_bash_commands("curl \"https://example.com/dl?v=1&arch=arm64\"");
         assert_eq!(cmds, vec!["curl"]);
+    }
+
+    #[test]
+    fn extract_bash_commands_skips_heredoc_bodies() {
+        let cmds = extract_bash_commands("python3 - <<'PY'\nimport json; print(1) | x\nPY\ngit status");
+        assert_eq!(cmds, vec!["python3"]);
+        let cmds = extract_bash_commands("cat <<-EOF > a.txt; ls\nfoo; bar\n\tEOF");
+        assert_eq!(cmds, vec!["cat", "ls"]);
+    }
+
+    #[test]
+    fn extract_bash_commands_keeps_here_strings() {
+        let cmds = extract_bash_commands("grep foo <<< \"$x\"; wc -l");
+        assert_eq!(cmds, vec!["grep", "wc"]);
+    }
+
+    #[test]
+    fn extract_bash_commands_drops_script_fragments() {
+        let cmds = extract_bash_commands("node -e 'const a = 1; if (a) { run() }; }' | docker-compose up; python3.12 x.py");
+        assert_eq!(cmds, vec!["node", "if", "docker-compose", "python3.12"]);
     }
 
     #[test]
