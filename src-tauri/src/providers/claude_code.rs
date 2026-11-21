@@ -52,6 +52,12 @@ struct ParseState {
     file_states: HashMap<PathBuf, FileParseState>,
 }
 
+impl ParseState {
+    fn holds_entries_before(&self, month: &str) -> bool {
+        self.entries.values().any(|entry| entry.is_before_month(month))
+    }
+}
+
 /// Unified incremental cache: stats + per-file parse state for change detection.
 struct IncrementalCache {
     stats: AllStats,
@@ -82,6 +88,9 @@ static CACHE_INVALIDATED: AtomicBool = AtomicBool::new(false);
 static CONFIG_DIRS_HASH: Mutex<u64> = Mutex::new(0);
 static STRINGS: Interner<str> = Interner::new();
 static TOOL_USES: Interner<ToolUse> = Interner::new();
+/// Set once the incremental path has fallen back to a full parse for lack of a
+/// disk cache, so an unwritable cache cannot turn every refresh into one.
+static REBUILT_WITHOUT_CACHE: AtomicBool = AtomicBool::new(false);
 const CACHE_TTL: Duration = Duration::from_secs(120);
 
 /// Invalidate the stats cache so the next fetch re-checks file metadata.
@@ -115,15 +124,19 @@ fn calculate_cost(
 
 // --- Persistent disk cache for historical month data ---
 
-/// Cache version — bump when the stored format changes to force a full rebuild.
+/// Cache version — bump when the stored format changes.
 /// v1 (missing/0): dates stored as UTC strings (bug)
 /// v2: dates stored as local-timezone strings (correct)
 /// v3: total_tokens now includes cache tokens; cache TTL-aware cost calculation
 /// v4: (see above)
 /// v5: model ids stored normalized (gateway spellings collapsed to one key).
-///     A v4 cache holds raw ids, so merging it would re-split the very rows
-///     normalization exists to join — and its costs were computed with the
-///     pre-fix pricing lookup. Both require a rebuild, not a migration.
+///
+/// An older cache is carried over, never discarded (#207): Claude Code deletes
+/// session logs after `cleanupPeriodDays`, so for most past months this file is
+/// the only record left and a rebuild from logs would silently drop them. A
+/// version bump must therefore come with a conversion in `DiskCache::upgraded`;
+/// values that cannot be converted (e.g. costs priced by an older lookup) stay
+/// as they were computed.
 const CACHE_VERSION: u32 = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,6 +146,42 @@ struct DiskCache {
     months: HashMap<String, MonthData>,
 }
 
+impl DiskCache {
+    fn empty() -> Self {
+        Self { version: CACHE_VERSION, months: HashMap::new() }
+    }
+
+    fn is_outdated(&self) -> bool {
+        self.version < CACHE_VERSION
+    }
+
+    /// This cache in the current format, keeping every month it holds.
+    fn upgraded(mut self) -> Self {
+        if self.version < 5 {
+            for month in self.months.values_mut() {
+                month.normalize_model_ids();
+            }
+        }
+        self.version = CACHE_VERSION;
+        self
+    }
+
+    /// Record past-month entries leaving memory. A month the cache already holds
+    /// is authoritative — it was aggregated from every log of that month, while
+    /// `past` may only be the lines of files still being parsed — so only
+    /// missing months are added. Returns the months that were added.
+    fn archive(&mut self, past: &HashMap<String, Vec<(DedupKey, SessionEntry)>>) -> Vec<String> {
+        let mut added = Vec::new();
+        for (month, entries) in past {
+            if let Entry::Vacant(slot) = self.months.entry(month.clone()) {
+                slot.insert(MonthData::from_entries(entries));
+                added.push(month.clone());
+            }
+        }
+        added
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct MonthData {
     daily: Vec<DailyUsage>,
@@ -140,28 +189,138 @@ struct MonthData {
     total_messages: u32,
 }
 
+impl MonthData {
+    fn from_entries(entries: &[(DedupKey, SessionEntry)]) -> Self {
+        let refs: Vec<&SessionEntry> = entries.iter().map(|(_, entry)| entry).collect();
+        let (daily_map, model_usage, total_messages, _) = aggregate_entries(&refs);
+        Self { daily: daily_map.into_values().collect(), model_usage, total_messages }
+    }
+
+    /// Re-key per-model figures by normalized model id, summing the spellings
+    /// that collapse to one key (what v5 does at parse time).
+    fn normalize_model_ids(&mut self) {
+        let mut model_usage: HashMap<String, ModelUsage> = HashMap::new();
+        for (model, usage) in self.model_usage.drain() {
+            match model_usage.entry(pricing::normalize_model_id(&model)) {
+                Entry::Vacant(slot) => {
+                    slot.insert(usage);
+                }
+                Entry::Occupied(mut slot) => {
+                    let merged = slot.get_mut();
+                    merged.input_tokens += usage.input_tokens;
+                    merged.output_tokens += usage.output_tokens;
+                    merged.cache_read += usage.cache_read;
+                    merged.cache_write += usage.cache_write;
+                    merged.cost_usd += usage.cost_usd;
+                }
+            }
+        }
+        self.model_usage = model_usage;
+
+        for day in &mut self.daily {
+            let mut tokens: HashMap<String, u64> = HashMap::new();
+            for (model, count) in day.tokens.drain() {
+                *tokens.entry(pricing::normalize_model_id(&model)).or_insert(0) += count;
+            }
+            day.tokens = tokens;
+        }
+    }
+}
+
 fn disk_cache_path(claude_dir: &PathBuf) -> PathBuf {
     claude_dir.join("ai-token-monitor-cache.json")
 }
 
-/// Load disk cache, returning None if missing or built with an older version.
-/// An outdated cache is also deleted so it gets rebuilt cleanly on next save.
+/// Load the disk cache, or None when there is none to read. A cache written by
+/// an older version is upgraded in place with all of its months kept. A file
+/// that cannot be read as a cache is moved aside (under a timestamped name, so
+/// an earlier one is never replaced) rather than overwritten, so the history in
+/// it stays recoverable.
 fn load_disk_cache(claude_dir: &PathBuf) -> Option<DiskCache> {
     let path = disk_cache_path(claude_dir);
     let content = fs::read_to_string(&path).ok()?;
-    let cache: DiskCache = serde_json::from_str(&content).ok()?;
-    if cache.version < CACHE_VERSION {
-        let _ = fs::remove_file(&path);
+    let Ok(cache) = serde_json::from_str::<DiskCache>(&content) else {
+        let stamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_secs());
+        let aside = claude_dir.join(format!("ai-token-monitor-cache.unreadable-{stamp}.json"));
+        eprintln!("[CACHE] Unreadable history cache moved to {}", aside.display());
+        let _ = fs::rename(&path, &aside);
         return None;
+    };
+    if cache.is_outdated() {
+        let cache = cache.upgraded();
+        save_disk_cache(claude_dir, &cache);
+        return Some(cache);
     }
     Some(cache)
 }
 
-fn save_disk_cache(claude_dir: &PathBuf, cache: &DiskCache) {
-    let path = disk_cache_path(claude_dir);
-    if let Ok(content) = serde_json::to_string(cache) {
-        let _ = fs::write(&path, content);
+/// Write the disk cache, returning whether it is now on disk. The content goes
+/// to a temporary file that then replaces the cache in one rename, so an app
+/// exit mid-write cannot leave a truncated file behind.
+fn save_disk_cache(claude_dir: &PathBuf, cache: &DiskCache) -> bool {
+    let Ok(content) = serde_json::to_string(cache) else {
+        return false;
+    };
+    let temporary = claude_dir.join("ai-token-monitor-cache.json.tmp");
+    let saved = fs::write(&temporary, content).is_ok()
+        && fs::rename(&temporary, disk_cache_path(claude_dir)).is_ok();
+    if !saved {
+        eprintln!("[CACHE] Could not save the history cache in {}", claude_dir.display());
     }
+    saved
+}
+
+/// Remove every entry dated before `current_month` from `entries`, grouped by
+/// month.
+fn take_past_months(
+    entries: &mut HashMap<DedupKey, SessionEntry>,
+    current_month: &str,
+) -> HashMap<String, Vec<(DedupKey, SessionEntry)>> {
+    let past_keys: Vec<DedupKey> = entries
+        .iter()
+        .filter(|(_, entry)| entry.is_before_month(current_month))
+        .map(|(key, _)| *key)
+        .collect();
+    let mut past: HashMap<String, Vec<(DedupKey, SessionEntry)>> = HashMap::new();
+    for key in past_keys {
+        if let Some(entry) = entries.remove(&key) {
+            past.entry(entry.month().to_string()).or_default().push((key, entry));
+        }
+    }
+    past
+}
+
+/// Move entries dated before `current_month` out of memory and into
+/// `disk_cache`, which `build_stats` merges back in. Memory then only ever
+/// holds the current month: it stops growing when the app runs across a month
+/// boundary, the next start does not have to re-parse the finished month, and
+/// a past-month line can no longer be counted both from memory and from the
+/// cache.
+///
+/// A month that could not be written to disk stays in memory instead: dropping
+/// it would lose it from the stats now, and for good once its logs are gone.
+fn archive_past_months(
+    claude_dir: &PathBuf,
+    entries: &mut HashMap<DedupKey, SessionEntry>,
+    disk_cache: &mut DiskCache,
+    current_month: &str,
+) {
+    let mut past = take_past_months(entries, current_month);
+    if past.is_empty() {
+        return;
+    }
+    let added = disk_cache.archive(&past);
+    if !added.is_empty() && !save_disk_cache(claude_dir, disk_cache) {
+        for month in &added {
+            disk_cache.months.remove(month);
+            entries.extend(past.remove(month).unwrap_or_default());
+        }
+    }
+    entries.shrink_to_fit();
+    STRINGS.release_unused();
+    TOOL_USES.release_unused();
 }
 
 fn current_month_str() -> String {
@@ -178,10 +337,6 @@ fn prev_month_str() -> String {
     } else {
         format!("{}-{:02}", year, month - 1)
     }
-}
-
-fn date_to_month(date: &str) -> String {
-    date.get(..7).unwrap_or(date).to_string()
 }
 
 // ---
@@ -445,8 +600,7 @@ impl ClaudeCodeProvider {
         }
 
         // Merge with disk cache for historical months
-        let disk_cache = load_disk_cache(&self.primary_dir)
-            .unwrap_or(DiskCache { version: CACHE_VERSION, months: HashMap::new() });
+        let disk_cache = load_disk_cache(&self.primary_dir).unwrap_or_else(DiskCache::empty);
         for month_data in disk_cache.months.values() {
             total_messages += month_data.total_messages;
             for d in &month_data.daily {
@@ -521,6 +675,15 @@ struct ToolUse {
 }
 
 impl SessionEntry {
+    /// The `YYYY-MM` this entry is dated in.
+    fn month(&self) -> &str {
+        self.date.get(..7).unwrap_or(&self.date)
+    }
+
+    fn is_before_month(&self, month: &str) -> bool {
+        self.month() < month
+    }
+
     /// Prompt size used to pick a long-context price tier. Anthropic counts
     /// every input token, including cache reads and writes.
     fn prompt_tokens(&self) -> u64 {
@@ -1112,7 +1275,7 @@ impl ClaudeCodeProvider {
             Some(mut parse) => {
                 // Incremental parse — only changed files
                 Self::parse_incremental(&current_meta, &mut parse);
-                parse
+                self.archive_finished_months(parse, &current_meta)
             }
             None => self.parse_from_scratch(&current_meta),
         };
@@ -1130,6 +1293,34 @@ impl ClaudeCodeProvider {
         Ok(stats)
     }
 
+    /// Apply the month boundary to an incremental parse: once the month rolls
+    /// over (or a late line dated in a past month shows up), those entries move
+    /// to the disk cache.
+    fn archive_finished_months(
+        &self,
+        mut parse: ParseState,
+        current_meta: &HashMap<PathBuf, (SystemTime, u64)>,
+    ) -> ParseState {
+        let current_month = current_month_str();
+        if !parse.holds_entries_before(&current_month) {
+            return parse;
+        }
+        match load_disk_cache(&self.primary_dir) {
+            Some(mut disk_cache) => {
+                archive_past_months(&self.primary_dir, &mut parse.entries, &mut disk_cache, &current_month);
+                parse
+            }
+            // No cache to extend (first month of use, or the file went away):
+            // a full parse rebuilds every month the logs still cover, rather
+            // than starting a cache that holds the finished month alone. Only
+            // once — if the cache cannot be written, the entries stay in memory.
+            None if !REBUILT_WITHOUT_CACHE.swap(true, Ordering::Relaxed) => {
+                self.parse_from_scratch(current_meta)
+            }
+            None => parse,
+        }
+    }
+
     /// Parse with no previous state: the first fetch of a process, or the one
     /// after a parse that did not complete.
     fn parse_from_scratch(&self, current_meta: &HashMap<PathBuf, (SystemTime, u64)>) -> ParseState {
@@ -1137,8 +1328,7 @@ impl ClaudeCodeProvider {
         let full_start = Instant::now();
 
         // Check disk cache for historical months to speed up cold start
-        let mut disk_cache = load_disk_cache(&self.primary_dir)
-            .unwrap_or(DiskCache { version: CACHE_VERSION, months: HashMap::new() });
+        let mut disk_cache = load_disk_cache(&self.primary_dir).unwrap_or_else(DiskCache::empty);
         let has_historical = !disk_cache.months.is_empty();
 
         let current_month = current_month_str();
@@ -1184,36 +1374,11 @@ impl ClaudeCodeProvider {
                 merge_entries(&mut entries, file_entries);
                 file_states.insert(path.clone(), state);
             }
-
-            // Split off historical entries, persist any months missing from cache
-            let mut current_entries = HashMap::new();
-            let mut month_buckets: HashMap<String, Vec<SessionEntry>> = HashMap::new();
-            for (key, entry) in entries {
-                let month = date_to_month(&entry.date);
-                if month >= current_month {
-                    current_entries.insert(key, entry);
-                } else if !disk_cache.months.contains_key(&month) {
-                    month_buckets.entry(month).or_default().push(entry);
-                }
-                // Entries for months already in disk_cache are dropped here;
-                // build_stats will merge them from disk_cache.
-            }
-
-            if !month_buckets.is_empty() {
-                for (month, month_data) in &month_buckets {
-                    let refs: Vec<&SessionEntry> = month_data.iter().collect();
-                    let (daily_map, model_map, messages, _) = aggregate_entries(&refs);
-                    disk_cache.months.insert(month.clone(), MonthData {
-                        daily: daily_map.into_values().collect(),
-                        model_usage: model_map,
-                        total_messages: messages,
-                    });
-                }
-                save_disk_cache(&self.primary_dir, &disk_cache);
-            }
-
-            entries = current_entries;
         }
+
+        // Past months go to the disk cache (or are dropped where it already has
+        // them); only the current month stays in memory.
+        archive_past_months(&self.primary_dir, &mut entries, &mut disk_cache, &current_month);
 
         eprintln!("[PERF] Full parse completed in {:?}", full_start.elapsed());
         ParseState { entries, file_states }
@@ -1668,6 +1833,184 @@ mod tests {
         assert_eq!(parse.file_states[&path].parsed_offset, appended.len() as u64);
 
         let _ = fs::remove_file(&path);
+    }
+
+    /// One assistant line (10 input, 5 output tokens) at noon UTC on `day`.
+    fn line_on(day: &str, id: &str) -> String {
+        format!(
+            r#"{{"sessionId":"s","type":"assistant","timestamp":"{day}T12:00:00Z","requestId":"{id}","message":{{"id":"m-{id}","model":"claude-opus-4-8","usage":{{"input_tokens":10,"output_tokens":5}}}}}}"#
+        )
+    }
+
+    fn entries_on(days: &[&str]) -> HashMap<DedupKey, SessionEntry> {
+        days.iter()
+            .enumerate()
+            .map(|(i, day)| parse_session_line(&line_on(day, &format!("r{i}"))).expect("should parse"))
+            .collect()
+    }
+
+    fn temp_claude_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("atm-cache-test-{}-{}", std::process::id(), name));
+        fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
+
+    fn month_with(model: &str, input_tokens: u64) -> MonthData {
+        MonthData {
+            daily: vec![DailyUsage {
+                date: "2026-03-10".to_string(),
+                tokens: HashMap::from([(model.to_string(), input_tokens)]),
+                ..DailyUsage::default()
+            }],
+            model_usage: HashMap::from([(
+                model.to_string(),
+                ModelUsage { input_tokens, output_tokens: 0, cache_read: 0, cache_write: 0, cost_usd: 1.0 },
+            )]),
+            total_messages: 1,
+        }
+    }
+
+    // #207: a cache written by an older version is the only record of months
+    // whose logs are gone. Loading it must keep those months, not delete the file.
+    #[test]
+    fn load_disk_cache_carries_over_an_older_version() {
+        let dir = temp_claude_dir("carry-over");
+        let old = DiskCache {
+            version: CACHE_VERSION - 1,
+            months: HashMap::from([("2026-03".to_string(), month_with("claude-opus-4.8", 7))]),
+        };
+        fs::write(disk_cache_path(&dir), serde_json::to_string(&old).expect("render")).expect("write");
+
+        let loaded = load_disk_cache(&dir).expect("an older cache must still load");
+
+        assert_eq!(loaded.version, CACHE_VERSION);
+        assert_eq!(loaded.months["2026-03"].total_messages, 1);
+        let on_disk: DiskCache =
+            serde_json::from_str(&fs::read_to_string(disk_cache_path(&dir)).expect("file kept")).expect("parse");
+        assert_eq!(on_disk.version, CACHE_VERSION, "the upgraded cache is written back");
+        assert!(on_disk.months.contains_key("2026-03"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn upgrading_a_v4_cache_merges_model_spellings() {
+        let mut month = month_with("claude-opus-4.8", 7);
+        month.model_usage.insert(
+            "claude-opus-4-8".to_string(),
+            ModelUsage { input_tokens: 3, output_tokens: 0, cache_read: 0, cache_write: 0, cost_usd: 2.0 },
+        );
+        month.daily[0].tokens.insert("claude-opus-4-8".to_string(), 3);
+        let cache = DiskCache { version: 4, months: HashMap::from([("2026-03".to_string(), month)]) }.upgraded();
+
+        let month = &cache.months["2026-03"];
+        assert_eq!(month.model_usage.len(), 1);
+        assert_eq!(month.model_usage["claude-opus-4-8"].input_tokens, 10);
+        assert_eq!(month.model_usage["claude-opus-4-8"].cost_usd, 3.0);
+        assert_eq!(month.daily[0].tokens, HashMap::from([("claude-opus-4-8".to_string(), 10)]));
+    }
+
+    // A file that is not a readable cache may still hold history worth
+    // recovering by hand: it is moved aside, never overwritten.
+    #[test]
+    fn load_disk_cache_moves_an_unreadable_file_aside() {
+        let dir = temp_claude_dir("unreadable");
+        fs::write(disk_cache_path(&dir), "{ not a cache").expect("write");
+
+        assert!(load_disk_cache(&dir).is_none());
+
+        assert!(!disk_cache_path(&dir).exists());
+        let aside: Vec<PathBuf> = fs::read_dir(&dir)
+            .expect("list")
+            .flatten()
+            .map(|file| file.path())
+            .filter(|path| path.to_string_lossy().contains("unreadable-"))
+            .collect();
+        assert_eq!(aside.len(), 1);
+        assert_eq!(fs::read_to_string(&aside[0]).expect("kept aside"), "{ not a cache");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // The app running across a month boundary: the finished month is written to
+    // the disk cache and leaves memory; the current month stays.
+    #[test]
+    fn archive_past_months_moves_a_finished_month_to_the_disk_cache() {
+        let dir = temp_claude_dir("rollover");
+        let mut entries = entries_on(&["2026-10-05", "2026-10-06", "2026-11-03"]);
+        let mut disk_cache = DiskCache::empty();
+
+        archive_past_months(&dir, &mut entries, &mut disk_cache, "2026-11");
+
+        assert_eq!(entries.len(), 1);
+        assert!(entries.values().all(|entry| entry.month() == "2026-11"));
+        let saved = load_disk_cache(&dir).expect("cache saved");
+        let october = &saved.months["2026-10"];
+        assert_eq!(october.total_messages, 2);
+        assert_eq!(october.daily.len(), 2);
+        assert_eq!(october.model_usage["claude-opus-4-8"].input_tokens, 20);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // A past-month line parsed again later (a resumed session's file) must not
+    // change a month the cache already holds, nor be counted from memory on top.
+    #[test]
+    fn archive_past_months_leaves_cached_months_untouched() {
+        let dir = temp_claude_dir("cached-month");
+        let mut entries = entries_on(&["2026-10-30", "2026-11-02"]);
+        let mut disk_cache = DiskCache {
+            version: CACHE_VERSION,
+            months: HashMap::from([("2026-10".to_string(), month_with("claude-opus-4-8", 999))]),
+        };
+
+        archive_past_months(&dir, &mut entries, &mut disk_cache, "2026-11");
+
+        assert_eq!(entries.len(), 1, "the October line leaves memory");
+        assert_eq!(disk_cache.months["2026-10"].model_usage["claude-opus-4-8"].input_tokens, 999);
+        assert!(!disk_cache_path(&dir).exists(), "nothing changed, so nothing is written");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // The cache cannot be written (here: its directory does not exist). The
+    // finished month must then stay in memory, where it is still counted.
+    #[test]
+    fn archive_past_months_keeps_a_month_it_could_not_save() {
+        let dir = std::env::temp_dir().join(format!("atm-cache-test-{}-missing-dir", std::process::id()));
+        let mut entries = entries_on(&["2026-10-05", "2026-11-03"]);
+        let mut disk_cache = DiskCache::empty();
+
+        archive_past_months(&dir, &mut entries, &mut disk_cache, "2026-11");
+
+        assert_eq!(entries.len(), 2, "the unsaved October entry must not be dropped");
+        assert!(disk_cache.months.is_empty());
+    }
+
+    #[test]
+    fn save_disk_cache_leaves_no_temporary_file() {
+        let dir = temp_claude_dir("atomic-save");
+        assert!(save_disk_cache(&dir, &DiskCache::empty()));
+        let names: Vec<String> = fs::read_dir(&dir)
+            .expect("list")
+            .flatten()
+            .map(|file| file.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["ai-token-monitor-cache.json"]);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn archive_past_months_keeps_everything_within_the_current_month() {
+        let dir = temp_claude_dir("current-only");
+        let mut entries = entries_on(&["2026-11-02", "2026-11-20", "2026-12-01"]);
+
+        archive_past_months(&dir, &mut entries, &mut DiskCache::empty(), "2026-11");
+
+        assert_eq!(entries.len(), 3);
+        assert!(!disk_cache_path(&dir).exists());
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// Round floats and sort name-keyed arrays so two runs can be diffed: cost
