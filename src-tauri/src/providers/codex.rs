@@ -500,10 +500,11 @@ impl CodexProvider {
     /// Incrementally parse only changed files. Appended-to files resume from their
     /// previous byte offset (verified by tail fingerprint); anything else — shrink,
     /// same-size rewrite, or a grow whose pre-resume bytes changed — is purged and
-    /// re-parsed from the start.
+    /// re-parsed from the start. `entries` is the previous parse's map, taken by
+    /// value so it is updated in place rather than copied on every refresh.
     fn parse_incremental(
         current_meta: &HashMap<PathBuf, (SystemTime, u64)>,
-        cached_entries: &HashMap<String, CodexEntry>,
+        mut entries: HashMap<String, CodexEntry>,
         cached_states: &HashMap<PathBuf, FileParseState>,
     ) -> (HashMap<String, CodexEntry>, HashMap<PathBuf, FileParseState>) {
         // If files were deleted, do a full re-parse
@@ -519,7 +520,6 @@ impl CodexProvider {
             return (fresh, states);
         }
 
-        let mut entries = cached_entries.clone();
         let mut states: HashMap<PathBuf, FileParseState> = HashMap::new();
         let mut changed_count = 0usize;
         let start = Instant::now();
@@ -695,8 +695,8 @@ impl CodexProvider {
         let current_meta = self.collect_file_meta();
 
         let (entries, file_states) = {
-            let cache = lock_unpoisoned(&STATS_CACHE);
-            if let Some(ref cached) = *cache {
+            let mut cache = lock_unpoisoned(&STATS_CACHE);
+            if let Some(ref mut cached) = *cache {
                 if file_states_match(&cached.file_states, &current_meta) {
                     drop(cache);
                     let rate_limits = self.resolve_rate_limits(&current_meta);
@@ -720,8 +720,13 @@ impl CodexProvider {
                     return Err("Cache lost during refresh".to_string());
                 }
 
-                // Incremental parse
-                Self::parse_incremental(&current_meta, &cached.entries, &cached.file_states)
+                // Incremental parse. The previous entries and states are moved out
+                // of the cache (`stats` stays behind for readers); should the parse
+                // panic, the empty maps left there make the next one start over.
+                let entries = std::mem::take(&mut cached.entries);
+                let cached_states = std::mem::take(&mut cached.file_states);
+                drop(cache);
+                Self::parse_incremental(&current_meta, entries, &cached_states)
             } else {
                 // First run — full parse
                 drop(cache);
@@ -1745,7 +1750,7 @@ mod tests {
         current_meta.insert(path.clone(), v2_meta);
 
         let (merged, _) =
-            CodexProvider::parse_incremental(&current_meta, &cached_entries, &cached_states);
+            CodexProvider::parse_incremental(&current_meta, cached_entries, &cached_states);
         let stats = CodexProvider::build_stats(&merged);
         let total: u64 = stats.daily.iter().map(|d| d.input_tokens).sum();
 
@@ -1801,7 +1806,7 @@ mod tests {
         current_meta.insert(path_a.clone(), file_meta_of(&path_a));
         current_meta.insert(path_b.clone(), file_meta_of(&path_b));
 
-        let (merged, _) = CodexProvider::parse_incremental(&current_meta, &cached, &cached_states);
+        let (merged, _) = CodexProvider::parse_incremental(&current_meta, cached, &cached_states);
         let total: u64 = CodexProvider::build_stats(&merged)
             .daily
             .iter()
@@ -1862,7 +1867,7 @@ mod tests {
         current_meta.insert(path.clone(), file_meta_of(&path));
 
         let (merged, states) =
-            CodexProvider::parse_incremental(&current_meta, &cached_entries, &cached_states);
+            CodexProvider::parse_incremental(&current_meta, cached_entries, &cached_states);
 
         let _ = fs::remove_dir_all(&dir);
 

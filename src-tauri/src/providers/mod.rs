@@ -6,6 +6,7 @@ pub mod gjc;
 pub mod glm;
 pub mod grok;
 pub mod hermes;
+pub(crate) mod intern;
 pub mod kiro;
 pub mod kimi;
 pub mod omo;
