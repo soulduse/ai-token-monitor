@@ -4,13 +4,14 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::time::{Duration, Instant, SystemTime};
 
 use serde::{Deserialize, Serialize};
 
+use super::intern::Interner;
 use super::traits::TokenProvider;
 use super::types::{ActivityCategory, AllStats, AnalyticsData, DailyUsage, McpServerUsage, ModelUsage, ProjectUsage, ToolCount};
 
@@ -30,14 +31,37 @@ impl FileParseState {
     }
 }
 
+/// Hash of `message_id:request_id`, the identity of one API call. The ids
+/// themselves are ~60 bytes per record and are never read back, so only the
+/// hash is kept; at a million records the chance of any collision is ~3e-8.
+type DedupKey = u64;
+
+fn dedup_key(message_id: &str, request_id: &str) -> DedupKey {
+    let mut hasher = DefaultHasher::new();
+    hasher.write(message_id.as_bytes());
+    hasher.write(b":");
+    hasher.write(request_id.as_bytes());
+    hasher.finish()
+}
+
+/// Everything a parse carries over to the next one.
+struct ParseState {
+    /// All parsed entries keyed by dedup key
+    entries: HashMap<DedupKey, SessionEntry>,
+    /// Parse state per file: path → (mtime, size, parsed byte offset)
+    file_states: HashMap<PathBuf, FileParseState>,
+}
+
 /// Unified incremental cache: stats + per-file parse state for change detection.
 struct IncrementalCache {
     stats: AllStats,
     computed_at: Instant,
-    /// All parsed entries keyed by dedup key (message_id:request_id)
-    entries: HashMap<String, SessionEntry>,
-    /// Parse state per file: path → (mtime, size, parsed byte offset)
-    file_states: HashMap<PathBuf, FileParseState>,
+    /// Taken out by the parse in progress and put back when it completes, so the
+    /// (large) entry map is updated in place instead of being copied on every
+    /// refresh. `None` therefore means "a parse is running, or the last one
+    /// panicked": the next parse starts over from the files, while `stats` keeps
+    /// answering readers in the meantime.
+    parse: Option<ParseState>,
 }
 
 /// True when every current file is present in the cached states with identical
@@ -56,6 +80,8 @@ static STATS_CACHE: Mutex<Option<IncrementalCache>> = Mutex::new(None);
 static PARSING: AtomicBool = AtomicBool::new(false);
 static CACHE_INVALIDATED: AtomicBool = AtomicBool::new(false);
 static CONFIG_DIRS_HASH: Mutex<u64> = Mutex::new(0);
+static STRINGS: Interner<str> = Interner::new();
+static TOOL_USES: Interner<ToolUse> = Interner::new();
 const CACHE_TTL: Duration = Duration::from_secs(120);
 
 /// Invalidate the stats cache so the next fetch re-checks file metadata.
@@ -225,7 +251,7 @@ impl ClaudeCodeProvider {
     /// Returns None when the file can't be opened/seeked — callers must NOT record a
     /// parse state in that case, so the next cycle retries instead of treating the
     /// file as consumed.
-    fn parse_file_from(path: &PathBuf, start_offset: u64) -> Option<(HashMap<String, SessionEntry>, u64)> {
+    fn parse_file_from(path: &PathBuf, start_offset: u64) -> Option<(HashMap<DedupKey, SessionEntry>, u64)> {
         use std::io::{Seek, SeekFrom};
 
         let mut entries = HashMap::new();
@@ -247,8 +273,7 @@ impl ClaudeCodeProvider {
                     }
                     offset += n as u64;
                     if let Ok(line) = std::str::from_utf8(&buf) {
-                        if let Some(entry) = parse_session_line(line) {
-                            let key = format!("{}:{}", entry.message_id, entry.request_id);
+                        if let Some((key, entry)) = parse_session_line(line) {
                             entries.insert(key, entry);
                         }
                     }
@@ -262,7 +287,7 @@ impl ClaudeCodeProvider {
     /// Parse an entire JSONL file (offset 0), returning entries and its parse state.
     /// None when the file is unreadable — the caller skips recording a state so the
     /// next cycle retries.
-    fn parse_full_file(path: &PathBuf, mtime: SystemTime, size: u64) -> Option<(HashMap<String, SessionEntry>, FileParseState)> {
+    fn parse_full_file(path: &PathBuf, mtime: SystemTime, size: u64) -> Option<(HashMap<DedupKey, SessionEntry>, FileParseState)> {
         let (entries, parsed_offset) = Self::parse_file_from(path, 0)?;
         Some((entries, FileParseState { mtime, size, parsed_offset }))
     }
@@ -311,51 +336,40 @@ impl ClaudeCodeProvider {
         0
     }
 
-    /// Incrementally parse only changed files, reusing cached entries for unchanged files.
+    /// Incrementally parse only changed files, updating `parse` in place.
     /// Appended-to files resume from their previous byte offset; shrunk or rewritten
     /// files are re-parsed from the start.
+    ///
+    /// A deleted file only loses its parse state: its entries stay. The usage
+    /// happened whether or not the log survives (the monthly disk cache keeps
+    /// deleted history on the same principle), and entries carry no source file,
+    /// so removing them meant re-parsing every file — tens of GB for a heavy
+    /// user, with all history held in memory afterwards.
     fn parse_incremental(
         current_meta: &HashMap<PathBuf, (SystemTime, u64)>,
-        cached_entries: &HashMap<String, SessionEntry>,
-        cached_states: &HashMap<PathBuf, FileParseState>,
-    ) -> (HashMap<String, SessionEntry>, HashMap<PathBuf, FileParseState>) {
-        // If files were deleted, do a full re-parse (can't selectively remove entries per file)
-        let has_deleted = cached_states.keys().any(|p| !current_meta.contains_key(p));
-        if has_deleted {
-            let mut fresh = HashMap::new();
-            let mut states = HashMap::new();
-            for (path, (mtime, size)) in current_meta {
-                let Some((file_entries, state)) = Self::parse_full_file(path, *mtime, *size) else {
-                    continue; // unreadable — no state recorded, retried next cycle
-                };
-                merge_entries(&mut fresh, file_entries);
-                states.insert(path.clone(), state);
-            }
-            return (fresh, states);
-        }
+        parse: &mut ParseState,
+    ) {
+        parse.file_states.retain(|path, _| current_meta.contains_key(path));
 
-        let mut entries = cached_entries.clone();
-        let mut states: HashMap<PathBuf, FileParseState> = HashMap::new();
         let mut changed_count = 0usize;
         let start = Instant::now();
 
         for (path, (mtime, size)) in current_meta {
-            let resume_offset = match cached_states.get(path) {
-                Some(st) if st.matches(*mtime, *size) => {
-                    // Unchanged — keep the cached state as-is.
-                    states.insert(path.clone(), st.clone());
-                    continue;
-                }
+            let resume_offset = match parse.file_states.get(path) {
+                // Unchanged — keep the cached state as-is.
+                Some(st) if st.matches(*mtime, *size) => continue,
                 // Grew (append-only session log): resume after the last complete line.
                 Some(st) if *size > st.size => st.parsed_offset,
                 // Shrunk or same-size rewrite: start over.
                 _ => 0,
             };
             let Some((file_entries, parsed_offset)) = Self::parse_file_from(path, resume_offset) else {
-                continue; // unreadable — no state recorded, retried next cycle
+                // Unreadable — forget its state so the next cycle retries from the start.
+                parse.file_states.remove(path);
+                continue;
             };
-            merge_entries(&mut entries, file_entries);
-            states.insert(path.clone(), FileParseState { mtime: *mtime, size: *size, parsed_offset });
+            merge_entries(&mut parse.entries, file_entries);
+            parse.file_states.insert(path.clone(), FileParseState { mtime: *mtime, size: *size, parsed_offset });
             changed_count += 1;
         }
 
@@ -365,12 +379,10 @@ impl ClaudeCodeProvider {
                 changed_count, start.elapsed(), current_meta.len()
             );
         }
-
-        (entries, states)
     }
 
     /// Build AllStats from parsed entries, merging with disk cache for historical months.
-    fn build_stats(&self, entries: &HashMap<String, SessionEntry>) -> AllStats {
+    fn build_stats(&self, entries: &HashMap<DedupKey, SessionEntry>) -> AllStats {
         let mut daily_map: HashMap<String, DailyUsage> = HashMap::new();
         let mut model_usage_map: HashMap<String, ModelUsage> = HashMap::new();
         let mut total_messages: u32 = 0;
@@ -379,8 +391,8 @@ impl ClaudeCodeProvider {
         for entry in entries.values() {
             total_messages += 1;
 
-            if first_date.as_ref().map_or(true, |d| entry.date < *d) {
-                first_date = Some(entry.date.clone());
+            if first_date.as_ref().map_or(true, |d| *entry.date < **d) {
+                first_date = Some(entry.date.to_string());
             }
 
             let prompt = entry.prompt_tokens();
@@ -394,13 +406,13 @@ impl ClaudeCodeProvider {
             let total_tokens = entry.input_tokens + entry.output_tokens
                 + entry.cache_read_input_tokens + entry.cache_creation_input_tokens;
 
-            let daily = daily_map.entry(entry.date.clone()).or_insert_with(|| DailyUsage {
-                date: entry.date.clone(), tokens: HashMap::new(), cost_usd: 0.0,
+            let daily = daily_map.entry(entry.date.to_string()).or_insert_with(|| DailyUsage {
+                date: entry.date.to_string(), tokens: HashMap::new(), cost_usd: 0.0,
                 messages: 0, sessions: 0, tool_calls: 0,
                 input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0,
                 hydrated: false,
             });
-            *daily.tokens.entry(entry.model.clone()).or_insert(0) += total_tokens;
+            *daily.tokens.entry(entry.model.to_string()).or_insert(0) += total_tokens;
             daily.cost_usd += cost;
             daily.messages += 1;
             daily.input_tokens += entry.input_tokens;
@@ -412,7 +424,7 @@ impl ClaudeCodeProvider {
                 // session_id tracking is only used for counting here
             }
 
-            let mu = model_usage_map.entry(entry.model.clone()).or_insert_with(|| ModelUsage {
+            let mu = model_usage_map.entry(entry.model.to_string()).or_insert_with(|| ModelUsage {
                 input_tokens: 0, output_tokens: 0, cache_read: 0, cache_write: 0, cost_usd: 0.0,
             });
             mu.input_tokens += entry.input_tokens;
@@ -485,12 +497,9 @@ impl ClaudeCodeProvider {
 
 #[derive(Clone)]
 struct SessionEntry {
-    date: String,
-    timestamp: String,
-    model: String,
-    session_id: String,
-    message_id: String,
-    request_id: String,
+    date: Arc<str>,
+    model: Arc<str>,
+    session_id: Arc<str>,
     input_tokens: u64,
     output_tokens: u64,
     cache_read_input_tokens: u64,
@@ -499,7 +508,14 @@ struct SessionEntry {
     cache_creation_1h_tokens: u64,
     web_search_requests: u32,
     // Analytics fields
-    cwd: String,
+    cwd: Arc<str>,
+    tools: Arc<ToolUse>,
+}
+
+/// The tool calls of one assistant message. Interned as a unit: most messages
+/// use the same few combinations (`Read`, `Edit`, `Bash` + `git`, …).
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct ToolUse {
     tool_names: Vec<String>,
     bash_commands: Vec<String>,
 }
@@ -521,7 +537,7 @@ impl SessionEntry {
     }
 
     #[allow(clippy::type_complexity)]
-    fn rank(&self) -> (u64, u64, u64, u64, u64, u32, &str, &str, &str, &str, &[String], &[String]) {
+    fn rank(&self) -> (u64, u64, u64, u64, u64, u32, &str, &str, &str, &str, &ToolUse) {
         let input_side = self.input_tokens + self.cache_read_input_tokens + self.cache_creation_input_tokens;
         (
             self.output_tokens,
@@ -533,18 +549,17 @@ impl SessionEntry {
             self.cache_read_input_tokens,
             self.cache_creation_1h_tokens,
             self.web_search_requests,
-            &self.timestamp,
+            &self.date,
             &self.session_id,
             &self.model,
             &self.cwd,
-            &self.tool_names,
-            &self.bash_commands,
+            &self.tools,
         )
     }
 }
 
 /// Merge one file's entries into the accumulated set, order-independently.
-fn merge_entries(into: &mut HashMap<String, SessionEntry>, from: HashMap<String, SessionEntry>) {
+fn merge_entries(into: &mut HashMap<DedupKey, SessionEntry>, from: HashMap<DedupKey, SessionEntry>) {
     for (key, entry) in from {
         match into.entry(key) {
             Entry::Vacant(slot) => {
@@ -562,6 +577,7 @@ fn merge_entries(into: &mut HashMap<String, SessionEntry>, from: HashMap<String,
 /// Extract individual command names from a shell command string.
 /// Splits on `&&`, `||`, `;`, `|` and takes the basename of the first token of each segment.
 fn extract_bash_commands(command: &str) -> Vec<String> {
+    let command = strip_heredoc_bodies(command);
     let mut commands = Vec::new();
     // First split on ; then handle && || | within each part.
     // We split on ';' first, then on '&&', '||', and '|' in that order
@@ -582,8 +598,8 @@ fn extract_bash_commands(command: &str) -> Vec<String> {
                     if first_token.is_empty() { continue; }
                     // Extract basename (after last '/')
                     let basename = first_token.rsplit('/').next().unwrap_or(first_token);
-                    // Skip cd and empty tokens
-                    if !basename.is_empty() && basename != "cd" {
+                    // Skip cd and anything that is not shaped like a command name
+                    if is_command_name(basename) && basename != "cd" {
                         commands.push(basename.to_string());
                     }
                 }
@@ -593,7 +609,80 @@ fn extract_bash_commands(command: &str) -> Vec<String> {
     commands
 }
 
-fn parse_session_line(line: &str) -> Option<SessionEntry> {
+/// Longest token still treated as a command name.
+const MAX_COMMAND_NAME_LEN: usize = 32;
+/// Rows kept in the shell-command breakdown; the UI lists far fewer.
+const MAX_SHELL_COMMAND_ROWS: usize = 200;
+
+/// Whether `token` looks like a program name (`git`, `python3`, `docker-compose`)
+/// rather than a fragment of quoted script text (`}`, `s=open(p).read()`).
+/// Splitting on `;` and `|` cannot tell the two apart, and the fragments are
+/// nearly all distinct — unfiltered they made up most of the breakdown's rows
+/// and most of the memory held per parsed message.
+fn is_command_name(token: &str) -> bool {
+    !token.is_empty()
+        && token.len() <= MAX_COMMAND_NAME_LEN
+        && token.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+        && token.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '+' | '-'))
+}
+
+/// The delimiter word of a heredoc opened on `line` (`cat <<'EOF'`, `<<-END`),
+/// if any. `<<<` is a here-string and opens nothing.
+fn heredoc_delimiter(line: &str) -> Option<&str> {
+    let mut rest = line;
+    while let Some(pos) = rest.find("<<") {
+        let after = &rest[pos + 2..];
+        if let Some(here_string) = after.strip_prefix('<') {
+            rest = here_string;
+            continue;
+        }
+        let word = after
+            .trim_start_matches('-')
+            .trim_start()
+            .trim_start_matches(['\'', '"', '\\']);
+        let end = word
+            .find(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.')))
+            .unwrap_or(word.len());
+        if end > 0 {
+            return Some(&word[..end]);
+        }
+        rest = after;
+    }
+    None
+}
+
+/// Drop heredoc bodies from a shell command: they are input data (usually a
+/// whole script), not commands.
+///
+/// A body is only dropped once its closing delimiter line is found. `<<` also
+/// appears as a bit shift (`$((1<<3))`) or inside a quoted string, and treating
+/// those as an opener would otherwise swallow every command after them.
+fn strip_heredoc_bodies(command: &str) -> String {
+    let mut kept: Vec<&str> = Vec::new();
+    let mut body: Vec<&str> = Vec::new();
+    let mut delimiter: Option<&str> = None;
+    for line in command.split('\n') {
+        match delimiter {
+            Some(word) => {
+                if line.trim() == word {
+                    body.clear();
+                    delimiter = None;
+                } else {
+                    body.push(line);
+                }
+            }
+            None => {
+                delimiter = heredoc_delimiter(line);
+                kept.push(line);
+            }
+        }
+    }
+    // Never closed, so it was not a heredoc: those lines are commands after all.
+    kept.append(&mut body);
+    kept.join("\n")
+}
+
+fn parse_session_line(line: &str) -> Option<(DedupKey, SessionEntry)> {
     // Quick pre-filter to avoid parsing non-assistant lines
     if !line.contains("\"type\":\"assistant\"") {
         return None;
@@ -638,9 +727,9 @@ fn parse_session_line(line: &str) -> Option<SessionEntry> {
     // own row in the breakdown.
     let model = pricing::normalize_model_id(raw_model);
 
-    let session_id = value.get("sessionId").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let message_id = message.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let request_id = value.get("requestId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let session_id = value.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
+    let message_id = message.get("id").and_then(|v| v.as_str()).unwrap_or("");
+    let request_id = value.get("requestId").and_then(|v| v.as_str()).unwrap_or("");
 
     let input_tokens = usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
     let output_tokens = usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
@@ -670,7 +759,7 @@ fn parse_session_line(line: &str) -> Option<SessionEntry> {
         .and_then(|v| v.as_u64()).unwrap_or(0) as u32;
 
     // Extract cwd (project path)
-    let cwd = value.get("cwd").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let cwd = value.get("cwd").and_then(|v| v.as_str()).unwrap_or("");
 
     // Extract tool names and bash commands from content blocks
     let mut tool_names: Vec<String> = Vec::new();
@@ -693,20 +782,24 @@ fn parse_session_line(line: &str) -> Option<SessionEntry> {
         }
     }
 
-    Some(SessionEntry {
-        date, timestamp: timestamp.to_string(), model, session_id, message_id, request_id,
+    let entry = SessionEntry {
+        date: STRINGS.intern(&date),
+        model: STRINGS.intern(&model),
+        session_id: STRINGS.intern(session_id),
         input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,
         cache_creation_5m_tokens, cache_creation_1h_tokens, web_search_requests,
-        cwd, tool_names, bash_commands,
-    })
+        cwd: STRINGS.intern(cwd),
+        tools: TOOL_USES.intern_value(ToolUse { tool_names, bash_commands }),
+    };
+    Some((dedup_key(message_id, request_id), entry))
 }
 
 /// Build analytics data (project/tool/shell/MCP breakdowns) from parsed entries.
-fn build_analytics(entries: &HashMap<String, SessionEntry>) -> AnalyticsData {
+fn build_analytics(entries: &HashMap<DedupKey, SessionEntry>) -> AnalyticsData {
     struct ProjectAcc {
         cost_usd: f64,
         tokens: u64,
-        sessions: HashSet<String>,
+        sessions: HashSet<Arc<str>>,
         messages: u32,
     }
 
@@ -743,12 +836,12 @@ fn build_analytics(entries: &HashMap<String, SessionEntry>) -> AnalyticsData {
             acc.tokens += total_tokens;
             acc.messages += 1;
             if !entry.session_id.is_empty() {
-                acc.sessions.insert(entry.session_id.clone());
+                acc.sessions.insert(Arc::clone(&entry.session_id));
             }
         }
 
         // Tool usage
-        for tool in &entry.tool_names {
+        for tool in &entry.tools.tool_names {
             if tool.starts_with("mcp__") {
                 // MCP server tracking — extract server name
                 let parts: Vec<&str> = tool.splitn(3, "__").collect();
@@ -761,12 +854,12 @@ fn build_analytics(entries: &HashMap<String, SessionEntry>) -> AnalyticsData {
         }
 
         // Shell commands
-        for cmd in &entry.bash_commands {
+        for cmd in &entry.tools.bash_commands {
             *shell_map.entry(cmd.clone()).or_insert(0) += 1;
         }
 
         // Activity classification (tool-pattern based)
-        let category = classify_activity(&entry.tool_names, &entry.bash_commands);
+        let category = classify_activity(&entry.tools.tool_names, &entry.tools.bash_commands);
         let prompt = entry.prompt_tokens();
         let pricing = pricing::claude_pricing_for(&entry.model, prompt);
         let entry_cost = calculate_cost(
@@ -799,7 +892,9 @@ fn build_analytics(entries: &HashMap<String, SessionEntry>) -> AnalyticsData {
     let mut shell_commands: Vec<ToolCount> = shell_map.into_iter()
         .map(|(name, count)| ToolCount { name, count })
         .collect();
-    shell_commands.sort_by(|a, b| b.count.cmp(&a.count));
+    // Name breaks ties so the cut below does not depend on map iteration order.
+    shell_commands.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.name.cmp(&b.name)));
+    shell_commands.truncate(MAX_SHELL_COMMAND_ROWS);
 
     let mut mcp_usage: Vec<McpServerUsage> = mcp_map.into_iter()
         .map(|(server, calls)| McpServerUsage { server, calls })
@@ -872,15 +967,15 @@ fn aggregate_entries(
 ) -> (HashMap<String, DailyUsage>, HashMap<String, ModelUsage>, u32, Option<String>) {
     let mut daily_map: HashMap<String, DailyUsage> = HashMap::new();
     let mut model_usage_map: HashMap<String, ModelUsage> = HashMap::new();
-    let mut daily_session_ids: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut daily_session_ids: HashMap<String, HashSet<Arc<str>>> = HashMap::new();
     let mut total_messages: u32 = 0;
     let mut first_date: Option<String> = None;
 
     for entry in entries {
         total_messages += 1;
 
-        if first_date.as_ref().map_or(true, |d| entry.date < *d) {
-            first_date = Some(entry.date.clone());
+        if first_date.as_ref().map_or(true, |d| *entry.date < **d) {
+            first_date = Some(entry.date.to_string());
         }
 
         let prompt = entry.prompt_tokens();
@@ -894,13 +989,13 @@ fn aggregate_entries(
         let total_tokens = entry.input_tokens + entry.output_tokens
             + entry.cache_read_input_tokens + entry.cache_creation_input_tokens;
 
-        let daily = daily_map.entry(entry.date.clone()).or_insert_with(|| DailyUsage {
+        let daily = daily_map.entry(entry.date.to_string()).or_insert_with(|| DailyUsage {
             hydrated: false,
-            date: entry.date.clone(), tokens: HashMap::new(), cost_usd: 0.0,
+            date: entry.date.to_string(), tokens: HashMap::new(), cost_usd: 0.0,
             messages: 0, sessions: 0, tool_calls: 0,
             input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0,
         });
-        *daily.tokens.entry(entry.model.clone()).or_insert(0) += total_tokens;
+        *daily.tokens.entry(entry.model.to_string()).or_insert(0) += total_tokens;
         daily.cost_usd += cost;
         daily.messages += 1;
         daily.input_tokens += entry.input_tokens;
@@ -909,10 +1004,10 @@ fn aggregate_entries(
         daily.cache_write_tokens += entry.cache_creation_input_tokens;
 
         if !entry.session_id.is_empty() {
-            daily_session_ids.entry(entry.date.clone()).or_default().insert(entry.session_id.clone());
+            daily_session_ids.entry(entry.date.to_string()).or_default().insert(Arc::clone(&entry.session_id));
         }
 
-        let mu = model_usage_map.entry(entry.model.clone()).or_insert_with(|| ModelUsage {
+        let mu = model_usage_map.entry(entry.model.to_string()).or_insert_with(|| ModelUsage {
             input_tokens: 0, output_tokens: 0, cache_read: 0, cache_write: 0, cost_usd: 0.0,
         });
         mu.input_tokens += entry.input_tokens;
@@ -992,126 +1087,136 @@ impl ClaudeCodeProvider {
         let start = Instant::now();
         let current_meta = self.collect_file_meta();
 
-        // Check if any files actually changed since last computation
-        let (entries, file_states) = {
-            let cache = lock_unpoisoned(&STATS_CACHE);
-            if let Some(ref cached) = *cache {
-                if file_states_match(&cached.file_states, &current_meta) {
-                    // No files changed — refresh timestamp and return cached stats
-                    drop(cache);
-                    let mut cache = lock_unpoisoned(&STATS_CACHE);
-                    if let Some(ref mut cached) = *cache {
+        // Take the previous parse out of the cache so it is updated in place.
+        let previous = {
+            let mut cache = lock_unpoisoned(&STATS_CACHE);
+            match cache.as_mut() {
+                Some(cached) => {
+                    let unchanged = cached
+                        .parse
+                        .as_ref()
+                        .is_some_and(|parse| file_states_match(&parse.file_states, &current_meta));
+                    if unchanged {
+                        // No files changed — refresh timestamp and return cached stats
                         cached.computed_at = Instant::now();
                         eprintln!("[PERF] No files changed, reusing cache ({:?})", start.elapsed());
                         return Ok(cached.stats.clone());
                     }
-                    return Err("Cache lost during refresh".to_string());
+                    cached.parse.take()
                 }
-
-                // Incremental parse — only changed files
-                Self::parse_incremental(&current_meta, &cached.entries, &cached.file_states)
-            } else {
-                // First run — full parse
-                drop(cache);
-                eprintln!("[PERF] First run, full parse of {} files...", current_meta.len());
-                let full_start = Instant::now();
-
-                // Check disk cache for historical months to speed up cold start
-                let mut disk_cache = load_disk_cache(&self.primary_dir)
-                    .unwrap_or(DiskCache { version: CACHE_VERSION, months: HashMap::new() });
-                let has_historical = !disk_cache.months.is_empty();
-
-                let current_month = current_month_str();
-                let mut entries = HashMap::new();
-
-                // Only skip historical files when the disk cache covers up to the previous
-                // month. If the previous month is absent (e.g. the month just rolled over),
-                // a full parse is required so that month's data is not lost.
-                let prev_month = prev_month_str();
-                let only_current = has_historical && disk_cache.months.contains_key(&prev_month);
-
-                let mut file_states: HashMap<PathBuf, FileParseState> = HashMap::new();
-
-                if only_current {
-                    // Fast path: disk cache is complete — only parse current-month files
-                    for (path, (mtime, size)) in &current_meta {
-                        let modified_date: chrono::DateTime<chrono::Local> = (*mtime).into();
-                        let file_month = modified_date.format("%Y-%m").to_string();
-                        if file_month < current_month {
-                            // Historical file covered by the disk cache — record where its
-                            // complete lines end (not the raw size: a file that stopped on
-                            // a partial line must not have that line skipped if it is ever
-                            // appended to again).
-                            let parsed_offset = Self::last_complete_line_offset(path, *size);
-                            file_states.insert(
-                                path.clone(),
-                                FileParseState { mtime: *mtime, size: *size, parsed_offset },
-                            );
-                            continue;
-                        }
-                        let Some((file_entries, state)) = Self::parse_full_file(path, *mtime, *size) else {
-                            continue; // unreadable — no state recorded, retried next cycle
-                        };
-                        merge_entries(&mut entries, file_entries);
-                        file_states.insert(path.clone(), state);
-                    }
-                } else {
-                    // Full parse: either no cache yet, or the cache is missing some months
-                    for (path, (mtime, size)) in &current_meta {
-                        let Some((file_entries, state)) = Self::parse_full_file(path, *mtime, *size) else {
-                            continue; // unreadable — no state recorded, retried next cycle
-                        };
-                        merge_entries(&mut entries, file_entries);
-                        file_states.insert(path.clone(), state);
-                    }
-
-                    // Split off historical entries, persist any months missing from cache
-                    let mut current_entries = HashMap::new();
-                    let mut month_buckets: HashMap<String, Vec<SessionEntry>> = HashMap::new();
-                    for (key, entry) in entries {
-                        let month = date_to_month(&entry.date);
-                        if month >= current_month {
-                            current_entries.insert(key, entry);
-                        } else if !disk_cache.months.contains_key(&month) {
-                            month_buckets.entry(month).or_default().push(entry);
-                        }
-                        // Entries for months already in disk_cache are dropped here;
-                        // build_stats will merge them from disk_cache.
-                    }
-
-                    if !month_buckets.is_empty() {
-                        for (month, month_data) in &month_buckets {
-                            let refs: Vec<&SessionEntry> = month_data.iter().collect();
-                            let (daily_map, model_map, messages, _) = aggregate_entries(&refs);
-                            disk_cache.months.insert(month.clone(), MonthData {
-                                daily: daily_map.into_values().collect(),
-                                model_usage: model_map,
-                                total_messages: messages,
-                            });
-                        }
-                        save_disk_cache(&self.primary_dir, &disk_cache);
-                    }
-
-                    entries = current_entries;
-                }
-
-                eprintln!("[PERF] Full parse completed in {:?}", full_start.elapsed());
-                (entries, file_states)
+                None => None,
             }
         };
 
-        let stats = self.build_stats(&entries);
+        let parse = match previous {
+            Some(mut parse) => {
+                // Incremental parse — only changed files
+                Self::parse_incremental(&current_meta, &mut parse);
+                parse
+            }
+            None => self.parse_from_scratch(&current_meta),
+        };
+
+        let stats = self.build_stats(&parse.entries);
 
         // Update cache with entries + per-file parse state
         *lock_unpoisoned(&STATS_CACHE) = Some(IncrementalCache {
             stats: stats.clone(),
             computed_at: Instant::now(),
-            entries,
-            file_states,
+            parse: Some(parse),
         });
 
         eprintln!("[PERF] Total fetch_stats: {:?}", start.elapsed());
         Ok(stats)
+    }
+
+    /// Parse with no previous state: the first fetch of a process, or the one
+    /// after a parse that did not complete.
+    fn parse_from_scratch(&self, current_meta: &HashMap<PathBuf, (SystemTime, u64)>) -> ParseState {
+        eprintln!("[PERF] First run, full parse of {} files...", current_meta.len());
+        let full_start = Instant::now();
+
+        // Check disk cache for historical months to speed up cold start
+        let mut disk_cache = load_disk_cache(&self.primary_dir)
+            .unwrap_or(DiskCache { version: CACHE_VERSION, months: HashMap::new() });
+        let has_historical = !disk_cache.months.is_empty();
+
+        let current_month = current_month_str();
+        let mut entries = HashMap::new();
+
+        // Only skip historical files when the disk cache covers up to the previous
+        // month. If the previous month is absent (e.g. the month just rolled over),
+        // a full parse is required so that month's data is not lost.
+        let prev_month = prev_month_str();
+        let only_current = has_historical && disk_cache.months.contains_key(&prev_month);
+
+        let mut file_states: HashMap<PathBuf, FileParseState> = HashMap::new();
+
+        if only_current {
+            // Fast path: disk cache is complete — only parse current-month files
+            for (path, (mtime, size)) in current_meta {
+                let modified_date: chrono::DateTime<chrono::Local> = (*mtime).into();
+                let file_month = modified_date.format("%Y-%m").to_string();
+                if file_month < current_month {
+                    // Historical file covered by the disk cache — record where its
+                    // complete lines end (not the raw size: a file that stopped on
+                    // a partial line must not have that line skipped if it is ever
+                    // appended to again).
+                    let parsed_offset = Self::last_complete_line_offset(path, *size);
+                    file_states.insert(
+                        path.clone(),
+                        FileParseState { mtime: *mtime, size: *size, parsed_offset },
+                    );
+                    continue;
+                }
+                let Some((file_entries, state)) = Self::parse_full_file(path, *mtime, *size) else {
+                    continue; // unreadable — no state recorded, retried next cycle
+                };
+                merge_entries(&mut entries, file_entries);
+                file_states.insert(path.clone(), state);
+            }
+        } else {
+            // Full parse: either no cache yet, or the cache is missing some months
+            for (path, (mtime, size)) in current_meta {
+                let Some((file_entries, state)) = Self::parse_full_file(path, *mtime, *size) else {
+                    continue; // unreadable — no state recorded, retried next cycle
+                };
+                merge_entries(&mut entries, file_entries);
+                file_states.insert(path.clone(), state);
+            }
+
+            // Split off historical entries, persist any months missing from cache
+            let mut current_entries = HashMap::new();
+            let mut month_buckets: HashMap<String, Vec<SessionEntry>> = HashMap::new();
+            for (key, entry) in entries {
+                let month = date_to_month(&entry.date);
+                if month >= current_month {
+                    current_entries.insert(key, entry);
+                } else if !disk_cache.months.contains_key(&month) {
+                    month_buckets.entry(month).or_default().push(entry);
+                }
+                // Entries for months already in disk_cache are dropped here;
+                // build_stats will merge them from disk_cache.
+            }
+
+            if !month_buckets.is_empty() {
+                for (month, month_data) in &month_buckets {
+                    let refs: Vec<&SessionEntry> = month_data.iter().collect();
+                    let (daily_map, model_map, messages, _) = aggregate_entries(&refs);
+                    disk_cache.months.insert(month.clone(), MonthData {
+                        daily: daily_map.into_values().collect(),
+                        model_usage: model_map,
+                        total_messages: messages,
+                    });
+                }
+                save_disk_cache(&self.primary_dir, &disk_cache);
+            }
+
+            entries = current_entries;
+        }
+
+        eprintln!("[PERF] Full parse completed in {:?}", full_start.elapsed());
+        ParseState { entries, file_states }
     }
 }
 
@@ -1135,6 +1240,10 @@ struct DailyActivity {
 mod tests {
     use super::*;
 
+    fn parse_entry(line: &str) -> SessionEntry {
+        parse_session_line(line).expect("should parse").1
+    }
+
     fn sample_jsonl_line() -> &'static str {
         r#"{"sessionId":"abc-123","type":"assistant","timestamp":"2026-03-23T10:00:00Z","requestId":"req-1","message":{"id":"msg-1","model":"claude-sonnet-4-6-20260320","usage":{"input_tokens":1000,"output_tokens":500,"cache_read_input_tokens":50000,"cache_creation_input_tokens":2000}}}"#
     }
@@ -1151,18 +1260,18 @@ mod tests {
     // must resolve to the same record regardless of merge order.
     #[test]
     fn merge_entries_is_order_independent_on_conflicting_usage() {
-        let full = parse_session_line(sample_jsonl_line()).expect("should parse");
+        let full = parse_entry(sample_jsonl_line());
         let mut partial = full.clone();
         partial.output_tokens = 120;
-        partial.session_id = "agent-sidechain".to_string();
-        let key = || "msg-1:req-1".to_string();
+        partial.session_id = "agent-sidechain".into();
+        let key = || dedup_key("msg-1", "req-1");
 
         let merged = |first: &SessionEntry, second: &SessionEntry| {
             let mut into = HashMap::new();
             merge_entries(&mut into, HashMap::from([(key(), first.clone())]));
             merge_entries(&mut into, HashMap::from([(key(), second.clone())]));
             let entry = &into[&key()];
-            (entry.output_tokens, entry.session_id.clone())
+            (entry.output_tokens, entry.session_id.to_string())
         };
 
         assert_eq!(merged(&full, &partial), (500, "abc-123".to_string()));
@@ -1173,11 +1282,11 @@ mod tests {
     // the survivor must not depend on merge order.
     #[test]
     fn merge_entries_breaks_ties_on_input_split() {
-        let a = parse_session_line(sample_jsonl_line()).expect("should parse");
+        let a = parse_entry(sample_jsonl_line());
         let mut b = a.clone();
         b.input_tokens += 100;
         b.cache_read_input_tokens -= 100;
-        let key = || "msg-1:req-1".to_string();
+        let key = || dedup_key("msg-1", "req-1");
         let survivor = |first: &SessionEntry, second: &SessionEntry| {
             let mut into = HashMap::new();
             merge_entries(&mut into, HashMap::from([(key(), first.clone())]));
@@ -1189,14 +1298,12 @@ mod tests {
 
     #[test]
     fn parse_session_line_extracts_fields() {
-        let entry = parse_session_line(sample_jsonl_line()).expect("should parse");
+        let entry = parse_entry(sample_jsonl_line());
         // Date depends on local timezone: UTC 10:00 may be 23rd or 24th depending on offset.
         // Just verify it is a valid date string in YYYY-MM-DD format.
         assert!(entry.date.starts_with("2026-03-2"), "unexpected date: {}", entry.date);
         assert!(entry.model.contains("sonnet"));
-        assert_eq!(entry.session_id, "abc-123");
-        assert_eq!(entry.message_id, "msg-1");
-        assert_eq!(entry.request_id, "req-1");
+        assert_eq!(&*entry.session_id, "abc-123");
         assert_eq!(entry.input_tokens, 1000);
         assert_eq!(entry.output_tokens, 500);
         assert_eq!(entry.cache_read_input_tokens, 50000);
@@ -1209,7 +1316,7 @@ mod tests {
 
     #[test]
     fn parse_session_line_with_cache_ttl() {
-        let entry = parse_session_line(sample_jsonl_line_with_cache_ttl()).expect("should parse");
+        let entry = parse_entry(sample_jsonl_line_with_cache_ttl());
         assert_eq!(entry.cache_creation_5m_tokens, 1000);
         assert_eq!(entry.cache_creation_1h_tokens, 500);
         assert_eq!(entry.cache_creation_input_tokens, 1500);
@@ -1217,7 +1324,7 @@ mod tests {
 
     #[test]
     fn parse_session_line_with_web_search() {
-        let entry = parse_session_line(sample_jsonl_line_with_web_search()).expect("should parse");
+        let entry = parse_entry(sample_jsonl_line_with_web_search());
         assert_eq!(entry.web_search_requests, 3);
         assert_eq!(entry.input_tokens, 2000);
         assert_eq!(entry.cache_creation_input_tokens, 0);
@@ -1247,8 +1354,8 @@ mod tests {
             ("anthropic-gpt-5.6-sol", "gpt-5-6-sol"),
         ];
         for (raw, expected) in cases {
-            let entry = parse_session_line(&line_with_model(raw, "r1")).expect("should parse");
-            assert_eq!(entry.model, expected, "{raw:?} should normalize to {expected:?}");
+            let entry = parse_entry(&line_with_model(raw, "r1"));
+            assert_eq!(&*entry.model, expected, "{raw:?} should normalize to {expected:?}");
         }
     }
 
@@ -1261,7 +1368,7 @@ mod tests {
         let parsed: Vec<SessionEntry> = ["claude-opus-4-8", "claude-opus-4.8", "CLAUDE-OPUS-4-8"]
             .iter()
             .enumerate()
-            .map(|(i, raw)| parse_session_line(&line_with_model(raw, &format!("r{i}"))).expect("should parse"))
+            .map(|(i, raw)| parse_entry(&line_with_model(raw, &format!("r{i}"))))
             .collect();
         let refs: Vec<&SessionEntry> = parsed.iter().collect();
 
@@ -1374,6 +1481,42 @@ mod tests {
     }
 
     #[test]
+    fn extract_bash_commands_skips_heredoc_bodies() {
+        let cmds = extract_bash_commands("python3 - <<'PY'\nimport json; print(1) | x\nPY\ngit status");
+        assert_eq!(cmds, vec!["python3"]);
+        let cmds = extract_bash_commands("cat <<-EOF > a.txt; ls\nfoo; bar\n\tEOF");
+        assert_eq!(cmds, vec!["cat", "ls"]);
+    }
+
+    // `<<` that is not a heredoc (bit shift, quoted text) has no closing
+    // delimiter line; the commands after it must still be counted.
+    #[test]
+    fn extract_bash_commands_ignores_unterminated_heredoc_lookalikes() {
+        let cmds = extract_bash_commands("x=$((1<<3)); echo $x\nnpm test; git status");
+        assert_eq!(cmds, vec!["echo", "git"]);
+        let cmds = extract_bash_commands("echo \"a << b\"\ntrue; ls | wc -l");
+        assert_eq!(cmds, vec!["echo", "ls", "wc"]);
+    }
+
+    #[test]
+    fn extract_bash_commands_handles_punctuated_heredoc_delimiters() {
+        let cmds = extract_bash_commands("cat <<'END-OF.FILE'\nfoo; bar\nEND-OF.FILE\nls");
+        assert_eq!(cmds, vec!["cat"]);
+    }
+
+    #[test]
+    fn extract_bash_commands_keeps_here_strings() {
+        let cmds = extract_bash_commands("grep foo <<< \"$x\"; wc -l");
+        assert_eq!(cmds, vec!["grep", "wc"]);
+    }
+
+    #[test]
+    fn extract_bash_commands_drops_script_fragments() {
+        let cmds = extract_bash_commands("node -e 'const a = 1; if (a) { run() }; }' | docker-compose up; python3.12 x.py");
+        assert_eq!(cmds, vec!["node", "if", "docker-compose", "python3.12"]);
+    }
+
+    #[test]
     fn extract_bash_commands_handles_background_operator() {
         let cmds = extract_bash_commands("npm run build &");
         assert_eq!(cmds, vec!["npm"]);
@@ -1382,10 +1525,10 @@ mod tests {
     #[test]
     fn parse_session_line_extracts_tools() {
         let line = r#"{"sessionId":"s1","type":"assistant","timestamp":"2026-04-01T10:00:00Z","cwd":"/home/user/project","requestId":"r1","message":{"id":"m1","model":"claude-sonnet-4-6-20260320","content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"/tmp/a.txt"}},{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"git status && npm test"}}],"usage":{"input_tokens":100,"output_tokens":50}}}"#;
-        let entry = parse_session_line(line).expect("should parse");
-        assert_eq!(entry.cwd, "/home/user/project");
-        assert_eq!(entry.tool_names, vec!["Read", "Bash"]);
-        assert_eq!(entry.bash_commands, vec!["git", "npm"]);
+        let entry = parse_entry(line);
+        assert_eq!(&*entry.cwd, "/home/user/project");
+        assert_eq!(entry.tools.tool_names, vec!["Read", "Bash"]);
+        assert_eq!(entry.tools.bash_commands, vec!["git", "npm"]);
     }
 
     fn temp_jsonl(name: &str, content: &str) -> PathBuf {
@@ -1425,7 +1568,7 @@ mod tests {
         fs::write(&path, &full).expect("rewrite temp jsonl");
         let (tail_entries, new_offset) = ClaudeCodeProvider::parse_file_from(&path, offset).expect("parse");
         assert_eq!(tail_entries.len(), 1);
-        assert!(tail_entries.contains_key("msg-2:req-2"));
+        assert!(tail_entries.contains_key(&dedup_key("msg-2", "req-2")));
         assert_eq!(new_offset, full.len() as u64);
 
         let _ = fs::remove_file(&path);
@@ -1470,9 +1613,121 @@ mod tests {
         fs::write(&path, &appended).expect("append temp jsonl");
         let (tail_entries, new_offset) = ClaudeCodeProvider::parse_file_from(&path, offset).expect("parse");
         assert_eq!(tail_entries.len(), 1, "only the appended line should be parsed");
-        assert!(tail_entries.contains_key("msg-3:req-3"));
+        assert!(tail_entries.contains_key(&dedup_key("msg-3", "req-3")));
         assert_eq!(new_offset, appended.len() as u64);
 
         let _ = fs::remove_file(&path);
+    }
+
+    fn meta_of(path: &PathBuf) -> (SystemTime, u64) {
+        let meta = fs::metadata(path).expect("metadata");
+        (meta.modified().expect("mtime"), meta.len())
+    }
+
+    // Deleting a session log must neither drop the usage it recorded nor force
+    // every other file to be re-read: only the file's parse state goes away.
+    #[test]
+    fn parse_incremental_keeps_entries_of_deleted_files() {
+        let kept = temp_jsonl("deleted-kept", &format!("{}\n", sample_jsonl_line()));
+        let deleted = temp_jsonl("deleted-gone", &format!("{}\n", sample_jsonl_line_with_cache_ttl()));
+
+        let mut current_meta = HashMap::from([(kept.clone(), meta_of(&kept)), (deleted.clone(), meta_of(&deleted))]);
+        let mut parse = ParseState { entries: HashMap::new(), file_states: HashMap::new() };
+        ClaudeCodeProvider::parse_incremental(&current_meta, &mut parse);
+        assert_eq!(parse.entries.len(), 2);
+        assert_eq!(parse.file_states.len(), 2);
+
+        fs::remove_file(&deleted).expect("delete temp jsonl");
+        current_meta.remove(&deleted);
+        ClaudeCodeProvider::parse_incremental(&current_meta, &mut parse);
+
+        assert_eq!(parse.entries.len(), 2, "usage from a deleted log must be kept");
+        assert!(parse.entries.contains_key(&dedup_key("msg-2", "req-2")));
+        assert_eq!(parse.file_states.len(), 1, "a deleted file must not keep a parse state");
+        assert!(file_states_match(&parse.file_states, &current_meta));
+
+        let _ = fs::remove_file(&kept);
+    }
+
+    // An appended line is merged into the existing entries in place, and a
+    // duplicate of an already-known API call does not add a second record.
+    #[test]
+    fn parse_incremental_merges_appended_lines_in_place() {
+        let first = format!("{}\n", sample_jsonl_line());
+        let path = temp_jsonl("incremental-append", &first);
+
+        let mut parse = ParseState { entries: HashMap::new(), file_states: HashMap::new() };
+        ClaudeCodeProvider::parse_incremental(&HashMap::from([(path.clone(), meta_of(&path))]), &mut parse);
+        assert_eq!(parse.entries.len(), 1);
+
+        let appended = format!("{}{}\n{}\n", first, sample_jsonl_line(), sample_jsonl_line_with_web_search());
+        fs::write(&path, &appended).expect("append temp jsonl");
+        ClaudeCodeProvider::parse_incremental(&HashMap::from([(path.clone(), meta_of(&path))]), &mut parse);
+
+        assert_eq!(parse.entries.len(), 2, "one new call; the repeated one is deduplicated");
+        assert_eq!(parse.file_states[&path].parsed_offset, appended.len() as u64);
+
+        let _ = fs::remove_file(&path);
+    }
+
+    /// Round floats and sort name-keyed arrays so two runs can be diffed: cost
+    /// sums depend on HashMap iteration order in their last bits, and analytics
+    /// rows with equal counts come out in arbitrary order.
+    fn normalize_snapshot(value: &mut serde_json::Value) {
+        use serde_json::Value;
+        match value {
+            Value::Number(n) if n.is_f64() => {
+                let rounded = (n.as_f64().unwrap_or(0.0) * 1000.0).round() / 1000.0;
+                *value = serde_json::json!(rounded);
+            }
+            Value::Array(items) => {
+                for item in items.iter_mut() {
+                    normalize_snapshot(item);
+                }
+                let label = |v: &Value| {
+                    ["name", "server", "category"]
+                        .iter()
+                        .find_map(|k| v.get(k).and_then(|s| s.as_str()).map(str::to_string))
+                };
+                if items.iter().all(|v| label(v).is_some()) {
+                    items.sort_by_key(|v| label(v));
+                }
+            }
+            Value::Object(map) => {
+                for (_, v) in map.iter_mut() {
+                    normalize_snapshot(v);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Dumps stats built from the real `~/.claude` logs, restricted to entries
+    /// dated before `SNAPSHOT_BEFORE` (live sessions keep appending today's
+    /// lines), so a parser refactor can be checked for identical output:
+    ///
+    /// `SNAPSHOT_OUT=/tmp/a.json SNAPSHOT_BEFORE=2026-11-21 cargo test --release -- --ignored real_data_snapshot`
+    #[test]
+    #[ignore]
+    fn real_data_snapshot() {
+        let out = std::env::var("SNAPSHOT_OUT").expect("SNAPSHOT_OUT must be set");
+        let before = std::env::var("SNAPSHOT_BEFORE").expect("SNAPSHOT_BEFORE must be set");
+        let provider = ClaudeCodeProvider::new(vec![]);
+        provider.do_fetch_stats().expect("fetch_stats should succeed");
+
+        let entries: HashMap<DedupKey, SessionEntry> = lock_unpoisoned(&STATS_CACHE)
+            .as_ref()
+            .and_then(|cache| cache.parse.as_ref())
+            .expect("cache populated")
+            .entries
+            .iter()
+            .filter(|(_, entry)| *entry.date < *before)
+            .map(|(key, entry)| (*key, entry.clone()))
+            .collect();
+        eprintln!("[SNAPSHOT] {} entries before {}", entries.len(), before);
+
+        let mut value = serde_json::to_value(provider.build_stats(&entries)).expect("serialize");
+        normalize_snapshot(&mut value);
+        fs::write(out, serde_json::to_string_pretty(&value).expect("render")).expect("write");
     }
 }
