@@ -1,10 +1,11 @@
 import type { FxRates } from "./types";
 
-/** UI 언어로 표시 통화 초기값을 추정한다. TWD는 ECB 환율에 없어 USD로 둔다. */
+/** UI 언어로 표시 통화 초기값을 추정한다. */
 const LOCALE_CURRENCY: Record<string, string> = {
   ko: "KRW",
   ja: "JPY",
   "zh-CN": "CNY",
+  "zh-TW": "TWD",
   fr: "EUR",
   es: "EUR",
   de: "EUR",
@@ -13,16 +14,41 @@ const LOCALE_CURRENCY: Record<string, string> = {
 };
 
 /** 선택 목록 맨 앞에 보일 주요 통화. 나머지는 알파벳순으로 뒤에 붙는다. */
-export const FEATURED_CURRENCIES = ["USD", "KRW", "JPY", "EUR", "CNY", "GBP", "TRY", "INR"];
+const FEATURED_CURRENCIES = ["USD", "KRW", "JPY", "EUR", "CNY", "TWD", "GBP", "TRY", "INR"];
+
+/**
+ * 런타임이 아는 ISO 4217 법정통화 목록. 환율 응답에 섞여 오는 암호화폐 코드(BTC 등)를
+ * 걸러내는 데 쓴다. 목록을 못 얻는 오래된 런타임이면 null → 거르지 않는다.
+ */
+const ISO_CURRENCIES: Set<string> | null = (() => {
+  const supported = (Intl as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf;
+  try {
+    return supported ? new Set(supported("currency")) : null;
+  } catch {
+    return null;
+  }
+})();
+
+function isSelectable(code: string, rates: FxRates | null): boolean {
+  if (code === "USD") return true;
+  return Boolean(rates?.rates[code]) && (ISO_CURRENCIES?.has(code) ?? true);
+}
 
 export function defaultCurrency(language: string): string {
   return LOCALE_CURRENCY[language] ?? "USD";
 }
 
-/** 환율을 모르면 USD로 내려간다 — 틀린 환산보다 정확한 달러가 낫다. */
+/** 환율을 모르거나 법정통화가 아니면 USD로 내려간다 — 틀린 환산보다 정확한 달러가 낫다. */
 export function resolveCurrency(wanted: string, rates: FxRates | null): string {
-  if (wanted === "USD") return "USD";
-  return rates?.rates[wanted] ? wanted : "USD";
+  return isSelectable(wanted, rates) ? wanted : "USD";
+}
+
+/** 통화 선택 목록: 주요 통화 먼저, 나머지는 알파벳순. 환율이 있는 법정통화만. */
+export function selectableCurrencies(rates: FxRates | null): string[] {
+  const codes = rates ? Object.keys(rates.rates).filter((c) => isSelectable(c, rates)) : ["USD"];
+  const featured = FEATURED_CURRENCIES.filter((c) => codes.includes(c));
+  const rest = codes.filter((c) => !featured.includes(c)).sort();
+  return [...featured, ...rest];
 }
 
 export function usdToCurrency(usd: number, currency: string, rates: FxRates | null): number {

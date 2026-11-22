@@ -8,12 +8,12 @@ import { useFxRates } from "../../hooks/useFxRates";
 import { useSubscriptions, type DetectedSubscriptions } from "../../hooks/useSubscriptions";
 import { PLAN_LABELS } from "../../lib/plans";
 import {
-  FEATURED_CURRENCIES,
   currencyToUsd,
   defaultCurrency,
   parseAmount,
   formatMoney,
   resolveCurrency,
+  selectableCurrencies,
   usdToCurrency,
 } from "../../lib/currency";
 import {
@@ -29,12 +29,14 @@ import {
 interface Props {
   onClose: () => void;
   stats: AllStats;
+  /** 켜진 소스 중 아직 첫 로딩이 안 끝난 것이 있음 — 그동안의 stats는 일부 소스만 담고 있다. */
+  loading: boolean;
 }
 
 /** 빠른 선택 금액(USD/월). 플랜 정가와 같은 값이라 대부분 한 번에 고른다. */
 const QUICK_AMOUNTS_USD = [20, 100, 200, 400];
 
-export function WhatIfOverlay({ onClose, stats }: Props) {
+export function WhatIfOverlay({ onClose, stats, loading }: Props) {
   const t = useI18n();
   const { prefs, updatePrefs } = useSettings();
   const rates = useFxRates();
@@ -65,12 +67,7 @@ export function WhatIfOverlay({ onClose, stats }: Props) {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [editing, onClose]);
 
-  const currencyOptions = useMemo(() => {
-    const available = rates ? Object.keys(rates.rates) : ["USD"];
-    const featured = FEATURED_CURRENCIES.filter((c) => available.includes(c));
-    const rest = available.filter((c) => !featured.includes(c)).sort();
-    return [...featured, ...rest];
-  }, [rates]);
+  const currencyOptions = useMemo(() => selectableCurrencies(rates), [rates]);
 
   const maxDaily = Math.max(...period.dailyCostUsd, 0.0001);
 
@@ -114,6 +111,12 @@ export function WhatIfOverlay({ onClose, stats }: Props) {
             ))}
           </div>
 
+          {loading ? (
+            <div style={{ padding: "28px 0 20px", textAlign: "center", fontSize: 12, color: "var(--text-secondary)" }}>
+              {t("whatIf.loading")}
+            </div>
+          ) : (
+          <>
           <div style={{ fontSize: 10, color: "var(--text-secondary)", marginTop: 12, fontWeight: 600 }}>
             {t("whatIf.apiCost")}
           </div>
@@ -193,6 +196,8 @@ export function WhatIfOverlay({ onClose, stats }: Props) {
             {subs.monthlyUsd > 0 && ` ${t("whatIf.footnoteProrate")}`}
             {rates && currency !== "USD" && ` · ${t("whatIf.rateDate", { date: rates.date })}${rates.stale ? " ⚠" : ""}`}
           </div>
+          </>
+          )}
         </div>
 
         {editing && (
@@ -214,6 +219,7 @@ export function WhatIfOverlay({ onClose, stats }: Props) {
           />
         )}
 
+        {!loading && (
         <button onClick={capture} style={shareButtonStyle(captured)}>
           {captured ? (
             <>
@@ -233,6 +239,7 @@ export function WhatIfOverlay({ onClose, stats }: Props) {
             </>
           )}
         </button>
+        )}
       </div>
     </>
   );

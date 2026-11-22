@@ -226,6 +226,7 @@
   "receipt.thisMonth": "本月",
   "receipt.allTime": "全部",
   "whatIf.title": "如果用 API 付费？",
+  "whatIf.loading": "正在加载所有来源的用量…请稍后重新打开。",
   "whatIf.close": "关闭",
   "whatIf.currency": "显示货币",
   "whatIf.apiCost": "按 API 标价计算",

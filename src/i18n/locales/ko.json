@@ -232,6 +232,7 @@
   "receipt.thisMonth": "이번 달",
   "receipt.allTime": "전체",
   "whatIf.title": "API였다면?",
+  "whatIf.loading": "모든 소스의 사용량을 불러오는 중이에요… 잠시 후 다시 열어 주세요.",
   "whatIf.close": "닫기",
   "whatIf.currency": "표시 통화",
   "whatIf.apiCost": "API 정가로 냈다면",
