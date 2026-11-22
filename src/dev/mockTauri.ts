@@ -180,7 +180,18 @@ function fixtureKiroBreakdown() {
 }
 
 export function installMockTauri(): void {
+  // "API였다면?" QA: ?mockScenario=teamai|login|override|none, ?mockLang=ko, ?mockColor=light
+  const query = new URLSearchParams(window.location.search);
+  const scenario = query.get("mockScenario") ?? "teamai";
+  const prefs: UserPreferences = {
+    ...mockPrefs,
+    language: (query.get("mockLang") as UserPreferences["language"] | null) ?? mockPrefs.language,
+    color_mode: (query.get("mockColor") as UserPreferences["color_mode"] | null) ?? mockPrefs.color_mode,
+    include_codex: scenario !== "none",
+    subscription_override: scenario === "override" ? { amount: 290_000, currency: "KRW" } : null,
+  };
   const stats = fixtureStats();
+  if (scenario === "login") stats.rate_limits = { plan_type: "prolite", source: "jsonl" };
   const kiroStats = fixtureKiroStats();
   const kiroBreakdown = fixtureKiroBreakdown();
   let callbackId = 0;
@@ -204,6 +215,7 @@ export function installMockTauri(): void {
     get_omp_stats: () => stats,
     get_hermes_stats: () => stats,
     get_kiro_breakdown: () => kiroBreakdown,
+    is_codex_available: () => true,
     is_kiro_available: () => true,
     is_omo_available: () => true,
     is_pi_available: () => true,
@@ -224,6 +236,7 @@ export function installMockTauri(): void {
     }),
     is_teamai_available: () => true,
     get_teamai_usage: () => {
+      if (scenario !== "teamai") return null;
       const now = Date.now();
       const w = (utilization: number, hours: number, minutes: number | null = null) =>
         ({ utilization, resets_at: now + hours * 3_600_000, minutes });
@@ -250,7 +263,7 @@ export function installMockTauri(): void {
         ],
       };
     },
-    get_preferences: () => mockPrefs,
+    get_preferences: () => prefs,
     get_ai_keys: () => null,
     detect_cli_tools: () => [
       { name: "gemini", available: false },
@@ -266,6 +279,14 @@ export function installMockTauri(): void {
       gemini: [{ model: "Gemini 3.5 Flash", input: "$1.5", output: "$9", cache_read: "$0.15", cache_write: "—" }],
     }),
     get_oauth_usage: () => null,
+    get_claude_subscription: () => scenario === "none" ? null : ({ subscription_type: "max", rate_limit_tier: "default_claude_max_20x" }),
+    get_fx_rates: () => ({
+      base: "USD",
+      date: toLocalDateStr(new Date()),
+      rates: { USD: 1, KRW: 1339.44, JPY: 152.1, EUR: 0.91, CNY: 6.68, GBP: 0.76 },
+      fetched_at: Date.now(),
+      stale: false,
+    }),
     get_oauth_usage_status: () => "no_credentials",
     get_oauth_rate_limit_remaining: () => null,
     get_stable_device_id: () => "mock-device-id",

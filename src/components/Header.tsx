@@ -8,6 +8,7 @@ import { AppLogo } from "./AppLogo";
 import { SettingsOverlay } from "./SettingsOverlay";
 import { WrappedOverlay } from "./wrapped/WrappedOverlay";
 import { ReceiptOverlay } from "./receipt/ReceiptOverlay";
+import { WhatIfOverlay } from "./whatif/WhatIfOverlay";
 import type { AllStats } from "../lib/types";
 import type { UpdaterState } from "../hooks/useUpdater";
 import { formatTokens, formatCost, getTotalTokens, toLocalDateStr } from "../lib/format";
@@ -24,6 +25,8 @@ export function Header({ stats, updater }: Props) {
   const [showSettings, setShowSettings] = useState(false);
   const [showWrapped, setShowWrapped] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
+  const [showWhatIf, setShowWhatIf] = useState(false);
+  const closeWhatIf = useCallback(() => setShowWhatIf(false), []);
   const [showMenu, setShowMenu] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -157,6 +160,18 @@ export function Header({ stats, updater }: Props) {
           <line x1="8" y1="8" x2="16" y2="8"/>
           <line x1="8" y1="12" x2="16" y2="12"/>
           <line x1="8" y1="16" x2="12" y2="16"/>
+        </svg>
+      ),
+    },
+    {
+      key: "whatIf",
+      label: t("whatIf.title"),
+      onClick: () => setShowWhatIf(true),
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/>
+          <path d="M12 18V6"/>
         </svg>
       ),
     },
@@ -437,6 +452,10 @@ export function Header({ stats, updater }: Props) {
             onClose={() => setShowReceipt(false)}
             stats={stats}
           />
+          {/* Mounted only while open: it polls TeamAI and fetches FX rates. */}
+          {showWhatIf && (
+            <WhatIfOverlay onClose={closeWhatIf} stats={stats} />
+          )}
         </>
       )}
 

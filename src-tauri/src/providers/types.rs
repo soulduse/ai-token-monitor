@@ -197,6 +197,23 @@ pub struct UserPreferences {
     pub translation_provider: Option<String>,
     #[serde(default)]
     pub preferred_cli: Option<String>,
+    /// ISO 4217 code for the "what if API" view. None = guess from UI language.
+    #[serde(default)]
+    pub display_currency: Option<String>,
+    /// User-entered monthly subscription spend; overrides auto-detected plans.
+    #[serde(default)]
+    pub subscription_override: Option<SubscriptionOverride>,
+}
+
+/// What the user says they pay per month, in the currency they entered it in.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubscriptionOverride {
+    pub amount: f64,
+    pub currency: String,
+    /// USD value at save time, so the override still applies when no FX rate
+    /// is available (offline, first render, currency dropped from the feed).
+    #[serde(default)]
+    pub amount_usd: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -382,6 +399,8 @@ impl Default for UserPreferences {
             quick_action_items: vec![],
             translation_provider: None,
             preferred_cli: None,
+            display_currency: None,
+            subscription_override: None,
         }
     }
 }

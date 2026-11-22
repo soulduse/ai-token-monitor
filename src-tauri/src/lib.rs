@@ -1,6 +1,7 @@
 mod ai_translate;
 mod cli_translate;
 mod commands;
+mod fx_rates;
 mod hydration;
 mod oauth_usage;
 mod providers;
@@ -1324,6 +1325,8 @@ pub fn run() {
             commands::get_pricing_table,
             commands::get_oauth_usage,
             commands::get_oauth_usage_status,
+            commands::get_claude_subscription,
+            commands::get_fx_rates,
             commands::get_oauth_rate_limit_remaining,
             commands::refresh_oauth_usage,
             commands::enable_usage_tracking,

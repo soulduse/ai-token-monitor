@@ -67,6 +67,41 @@ struct CacheEntry {
 struct OAuthCredentials {
     access_token: String,
     expires_at_millis: Option<i64>,
+    subscription: ClaudeSubscription,
+}
+
+/// Plan fields Claude Code stores next to the OAuth token. Read from the same
+/// credential blob we already load for usage polling — never a separate
+/// keychain access — and exposed only as these two strings.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClaudeSubscription {
+    /// e.g. "max", "pro", "team", "enterprise".
+    pub subscription_type: Option<String>,
+    /// e.g. "default_claude_max_20x", "default_claude_max_5x".
+    pub rate_limit_tier: Option<String>,
+}
+
+impl ClaudeSubscription {
+    fn is_known(&self) -> bool {
+        self.subscription_type.is_some() || self.rate_limit_tier.is_some()
+    }
+}
+
+/// Last plan seen while polling usage. Stays None when usage tracking is off,
+/// so the "what if API" view falls back to manual input.
+static CLAUDE_SUBSCRIPTION: Mutex<Option<ClaudeSubscription>> = Mutex::new(None);
+
+pub fn get_cached_subscription() -> Option<ClaudeSubscription> {
+    CLAUDE_SUBSCRIPTION.lock().ok()?.clone()
+}
+
+fn remember_subscription(subscription: &ClaudeSubscription) {
+    if !subscription.is_known() {
+        return;
+    }
+    if let Ok(mut guard) = CLAUDE_SUBSCRIPTION.lock() {
+        *guard = Some(subscription.clone());
+    }
 }
 
 impl OAuthCredentials {
@@ -227,6 +262,7 @@ async fn fetch_and_cache_usage_inner() -> Option<OAuthUsage> {
     }
 
     let credentials = read_oauth_credentials()?;
+    remember_subscription(&credentials.subscription);
 
     match fetch_usage_with_oauth_recovery(credentials).await {
         Ok(mut usage) => {
@@ -461,9 +497,15 @@ fn extract_oauth_credentials(value: &serde_json::Value) -> Option<OAuthCredentia
         .and_then(value_as_i64)
         .map(normalize_epoch_millis);
 
+    let subscription = ClaudeSubscription {
+        subscription_type: oauth.get("subscriptionType").and_then(value_as_string),
+        rate_limit_tier: oauth.get("rateLimitTier").and_then(value_as_string),
+    };
+
     Some(OAuthCredentials {
         access_token,
         expires_at_millis,
+        subscription,
     })
 }
 
@@ -872,6 +914,25 @@ mod tests {
     }
 
     #[test]
+    fn parses_claude_subscription_fields() {
+        let value = serde_json::json!({
+            "claudeAiOauth": {
+                "accessToken": "access-token",
+                "subscriptionType": "max",
+                "rateLimitTier": "default_claude_max_20x"
+            }
+        });
+
+        let credentials = extract_oauth_credentials(&value).expect("credentials");
+
+        assert_eq!(credentials.subscription.subscription_type.as_deref(), Some("max"));
+        assert_eq!(
+            credentials.subscription.rate_limit_tier.as_deref(),
+            Some("default_claude_max_20x")
+        );
+    }
+
+    #[test]
     fn parses_claude_oauth_credentials_with_seconds_expiry() {
         let value = serde_json::json!({
             "claudeAiOauth": {
@@ -891,10 +952,12 @@ mod tests {
         let near_expiry = OAuthCredentials {
             access_token: "access-token".to_string(),
             expires_at_millis: Some(chrono::Utc::now().timestamp_millis() + 60_000),
+            subscription: ClaudeSubscription::default(),
         };
         let later_expiry = OAuthCredentials {
             access_token: "access-token".to_string(),
             expires_at_millis: Some(chrono::Utc::now().timestamp_millis() + 10 * 60_000),
+            subscription: ClaudeSubscription::default(),
         };
 
         assert!(near_expiry.should_refresh());
