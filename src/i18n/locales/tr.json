@@ -226,6 +226,7 @@
   "receipt.thisMonth": "Bu Ay",
   "receipt.allTime": "Tüm Zamanlar",
   "whatIf.title": "API olsaydı?",
+  "whatIf.loading": "Tüm kaynakların kullanımı yükleniyor… birazdan yeniden açın.",
   "whatIf.close": "Kapat",
   "whatIf.currency": "Görüntüleme para birimi",
   "whatIf.apiCost": "API liste fiyatlarıyla",

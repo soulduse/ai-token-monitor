@@ -226,6 +226,7 @@
   "receipt.thisMonth": "Este mes",
   "receipt.allTime": "Todo",
   "whatIf.title": "¿Y si fuera API?",
+  "whatIf.loading": "Cargando el uso de todas las fuentes… vuelve a abrirlo en un momento.",
   "whatIf.close": "Cerrar",
   "whatIf.currency": "Moneda",
   "whatIf.apiCost": "A precios de lista de la API",

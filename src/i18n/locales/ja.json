@@ -226,6 +226,7 @@
   "receipt.thisMonth": "今月",
   "receipt.allTime": "全期間",
   "whatIf.title": "APIだったら？",
+  "whatIf.loading": "すべてのソースの使用量を読み込み中です…しばらくしてから開き直してください。",
   "whatIf.close": "閉じる",
   "whatIf.currency": "表示通貨",
   "whatIf.apiCost": "API定価で払っていたら",

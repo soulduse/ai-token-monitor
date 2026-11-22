@@ -18,10 +18,12 @@ import { useSettings } from "../contexts/SettingsContext";
 
 interface Props {
   stats?: AllStats | null;
+  /** Some enabled source has not finished its first load; `stats` is partial. */
+  statsLoading?: boolean;
   updater?: UpdaterState;
 }
 
-export function Header({ stats, updater }: Props) {
+export function Header({ stats, statsLoading = false, updater }: Props) {
   const [showSettings, setShowSettings] = useState(false);
   const [showWrapped, setShowWrapped] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
@@ -454,7 +456,7 @@ export function Header({ stats, updater }: Props) {
           />
           {/* Mounted only while open: it polls TeamAI and fetches FX rates. */}
           {showWhatIf && (
-            <WhatIfOverlay onClose={closeWhatIf} stats={stats} />
+            <WhatIfOverlay onClose={closeWhatIf} stats={stats} loading={statsLoading} />
           )}
         </>
       )}

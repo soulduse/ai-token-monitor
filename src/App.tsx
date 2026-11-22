@@ -261,7 +261,7 @@ function AppContent() {
 
   return (
     <PopoverShell>
-      <Header stats={stats} updater={updater} />
+      <Header stats={stats} statsLoading={loading} updater={updater} />
       <SourceSelector />
       <TabBar activeTab={activeTab} onChange={setActiveTab} chatBadge={unreadCount} />
 
