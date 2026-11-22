@@ -211,6 +211,30 @@ export interface UserPreferences {
   webhook_config?: WebhookConfig;
   autostart_enabled: boolean;
   quick_action_items: string[];
+  /** ISO 4217 code for the "what if API" view; unset = guess from UI language. */
+  display_currency?: string | null;
+  /** User-entered monthly subscription spend; overrides detected plans. */
+  subscription_override?: SubscriptionOverride | null;
+}
+
+export interface SubscriptionOverride {
+  amount: number;
+  currency: string;
+  /** USD value at save time — used when no FX rate is available. */
+  amount_usd?: number | null;
+}
+
+export interface FxRates {
+  base: string;
+  date: string;
+  rates: Record<string, number>;
+  fetched_at: number;
+  stale: boolean;
+}
+
+export interface ClaudeSubscription {
+  subscription_type?: string | null;
+  rate_limit_tier?: string | null;
 }
 
 export interface WebhookConfig {
