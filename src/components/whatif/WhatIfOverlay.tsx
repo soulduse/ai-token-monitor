@@ -5,11 +5,12 @@ import { useI18n } from "../../i18n/I18nContext";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useShareImage } from "../../hooks/useShareImage";
 import { useFxRates } from "../../hooks/useFxRates";
+import { useSystemRegion } from "../../hooks/useSystemRegion";
 import { useSubscriptions, type DetectedSubscriptions } from "../../hooks/useSubscriptions";
 import { PLAN_LABELS } from "../../lib/plans";
 import {
   currencyToUsd,
-  defaultCurrency,
+  guessCurrency,
   parseAmount,
   formatMoney,
   resolveCurrency,
@@ -47,7 +48,8 @@ export function WhatIfOverlay({ onClose, stats, loading }: Props) {
   const [editing, setEditing] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
-  const currency = resolveCurrency(prefs.display_currency ?? defaultCurrency(prefs.language), rates);
+  const systemRegion = useSystemRegion();
+  const currency = resolveCurrency(prefs.display_currency ?? guessCurrency(systemRegion, prefs.language), rates);
   const money = (usd: number) => formatMoney(usdToCurrency(usd, currency, rates), currency);
 
   const periods = useMemo(() => buildPeriods(stats.daily), [stats.daily]);

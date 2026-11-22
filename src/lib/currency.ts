@@ -1,6 +1,7 @@
 import type { FxRates } from "./types";
+import { COUNTRY_CURRENCY, ZONE_COUNTRY } from "./regionData";
 
-/** UI 언어로 표시 통화 초기값을 추정한다. */
+/** 지역 정보가 없을 때 UI 언어로 고르는 통화. */
 const LOCALE_CURRENCY: Record<string, string> = {
   ko: "KRW",
   ja: "JPY",
@@ -34,8 +35,27 @@ function isSelectable(code: string, rates: FxRates | null): boolean {
   return Boolean(rates?.rates[code]) && (ISO_CURRENCIES?.has(code) ?? true);
 }
 
-export function defaultCurrency(language: string): string {
-  return LOCALE_CURRENCY[language] ?? "USD";
+function currentTimeZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 사용자가 통화를 고른 적 없을 때의 기본값. 네트워크 없이 기기 정보만 쓴다:
+ * OS 지역 설정의 국가 → 시간대의 국가 → UI 언어 → USD.
+ * (영어 UI를 쓰는 한국 사용자도 KRW, 스페인어 UI의 멕시코 사용자는 MXN)
+ */
+export function guessCurrency(
+  systemRegion: string | null | undefined,
+  language: string,
+  timeZone: string | undefined = currentTimeZone(),
+): string {
+  const fromRegion = systemRegion ? COUNTRY_CURRENCY[systemRegion] : undefined;
+  const fromZone = timeZone ? COUNTRY_CURRENCY[ZONE_COUNTRY[timeZone]] : undefined;
+  return fromRegion ?? fromZone ?? LOCALE_CURRENCY[language] ?? "USD";
 }
 
 /** 환율을 모르거나 법정통화가 아니면 USD로 내려간다 — 틀린 환산보다 정확한 달러가 낫다. */
