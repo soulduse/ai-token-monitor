@@ -25,6 +25,8 @@ use crate::providers::pricing;
 use crate::providers::traits::TokenProvider;
 use crate::providers::types::{AiKeys, AllStats, UserPreferences};
 use crate::teamai_usage::{self, TeamAIUsage};
+use crate::fx_rates::{self, FxRates};
+use crate::oauth_usage::{self, ClaudeSubscription};
 
 use tauri::Emitter;
 use tauri_plugin_dialog::DialogExt;
@@ -1077,6 +1079,16 @@ pub fn capture_window(_app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn get_oauth_usage() -> Option<crate::oauth_usage::OAuthUsage> {
     crate::oauth_usage::get_cached_usage()
+}
+
+#[tauri::command]
+pub fn get_claude_subscription() -> Option<ClaudeSubscription> {
+    oauth_usage::get_cached_subscription()
+}
+
+#[tauri::command]
+pub async fn get_fx_rates() -> Option<FxRates> {
+    fx_rates::get_rates().await
 }
 
 #[tauri::command]
