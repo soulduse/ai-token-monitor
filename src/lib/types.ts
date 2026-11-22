@@ -230,6 +230,8 @@ export interface FxRates {
   rates: Record<string, number>;
   fetched_at: number;
   stale: boolean;
+  /** "frankfurter" | "theratesapi" */
+  source?: string;
 }
 
 export interface ClaudeSubscription {
