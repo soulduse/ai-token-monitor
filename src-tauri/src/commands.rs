@@ -27,6 +27,7 @@ use crate::providers::types::{AiKeys, AllStats, UserPreferences};
 use crate::teamai_usage::{self, TeamAIUsage};
 use crate::fx_rates::{self, FxRates};
 use crate::oauth_usage::{self, ClaudeSubscription};
+use crate::system_region;
 
 use tauri::Emitter;
 use tauri_plugin_dialog::DialogExt;
@@ -1089,6 +1090,12 @@ pub fn get_claude_subscription() -> Option<ClaudeSubscription> {
 #[tauri::command]
 pub async fn get_fx_rates() -> Option<FxRates> {
     fx_rates::get_rates().await
+}
+
+/// OS 지역 설정의 국가 코드("KR" 등). 첫 호출 때 한 번만 읽고 캐시한다.
+#[tauri::command]
+pub async fn get_system_region() -> Option<String> {
+    tauri::async_runtime::spawn_blocking(system_region::get_region).await.ok().flatten()
 }
 
 #[tauri::command]

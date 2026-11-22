@@ -180,7 +180,8 @@ function fixtureKiroBreakdown() {
 }
 
 export function installMockTauri(): void {
-  // "API였다면?" QA: ?mockScenario=teamai|login|override|none, ?mockLang=ko, ?mockColor=light
+  // "API였다면?" QA: ?mockScenario=teamai|login|override|none, ?mockLang=ko, ?mockColor=light,
+  // ?mockRegion=KR|none (OS 지역; 시간대는 브라우저/Playwright timezoneId 그대로)
   const query = new URLSearchParams(window.location.search);
   const scenario = query.get("mockScenario") ?? "teamai";
   const prefs: UserPreferences = {
@@ -279,11 +280,15 @@ export function installMockTauri(): void {
       gemini: [{ model: "Gemini 3.5 Flash", input: "$1.5", output: "$9", cache_read: "$0.15", cache_write: "—" }],
     }),
     get_oauth_usage: () => null,
+    get_system_region: () => {
+      const r = query.get("mockRegion");
+      return r && r !== "none" ? r : null;
+    },
     get_claude_subscription: () => scenario === "none" ? null : ({ subscription_type: "max", rate_limit_tier: "default_claude_max_20x" }),
     get_fx_rates: () => ({
       base: "USD",
       date: toLocalDateStr(new Date()),
-      rates: { USD: 1, KRW: 1339.44, JPY: 152.1, EUR: 0.91, CNY: 6.68, GBP: 0.76 },
+      rates: { USD: 1, KRW: 1335.94, JPY: 159.3, EUR: 0.91, CNY: 6.67, GBP: 0.76, TWD: 32.98, MXN: 19.07, INR: 92.83, CAD: 1.43, AUD: 1.5 },
       fetched_at: Date.now(),
       stale: false,
     }),

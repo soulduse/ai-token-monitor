@@ -5,6 +5,7 @@ mod fx_rates;
 mod hydration;
 mod oauth_usage;
 mod providers;
+mod system_region;
 mod teamai_usage;
 mod url_metadata;
 mod webhooks;
@@ -1327,6 +1328,7 @@ pub fn run() {
             commands::get_oauth_usage_status,
             commands::get_claude_subscription,
             commands::get_fx_rates,
+            commands::get_system_region,
             commands::get_oauth_rate_limit_remaining,
             commands::refresh_oauth_usage,
             commands::enable_usage_tracking,
