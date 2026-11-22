@@ -22,33 +22,62 @@ const STATS_COMMANDS: Record<StatsProvider, string> = {
   hermes: "get_hermes_stats",
 };
 
+/** Backends answer "…stats computation in progress" when another caller holds the parse lock. */
+function isComputationInProgress(e: unknown): boolean {
+  return String(e).includes("computation in progress");
+}
+
+/** How often to ask again while another caller is still running the first parse. */
+const IN_PROGRESS_RETRY_MS = 1_500;
+
 export function useTokenStats(provider: StatsProvider = "claude") {
   const [stats, setStats] = useState<AllStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const hasDataRef = useRef(false);
   const requestIdRef = useRef(0);
+  // Id of the request whose result is on screen. A slow request (the one doing the
+  // first parse) may finish after newer ones; it is only stale if something newer
+  // already landed, not merely because a newer request was sent.
+  const appliedIdRef = useRef(0);
+  const retryTimerRef = useRef<number | undefined>(undefined);
+  const fetchRef = useRef<() => Promise<void>>(async () => {});
 
   const fetchStats = useCallback(async () => {
     const requestId = ++requestIdRef.current;
     try {
       const command = STATS_COMMANDS[provider] ?? STATS_COMMANDS.claude;
       const data = await invoke<AllStats>(command);
-      if (requestId !== requestIdRef.current) return;
+      if (requestId < appliedIdRef.current) return;
+      appliedIdRef.current = requestId;
       setStats(data);
       setError(null);
       hasDataRef.current = true;
+      setLoading(false);
     } catch (e) {
-      if (requestId !== requestIdRef.current) return;
+      if (isComputationInProgress(e)) {
+        // Not a failure: another caller (e.g. the leaderboard uploader's own hook)
+        // is parsing right now. Stay loading — treating this as done is what let
+        // views compute from a partial source set at startup — and ask again until
+        // the parse lands in the backend cache.
+        if (!hasDataRef.current) {
+          window.clearTimeout(retryTimerRef.current);
+          retryTimerRef.current = window.setTimeout(() => fetchRef.current(), IN_PROGRESS_RETRY_MS);
+        }
+        return;
+      }
+      if (requestId < appliedIdRef.current) return;
       // Only show error if we never had valid data — keeps last known data on transient failures
       if (!hasDataRef.current) {
         setError(String(e));
       }
-    } finally {
-      if (requestId !== requestIdRef.current) return;
       setLoading(false);
     }
   }, [provider]);
+
+  useEffect(() => {
+    fetchRef.current = fetchStats;
+  }, [fetchStats]);
 
   useEffect(() => {
     fetchStats();
@@ -64,6 +93,7 @@ export function useTokenStats(provider: StatsProvider = "claude") {
     return () => {
       unlisten.then((fn) => fn?.());
       clearInterval(interval);
+      window.clearTimeout(retryTimerRef.current);
     };
   }, [fetchStats]);
 
